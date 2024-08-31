@@ -2,7 +2,7 @@
 
 *.yaml
 !.pre-commit-config.yaml
-!example-config.yaml
+!config/example-config.yaml
 
 *.session
 *.json

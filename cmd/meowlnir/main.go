@@ -13,15 +13,18 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog"
+	up "go.mau.fi/util/configupgrade"
 	"go.mau.fi/util/dbutil"
 	_ "go.mau.fi/util/dbutil/litestream"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/ptr"
+	"gopkg.in/yaml.v3"
 	flag "maunium.net/go/mauflag"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	"maunium.net/go/mautrix/crypto/cryptohelper"
 
+	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/synapsedb"
 )
@@ -32,7 +35,7 @@ var version = flag.MakeFull("v", "version", "Print the version and exit", "false
 var wantHelp, _ = flag.MakeHelpFlag()
 
 type Meowlnir struct {
-	Config         *Config
+	Config         *config.Config
 	Log            *zerolog.Logger
 	DB             *dbutil.Database
 	SynapseDB      *synapsedb.SynapseDB
@@ -207,6 +210,21 @@ func (m *Meowlnir) Run(ctx context.Context) {
 	if err != nil {
 		m.Log.Err(err).Msg("Failed to close Synapse database")
 	}
+}
+
+func loadConfig(path string, noSave bool) *config.Config {
+	configData, _, err := up.Do(path, !noSave, config.Upgrader)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "Failed to upgrade config:", err)
+		os.Exit(10)
+	}
+	var cfg config.Config
+	err = yaml.Unmarshal(configData, &cfg)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "Failed to parse config:", err)
+		os.Exit(10)
+	}
+	return &cfg
 }
 
 func main() {
