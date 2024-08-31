@@ -1,0 +1,15 @@
+.idea
+
+*.yaml
+!.pre-commit-config.yaml
+!example-config.yaml
+
+*.session
+*.json
+*.db
+*.log
+*.log.gz
+*.bak
+
+/meowlnir
+/start

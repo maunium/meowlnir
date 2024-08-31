@@ -1,0 +1,73 @@
+# Homeserver settings
+homeserver:
+    # The address that Meowlnir can use to connect to the homeserver.
+    address: http://localhost:8008
+    # The server name of the homeserver.
+    domain: example.com
+
+# Appservice settings
+appservice:
+    # The unique ID for the appservice.
+    id: meowlnir
+    # Set to generate to generate random tokens.
+    as_token: generate
+    hs_token: generate
+    # Bot user settings.
+    bot:
+        # Username of the bot user.
+        username: meowlnir
+        # Display name and avatar URL of the bot user.
+        # If blank, the profile will not be changed.
+        displayname: Meowlnir
+        avatar_url: mxc://maunium.net/jfjFchLLXkCFJdTQuSgpFval
+    # Pickle key used for encrypting encryption keys.
+    # If set to generate, a random key will be generated.
+    pickle_key: generate
+
+# Configuration for Meowlnir's HTTP server. This is used for both appservice transactions and external traffic.
+server:
+    # The address that the homeserver can use to connect to Meowlnir.
+    address: http://localhost:29339
+    # The hostname and port where Meowlnir should listen
+    hostname: 0.0.0.0
+    port: 29339
+
+# Database config for meowlnir itself.
+database:
+    # The database type. "sqlite3-fk-wal" and "postgres" are supported.
+    type: postgres
+    # The database URI.
+    #   SQLite: A raw file path is supported, but `file:<path>?_txlock=immediate` is recommended.
+    #           https://github.com/mattn/go-sqlite3#connection-string
+    #   Postgres: Connection string. For example, postgres://user:password@host/database?sslmode=disable
+    #             To connect via Unix socket, use something like postgres:///dbname?host=/var/run/postgresql
+    uri: postgres://user:password@host/database?sslmode=disable
+    # Maximum number of connections. Mostly relevant for Postgres.
+    max_open_conns: 20
+    max_idle_conns: 2
+    # Maximum connection idle time and lifetime before they're closed. Disabled if null.
+    # Parsed with https://pkg.go.dev/time#ParseDuration
+    max_conn_idle_time: null
+    max_conn_lifetime: null
+
+# Database config for accessing the Synapse database.
+synapse_db:
+    type: postgres
+    uri: postgres://user:password@host/synapse?sslmode=disable
+    max_open_conns: 2
+    max_idle_conns: 1
+    max_conn_idle_time: null
+    max_conn_lifetime: null
+
+# Logging config. See https://github.com/tulir/zeroconfig for details.
+logging:
+    min_level: debug
+    writers:
+    - type: stdout
+      format: pretty-colored
+    - type: file
+      format: json
+      filename: ./logs/meowlnir.log
+      max_size: 100
+      max_backups: 10
+      compress: false
