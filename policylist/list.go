@@ -31,16 +31,16 @@ type dplNode struct {
 // Policies are split into literal rules and dynamic rules. Literal rules are stored in a map for fast matching,
 // while dynamic rules are glob patterns and are evaluated one by one for each query.
 type List struct {
-	keys        map[string]*dplNode
-	static      map[string]*Policy
+	byStateKey  map[string]*dplNode
+	byEntity    map[string]*dplNode
 	dynamicHead *dplNode
 	lock        sync.RWMutex
 }
 
 func NewList() *List {
 	return &List{
-		keys:   make(map[string]*dplNode),
-		static: make(map[string]*Policy),
+		byStateKey: make(map[string]*dplNode),
+		byEntity:   make(map[string]*dplNode),
 	}
 }
 
@@ -57,7 +57,7 @@ func typeQuality(evtType event.Type) int {
 	}
 }
 
-func (l *List) removeLL(node *dplNode) {
+func (l *List) removeFromLinkedList(node *dplNode) {
 	if l.dynamicHead == node {
 		l.dynamicHead = node.next
 	}
@@ -72,7 +72,7 @@ func (l *List) removeLL(node *dplNode) {
 func (l *List) Add(value *Policy) (*Policy, bool) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	existing, ok := l.keys[value.StateKey]
+	existing, ok := l.byStateKey[value.StateKey]
 	if ok {
 		if typeQuality(existing.Type) > typeQuality(value.Type) {
 			// There's an existing policy with the same state key, but a newer event type, ignore this one.
@@ -83,14 +83,13 @@ func (l *List) Add(value *Policy) (*Policy, bool) {
 			return existing.Policy, true
 		}
 		// There's an existing event with the same state key, but the entity changed, remove the old node.
-		l.removeLL(existing)
-		delete(l.static, existing.Entity)
+		l.removeFromLinkedList(existing)
+		delete(l.byEntity, existing.Entity)
 	}
 	node := &dplNode{Policy: value}
-	l.keys[value.StateKey] = node
-	if _, isStatic := value.Pattern.(glob.ExactGlob); isStatic {
-		l.static[value.Entity] = value
-	} else {
+	l.byStateKey[value.StateKey] = node
+	l.byEntity[value.Entity] = node
+	if _, isStatic := value.Pattern.(glob.ExactGlob); !isStatic {
 		if l.dynamicHead != nil {
 			node.next = l.dynamicHead
 			l.dynamicHead.prev = node
@@ -106,10 +105,12 @@ func (l *List) Add(value *Policy) (*Policy, bool) {
 func (l *List) Remove(eventType event.Type, stateKey string) *Policy {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	if value, ok := l.keys[stateKey]; ok && eventType == value.Type {
-		l.removeLL(value)
-		delete(l.static, value.Entity)
-		delete(l.keys, stateKey)
+	if value, ok := l.byStateKey[stateKey]; ok && eventType == value.Type {
+		l.removeFromLinkedList(value)
+		if entValue, ok := l.byEntity[value.Entity]; ok && entValue == value {
+			delete(l.byEntity, value.Entity)
+		}
+		delete(l.byStateKey, stateKey)
 		return value.Policy
 	}
 	return nil
@@ -118,17 +119,20 @@ func (l *List) Remove(eventType event.Type, stateKey string) *Policy {
 func (l *List) Match(entity string) *Policy {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
-	if value, ok := l.static[entity]; ok {
-		return value
+	if value, ok := l.byEntity[entity]; ok {
+		return value.Policy
 	}
 	return l.matchDynamicUnlocked(entity)
 }
 
 func (l *List) MatchLiteral(entity string) *Policy {
 	l.lock.RLock()
-	value := l.static[entity]
+	value, ok := l.byEntity[entity]
 	l.lock.RUnlock()
-	return value
+	if ok {
+		return value.Policy
+	}
+	return nil
 }
 
 func (l *List) MatchDynamic(entity string) *Policy {
