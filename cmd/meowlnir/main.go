@@ -25,6 +25,8 @@ import (
 	"maunium.net/go/mautrix/crypto/cryptohelper"
 
 	"go.mau.fi/meowlnir/config"
+	"go.mau.fi/meowlnir/database"
+	"go.mau.fi/meowlnir/policyeval"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/synapsedb"
 )
@@ -37,14 +39,15 @@ var wantHelp, _ = flag.MakeHelpFlag()
 type Meowlnir struct {
 	Config         *config.Config
 	Log            *zerolog.Logger
-	DB             *dbutil.Database
+	DB             *database.Database
 	SynapseDB      *synapsedb.SynapseDB
 	Client         *mautrix.Client
 	Crypto         *cryptohelper.CryptoHelper
 	AS             *appservice.AppService
 	EventProcessor *appservice.EventProcessor
 
-	PolicyStore *policylist.Store
+	PolicyStore     *policylist.Store
+	PolicyEvaluator *policyeval.PolicyEvaluator
 }
 
 var MinSpecVersion = mautrix.SpecV111
@@ -65,11 +68,13 @@ func (m *Meowlnir) Init(ctx context.Context, configPath string, noSaveConfig boo
 		Time("built_at", ParsedBuildTime).
 		Str("go_version", runtime.Version()).
 		Msg("Initializing Meowlnir")
-	m.DB, err = dbutil.NewFromConfig("meowlnir", m.Config.Database, dbutil.ZeroLogger(m.Log.With().Str("db_section", "main").Logger()))
+	var mainDB *dbutil.Database
+	mainDB, err = dbutil.NewFromConfig("meowlnir", m.Config.Database, dbutil.ZeroLogger(m.Log.With().Str("db_section", "main").Logger()))
 	if err != nil {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to connect to Meowlnir database")
 		os.Exit(12)
 	}
+	m.DB = database.New(mainDB)
 	var synapseDB *dbutil.Database
 	synapseDB, err = dbutil.NewFromConfig("", m.Config.SynapseDB, dbutil.ZeroLogger(m.Log.With().Str("db_section", "synapse").Logger()))
 	if err != nil {
@@ -82,8 +87,6 @@ func (m *Meowlnir) Init(ctx context.Context, configPath string, noSaveConfig boo
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to check Synapse database schema version")
 		os.Exit(12)
 	}
-
-	m.PolicyStore = policylist.NewStore()
 
 	m.Log.Debug().Msg("Preparing Matrix client")
 	m.AS, err = appservice.CreateFull(appservice.CreateOpts{
@@ -112,9 +115,13 @@ func (m *Meowlnir) Init(ctx context.Context, configPath string, noSaveConfig boo
 	m.AS.Log = m.Log.With().Str("component", "matrix").Logger()
 	m.EventProcessor = appservice.NewEventProcessor(m.AS)
 	m.EventProcessor.Start(ctx)
-	m.AddEventHandlers()
 	m.Client = m.AS.BotClient()
 	m.Client.SetAppServiceDeviceID = true
+
+	m.PolicyStore = policylist.NewStore()
+	m.PolicyEvaluator = policyeval.NewPolicyEvaluator(m.Client, m.PolicyStore)
+
+	m.AddEventHandlers()
 
 	for {
 		resp, err := m.Client.Versions(ctx)
@@ -138,7 +145,7 @@ func (m *Meowlnir) Init(ctx context.Context, configPath string, noSaveConfig boo
 	m.ensureBotRegistered(ctx)
 
 	m.Log.Debug().Msg("Preparing crypto helper")
-	m.Crypto, err = cryptohelper.NewCryptoHelper(m.Client, []byte(m.Config.Appservice.PickleKey), m.DB)
+	m.Crypto, err = cryptohelper.NewCryptoHelper(m.Client, []byte(m.Config.Appservice.PickleKey), mainDB)
 	if err != nil {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to create crypto helper")
 		os.Exit(16)

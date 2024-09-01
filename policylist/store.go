@@ -77,6 +77,13 @@ func (s *Store) Add(roomID id.RoomID, state map[event.Type]map[string]*event.Eve
 	s.roomsLock.Unlock()
 }
 
+func (s *Store) Contains(roomID id.RoomID) bool {
+	s.roomsLock.RLock()
+	_, ok := s.rooms[roomID]
+	s.roomsLock.RUnlock()
+	return ok
+}
+
 func (s *Store) match(listIDs []id.RoomID, entity string, listGetter func(*Room) *List) *Policy {
 	if listIDs == nil {
 		s.roomsLock.Lock()

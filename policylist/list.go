@@ -5,13 +5,19 @@ import (
 
 	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 )
 
 // Policy represents a single moderation policy event with the relevant data parsed out.
 type Policy struct {
 	*event.ModPolicyContent
-	Pattern  glob.Glob
-	RawEvent *event.Event
+	Pattern glob.Glob
+
+	StateKey  string
+	Sender    id.UserID
+	Type      event.Type
+	Timestamp int64
+	ID        id.EventID
 }
 
 type dplNode struct {
@@ -66,9 +72,9 @@ func (l *List) removeLL(node *dplNode) {
 func (l *List) Add(value *Policy) (*Policy, bool) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	existing, ok := l.keys[*value.RawEvent.StateKey]
+	existing, ok := l.keys[value.StateKey]
 	if ok {
-		if typeQuality(existing.RawEvent.Type) > typeQuality(value.RawEvent.Type) {
+		if typeQuality(existing.Type) > typeQuality(value.Type) {
 			// There's an existing policy with the same state key, but a newer event type, ignore this one.
 			return nil, false
 		} else if existing.Entity == value.Entity {
@@ -81,7 +87,7 @@ func (l *List) Add(value *Policy) (*Policy, bool) {
 		delete(l.static, existing.Entity)
 	}
 	node := &dplNode{Policy: value}
-	l.keys[*value.RawEvent.StateKey] = node
+	l.keys[value.StateKey] = node
 	if _, isStatic := value.Pattern.(glob.ExactGlob); isStatic {
 		l.static[value.Entity] = value
 	} else {
@@ -100,7 +106,7 @@ func (l *List) Add(value *Policy) (*Policy, bool) {
 func (l *List) Remove(eventType event.Type, stateKey string) *Policy {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	if value, ok := l.keys[stateKey]; ok && eventType == value.RawEvent.Type {
+	if value, ok := l.keys[stateKey]; ok && eventType == value.Type {
 		l.removeLL(value)
 		delete(l.static, value.Entity)
 		delete(l.keys, stateKey)

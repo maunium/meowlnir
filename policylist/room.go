@@ -95,7 +95,11 @@ func updatePolicyList(evt *event.Event, rules *List) (added, removed *Policy) {
 	added = &Policy{
 		ModPolicyContent: content,
 		Pattern:          glob.Compile(content.Entity),
-		RawEvent:         evt,
+		StateKey:         *evt.StateKey,
+		Sender:           evt.Sender,
+		Type:             evt.Type,
+		Timestamp:        evt.Timestamp,
+		ID:               evt.ID,
 	}
 	var wasAdded bool
 	removed, wasAdded = rules.Add(added)
