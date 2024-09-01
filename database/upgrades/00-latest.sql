@@ -3,5 +3,6 @@ CREATE TABLE taken_action (
     policy_list TEXT NOT NULL,
     rule_entity TEXT NOT NULL,
     target_user TEXT NOT NULL,
-    action      TEXT NOT NULL
+    action      TEXT NOT NULL,
+    taken_at    BIGINT NOT NULL
 );

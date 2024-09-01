@@ -23,11 +23,12 @@ type BotConfig struct {
 }
 
 type AppserviceConfig struct {
-	ID        string    `yaml:"id"`
-	ASToken   string    `yaml:"as_token"`
-	HSToken   string    `yaml:"hs_token"`
-	Bot       BotConfig `yaml:"bot"`
-	PickleKey string    `yaml:"pickle_key"`
+	ID          string    `yaml:"id"`
+	ASToken     string    `yaml:"as_token"`
+	HSToken     string    `yaml:"hs_token"`
+	Bot         BotConfig `yaml:"bot"`
+	PickleKey   string    `yaml:"pickle_key"`
+	RecoveryKey string    `yaml:"recovery_key"`
 }
 
 type ServerConfig struct {
@@ -36,11 +37,16 @@ type ServerConfig struct {
 	Port     uint16 `yaml:"port"`
 }
 
+type MeowlnirConfig struct {
+	ManagementRooms []id.RoomID `yaml:"management_rooms"`
+}
+
 type Config struct {
 	Homeserver HomeserverConfig  `yaml:"homeserver"`
 	Appservice AppserviceConfig  `yaml:"appservice"`
 	Server     ServerConfig      `yaml:"server"`
 	Database   dbutil.Config     `yaml:"database"`
 	SynapseDB  dbutil.Config     `yaml:"synapse_db"`
+	Meowlnir   MeowlnirConfig    `yaml:"meowlnir"`
 	Logging    zeroconfig.Config `yaml:"logging"`
 }

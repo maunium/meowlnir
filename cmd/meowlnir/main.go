@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -23,6 +24,8 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	"maunium.net/go/mautrix/crypto/cryptohelper"
+	"maunium.net/go/mautrix/id"
+	"maunium.net/go/mautrix/sqlstatestore"
 
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/database"
@@ -41,13 +44,16 @@ type Meowlnir struct {
 	Log            *zerolog.Logger
 	DB             *database.Database
 	SynapseDB      *synapsedb.SynapseDB
+	StateStore     *sqlstatestore.SQLStateStore
 	Client         *mautrix.Client
 	Crypto         *cryptohelper.CryptoHelper
 	AS             *appservice.AppService
 	EventProcessor *appservice.EventProcessor
 
-	PolicyStore     *policylist.Store
-	PolicyEvaluator *policyeval.PolicyEvaluator
+	PolicyStore               *policylist.Store
+	EvaluatorLock             sync.RWMutex
+	EvaluatorByProtectedRoom  map[id.RoomID]*policyeval.PolicyEvaluator
+	EvaluatorByManagementRoom map[id.RoomID]*policyeval.PolicyEvaluator
 }
 
 var MinSpecVersion = mautrix.SpecV111
@@ -113,43 +119,26 @@ func (m *Meowlnir) Init(ctx context.Context, configPath string, noSaveConfig boo
 		os.Exit(13)
 	}
 	m.AS.Log = m.Log.With().Str("component", "matrix").Logger()
-	m.EventProcessor = appservice.NewEventProcessor(m.AS)
-	m.EventProcessor.Start(ctx)
+	m.StateStore = sqlstatestore.NewSQLStateStore(mainDB, dbutil.ZeroLogger(m.Log.With().Str("db_section", "matrix_state").Logger()), false)
+	m.AS.StateStore = m.StateStore
 	m.Client = m.AS.BotClient()
 	m.Client.SetAppServiceDeviceID = true
 
 	m.PolicyStore = policylist.NewStore()
-	m.PolicyEvaluator = policyeval.NewPolicyEvaluator(m.Client, m.PolicyStore)
-
-	m.AddEventHandlers()
-
-	for {
-		resp, err := m.Client.Versions(ctx)
-		if err != nil {
-			if errors.Is(err, mautrix.MForbidden) {
-				m.Log.Debug().Msg("M_FORBIDDEN in /versions, trying to register before retrying")
-				m.ensureBotRegistered(ctx)
-			}
-			m.Log.Err(err).Msg("Failed to connect to homeserver, retrying in 10 seconds...")
-			time.Sleep(10 * time.Second)
-		} else if !resp.ContainsGreaterOrEqual(MinSpecVersion) {
-			m.Log.WithLevel(zerolog.FatalLevel).
-				Stringer("minimum_required_spec", MinSpecVersion).
-				Stringer("latest_supported_spec", resp.GetLatest()).
-				Msg("Homeserver is outdated")
-			os.Exit(14)
-		} else {
-			break
-		}
+	m.EvaluatorByProtectedRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
+	m.EvaluatorByManagementRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator, len(m.Config.Meowlnir.ManagementRooms))
+	for _, roomID := range m.Config.Meowlnir.ManagementRooms {
+		m.EvaluatorByManagementRoom[roomID] = policyeval.NewPolicyEvaluator(m.Client, m.PolicyStore, roomID)
 	}
-	m.ensureBotRegistered(ctx)
 
 	m.Log.Debug().Msg("Preparing crypto helper")
 	m.Crypto, err = cryptohelper.NewCryptoHelper(m.Client, []byte(m.Config.Appservice.PickleKey), mainDB)
 	if err != nil {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to create crypto helper")
-		os.Exit(16)
+		os.Exit(14)
 	}
+	m.EventProcessor = appservice.NewEventProcessor(m.AS)
+	m.AddEventHandlers()
 	m.Crypto.ASEventProcessor = m.EventProcessor
 	m.Crypto.DBAccountID = ""
 	m.Crypto.LoginAs = &mautrix.ReqLogin{
@@ -180,10 +169,37 @@ func (m *Meowlnir) ensureBotRegistered(ctx context.Context) {
 	} else {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to register")
 	}
-	os.Exit(15)
+	os.Exit(21)
 }
 
 func (m *Meowlnir) Run(ctx context.Context) {
+	err := m.StateStore.Upgrade(ctx)
+	if err != nil {
+		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to upgrade state store")
+		os.Exit(20)
+	}
+	for {
+		resp, err := m.Client.Versions(ctx)
+		if err != nil {
+			if errors.Is(err, mautrix.MForbidden) {
+				m.Log.Debug().Msg("M_FORBIDDEN in /versions, trying to register before retrying")
+				m.ensureBotRegistered(ctx)
+			}
+			m.Log.Err(err).Msg("Failed to connect to homeserver, retrying in 10 seconds...")
+			time.Sleep(10 * time.Second)
+		} else if !resp.ContainsGreaterOrEqual(MinSpecVersion) {
+			m.Log.WithLevel(zerolog.FatalLevel).
+				Stringer("minimum_required_spec", MinSpecVersion).
+				Stringer("latest_supported_spec", resp.GetLatest()).
+				Msg("Homeserver is outdated")
+			os.Exit(22)
+		} else {
+			break
+		}
+	}
+	m.ensureBotRegistered(ctx)
+
+	m.EventProcessor.Start(ctx)
 	go m.AS.Start()
 
 	if !m.Config.Appservice.Bot.AvatarURL.IsEmpty() {
@@ -200,14 +216,20 @@ func (m *Meowlnir) Run(ctx context.Context) {
 	}
 
 	m.Log.Info().Msg("Starting crypto")
-	err := m.Crypto.Init(ctx)
+	err = m.Crypto.Init(ctx)
 	if err != nil {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to initialize client")
 		if strings.Contains(err.Error(), "To upload keys, you must pass device_id when authenticating") {
 			m.Log.Info().Msg("Ensure that the msc2409_to_device_messages_enabled, msc3202_device_masquerading and msc3202_transaction_extensions experimental features are enabled")
 		}
-		os.Exit(20)
+		os.Exit(23)
 	}
+	m.ensureCrossSigned(ctx)
+
+	for _, room := range m.EvaluatorByManagementRoom {
+		room.Load(ctx)
+	}
+
 	<-ctx.Done()
 	err = m.DB.Close()
 	if err != nil {

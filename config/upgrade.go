@@ -30,6 +30,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str|up.Null, "appservice", "bot", "displayname")
 	helper.Copy(up.Str|up.Null, "appservice", "bot", "avatar_url")
 	generateOrCopy(helper, "appservice", "pickle_key")
+	helper.Copy(up.Str|up.Null, "appservice", "recovery_key")
 
 	helper.Copy(up.Str, "server", "address")
 	helper.Copy(up.Str, "server", "hostname")
@@ -49,6 +50,8 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str|up.Null, "synapse_db", "max_conn_idle_time")
 	helper.Copy(up.Str|up.Null, "synapse_db", "max_conn_lifetime")
 
+	helper.Copy(up.List, "meowlnir", "management_rooms")
+
 	helper.Copy(up.Map, "logging")
 }
 
@@ -57,5 +60,6 @@ var SpacedBlocks = [][]string{
 	{"server"},
 	{"database"},
 	{"synapse_db"},
+	{"meowlnir"},
 	{"logging"},
 }

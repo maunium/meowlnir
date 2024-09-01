@@ -1,16 +1,16 @@
 module go.mau.fi/meowlnir
 
-go 1.22
+go 1.23
 
 require (
 	github.com/lib/pq v1.10.9
 	github.com/rs/zerolog v1.33.0
-	go.mau.fi/util v0.7.1-0.20240830150939-8c1e9c295943
+	go.mau.fi/util v0.7.1-0.20240901193650-bf007b10eaf6
 	go.mau.fi/zeroconfig v0.1.3
 	golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa
 	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mauflag v1.0.0
-	maunium.net/go/mautrix v0.20.1-0.20240830234128-79391515ed64
+	maunium.net/go/mautrix v0.20.1-0.20240901222022-a0d427e4df09
 )
 
 require (
@@ -26,6 +26,7 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
+	github.com/yuin/goldmark v1.7.4 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/net v0.28.0 // indirect
 	golang.org/x/sys v0.24.0 // indirect

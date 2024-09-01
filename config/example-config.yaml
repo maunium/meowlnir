@@ -23,6 +23,10 @@ appservice:
     # Pickle key used for encrypting encryption keys.
     # If set to generate, a random key will be generated.
     pickle_key: generate
+    # Recovery key for cross-signing verification. Only necessary for first run.
+    # If set to generate, a random key will be generated and printed in logs.
+    # If blank, the device will not be verified automatically.
+    recovery_key:
 
 # Configuration for Meowlnir's HTTP server. This is used for both appservice transactions and external traffic.
 server:
@@ -58,6 +62,12 @@ synapse_db:
     max_idle_conns: 1
     max_conn_idle_time: null
     max_conn_lifetime: null
+
+meowlnir:
+    # Management rooms where the bot will listen for commands and store watched policy lists and protected rooms.
+    # Each management room is effectively a separate instance which can have its own policies and rooms.
+    # Rooms can only be protected by one management room at a time.
+    management_rooms: []
 
 # Logging config. See https://github.com/tulir/zeroconfig for details.
 logging:
