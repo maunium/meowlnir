@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 	"time"
 
@@ -93,29 +92,6 @@ func (m *Meowlnir) HandleCommand(ctx context.Context, evt *event.Event) {
 	case "!join":
 		for _, arg := range args {
 			m.Client.JoinRoomByID(ctx, id.RoomID(arg))
-		}
-	case "!load":
-		for _, arg := range args {
-			start := time.Now()
-			err := room.Subscribe(ctx, id.RoomID(arg))
-			dur := time.Since(start)
-			if err != nil {
-				m.Client.SendNotice(ctx, evt.RoomID, fmt.Sprintf("Failed to load ban list: %v", err))
-			} else {
-				m.Client.SendNotice(ctx, evt.RoomID, "Ban list loaded in "+dur.String())
-			}
-		}
-		runtime.GC()
-	case "!protect":
-		for _, arg := range args {
-			start := time.Now()
-			err := room.Protect(ctx, id.RoomID(arg))
-			dur := time.Since(start)
-			if err != nil {
-				m.Client.SendNotice(ctx, evt.RoomID, fmt.Sprintf("Failed to protect %s: %v", arg, err))
-			} else {
-				m.Client.SendNotice(ctx, evt.RoomID, fmt.Sprintf("Protected %s in %s", arg, dur))
-			}
 		}
 	case "!match":
 		start := time.Now()

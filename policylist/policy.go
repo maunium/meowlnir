@@ -11,12 +11,13 @@ type Policy struct {
 	*event.ModPolicyContent
 	Pattern glob.Glob
 
-	RoomID    id.RoomID
-	StateKey  string
-	Sender    id.UserID
-	Type      event.Type
-	Timestamp int64
-	ID        id.EventID
+	EntityType string
+	RoomID     id.RoomID
+	StateKey   string
+	Sender     id.UserID
+	Type       event.Type
+	Timestamp  int64
+	ID         id.EventID
 }
 
 // Match represent a list of policies that matched a specific entity.

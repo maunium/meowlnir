@@ -36,6 +36,12 @@ func (r *Room) GetServerRules() *List {
 	return r.ServerRules
 }
 
+const (
+	entityTypeUser   = "user"
+	entityTypeRoom   = "room"
+	entityTypeServer = "server"
+)
+
 // Update updates the state of this object with the given policy event.
 //
 // It returns the added and removed/replaced policies, if any.
@@ -45,11 +51,11 @@ func (r *Room) Update(evt *event.Event) (added, removed *Policy) {
 	}
 	switch evt.Type {
 	case event.StatePolicyUser, event.StateLegacyPolicyUser, event.StateUnstablePolicyUser:
-		added, removed = updatePolicyList(evt, r.UserRules)
+		added, removed = updatePolicyList(evt, entityTypeUser, r.UserRules)
 	case event.StatePolicyRoom, event.StateLegacyPolicyRoom, event.StateUnstablePolicyRoom:
-		added, removed = updatePolicyList(evt, r.RoomRules)
+		added, removed = updatePolicyList(evt, entityTypeRoom, r.RoomRules)
 	case event.StatePolicyServer, event.StateLegacyPolicyServer, event.StateUnstablePolicyServer:
-		added, removed = updatePolicyList(evt, r.ServerRules)
+		added, removed = updatePolicyList(evt, entityTypeServer, r.ServerRules)
 	}
 	return
 }
@@ -59,9 +65,9 @@ func (r *Room) ParseState(state map[event.Type]map[string]*event.Event) *Room {
 	mergeUnstableEvents(state[event.StatePolicyUser], state[event.StateLegacyPolicyUser], state[event.StateUnstablePolicyUser])
 	mergeUnstableEvents(state[event.StatePolicyRoom], state[event.StateLegacyPolicyRoom], state[event.StateUnstablePolicyRoom])
 	mergeUnstableEvents(state[event.StatePolicyServer], state[event.StateLegacyPolicyServer], state[event.StateUnstablePolicyServer])
-	massUpdatePolicyList(state[event.StatePolicyUser], r.UserRules)
-	massUpdatePolicyList(state[event.StatePolicyRoom], r.RoomRules)
-	massUpdatePolicyList(state[event.StatePolicyServer], r.ServerRules)
+	massUpdatePolicyList(state[event.StatePolicyUser], entityTypeUser, r.UserRules)
+	massUpdatePolicyList(state[event.StatePolicyRoom], entityTypeRoom, r.RoomRules)
+	massUpdatePolicyList(state[event.StatePolicyServer], entityTypeServer, r.ServerRules)
 	return r
 }
 
@@ -75,13 +81,13 @@ func mergeUnstableEvents(into map[string]*event.Event, sources ...map[string]*ev
 	}
 }
 
-func massUpdatePolicyList(input map[string]*event.Event, rules *List) {
+func massUpdatePolicyList(input map[string]*event.Event, entityType string, rules *List) {
 	for _, evt := range input {
-		updatePolicyList(evt, rules)
+		updatePolicyList(evt, entityType, rules)
 	}
 }
 
-func updatePolicyList(evt *event.Event, rules *List) (added, removed *Policy) {
+func updatePolicyList(evt *event.Event, entityType string, rules *List) (added, removed *Policy) {
 	content, ok := evt.Content.Parsed.(*event.ModPolicyContent)
 	if !ok || evt.StateKey == nil {
 		return
@@ -96,12 +102,13 @@ func updatePolicyList(evt *event.Event, rules *List) (added, removed *Policy) {
 		ModPolicyContent: content,
 		Pattern:          glob.Compile(content.Entity),
 
-		RoomID:    evt.RoomID,
-		StateKey:  *evt.StateKey,
-		Sender:    evt.Sender,
-		Type:      evt.Type,
-		Timestamp: evt.Timestamp,
-		ID:        evt.ID,
+		EntityType: entityType,
+		RoomID:     evt.RoomID,
+		StateKey:   *evt.StateKey,
+		Sender:     evt.Sender,
+		Type:       evt.Type,
+		Timestamp:  evt.Timestamp,
+		ID:         evt.ID,
 	}
 	var wasAdded bool
 	removed, wasAdded = rules.Add(added)

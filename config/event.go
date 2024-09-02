@@ -13,11 +13,12 @@ var (
 )
 
 type WatchedPolicyList struct {
-	Name string `json:"name"`
+	RoomID id.RoomID `json:"room_id"`
+	Name   string    `json:"name"`
 }
 
 type WatchedListsEventContent struct {
-	Lists map[id.RoomID]WatchedPolicyList `json:"lists"`
+	Lists []WatchedPolicyList `json:"lists"`
 }
 
 type ProtectedRoomsEventContent struct {
