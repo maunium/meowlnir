@@ -22,21 +22,19 @@ func NewStore() *Store {
 	}
 }
 
-// MatchUser finds the first matching policy for the given user ID in the given policy rooms.
-// If no matches are found, nil is returned.
-func (s *Store) MatchUser(listIDs []id.RoomID, userID id.UserID) *Policy {
+// MatchUser finds all matching policies for the given user ID in the given policy rooms.
+func (s *Store) MatchUser(listIDs []id.RoomID, userID id.UserID) Match {
 	return s.match(listIDs, string(userID), (*Room).GetUserRules)
 }
 
-// MatchRoom finds the first matching policy for the given room ID in the given policy rooms.
+// MatchRoom finds all matching policies for the given room ID in the given policy rooms.
 // If no matches are found, nil is returned.
-func (s *Store) MatchRoom(listIDs []id.RoomID, roomID id.RoomID) *Policy {
+func (s *Store) MatchRoom(listIDs []id.RoomID, roomID id.RoomID) Match {
 	return s.match(listIDs, string(roomID), (*Room).GetRoomRules)
 }
 
-// MatchServer finds the first matching policy for the given server name in the given policy rooms.
-// If no matches are found, nil is returned.
-func (s *Store) MatchServer(listIDs []id.RoomID, serverName string) *Policy {
+// MatchServer finds all matching policies for the given server name in the given policy rooms.
+func (s *Store) MatchServer(listIDs []id.RoomID, serverName string) Match {
 	return s.match(listIDs, serverName, (*Room).GetServerRules)
 }
 
@@ -84,14 +82,13 @@ func (s *Store) Contains(roomID id.RoomID) bool {
 	return ok
 }
 
-func (s *Store) match(listIDs []id.RoomID, entity string, listGetter func(*Room) *List) *Policy {
+func (s *Store) match(listIDs []id.RoomID, entity string, listGetter func(*Room) *List) (output Match) {
 	if listIDs == nil {
 		s.roomsLock.Lock()
 		listIDs = maps.Keys(s.rooms)
 		s.roomsLock.Unlock()
 	}
-	ruleLists := make([]*List, len(listIDs))
-	for i, roomID := range listIDs {
+	for _, roomID := range listIDs {
 		s.roomsLock.RLock()
 		list, ok := s.rooms[roomID]
 		s.roomsLock.RUnlock()
@@ -99,15 +96,7 @@ func (s *Store) match(listIDs []id.RoomID, entity string, listGetter func(*Room)
 			continue
 		}
 		rules := listGetter(list)
-		if policy := rules.MatchLiteral(entity); policy != nil {
-			return policy
-		}
-		ruleLists[i] = rules
+		output = append(output, rules.Match(entity)...)
 	}
-	for _, rules := range ruleLists {
-		if policy := rules.MatchDynamic(entity); policy != nil {
-			return policy
-		}
-	}
-	return nil
+	return
 }

@@ -5,20 +5,7 @@ import (
 
 	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/id"
 )
-
-// Policy represents a single moderation policy event with the relevant data parsed out.
-type Policy struct {
-	*event.ModPolicyContent
-	Pattern glob.Glob
-
-	StateKey  string
-	Sender    id.UserID
-	Type      event.Type
-	Timestamp int64
-	ID        id.EventID
-}
 
 type dplNode struct {
 	*Policy
@@ -116,36 +103,16 @@ func (l *List) Remove(eventType event.Type, stateKey string) *Policy {
 	return nil
 }
 
-func (l *List) Match(entity string) *Policy {
+func (l *List) Match(entity string) (output Match) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 	if value, ok := l.byEntity[entity]; ok {
-		return value.Policy
+		output = Match{value.Policy}
 	}
-	return l.matchDynamicUnlocked(entity)
-}
-
-func (l *List) MatchLiteral(entity string) *Policy {
-	l.lock.RLock()
-	value, ok := l.byEntity[entity]
-	l.lock.RUnlock()
-	if ok {
-		return value.Policy
-	}
-	return nil
-}
-
-func (l *List) MatchDynamic(entity string) *Policy {
-	l.lock.RLock()
-	defer l.lock.RUnlock()
-	return l.matchDynamicUnlocked(entity)
-}
-
-func (l *List) matchDynamicUnlocked(entity string) *Policy {
 	for item := l.dynamicHead; item != nil; item = item.next {
 		if item.Pattern.Match(entity) {
-			return item.Policy
+			output = append(output, item.Policy)
 		}
 	}
-	return nil
+	return
 }

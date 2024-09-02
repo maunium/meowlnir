@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/config"
@@ -121,7 +122,13 @@ func (m *Meowlnir) HandleCommand(ctx context.Context, evt *event.Event) {
 		match := m.PolicyStore.MatchUser(nil, id.UserID(args[0]))
 		dur := time.Since(start)
 		if match != nil {
-			m.Client.SendNotice(ctx, evt.RoomID, fmt.Sprintf("Matched in %s: %s set recommendation %s for %s at %s: %s", dur, match.Sender, match.Recommendation, match.Entity, time.UnixMilli(match.Timestamp), match.Reason))
+			eventStrings := make([]string, len(match))
+			for i, policy := range match {
+				eventStrings[i] = fmt.Sprintf("* [%s](%s) set recommendation `%s` for `%s` at %s for %s",
+					policy.Sender, policy.Sender.URI().MatrixToURL(), policy.Recommendation, policy.Entity, time.UnixMilli(policy.Timestamp), policy.Reason)
+			}
+			reply := fmt.Sprintf("Matched in %s with recommendations %+v\n\n%s", dur, match.Recommendations(), strings.Join(eventStrings, "\n"))
+			m.Client.SendMessageEvent(ctx, evt.RoomID, event.EventMessage, format.RenderMarkdown(reply, true, false))
 		} else {
 			m.Client.SendNotice(ctx, evt.RoomID, "No match in "+dur.String())
 		}

@@ -229,11 +229,12 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 	}
 	checkRules := pe.updateUser(id.UserID(evt.GetStateKey()), evt.RoomID, evt.Content.AsMember().Membership)
 	if checkRules {
-		policy := pe.Store.MatchUser(*pe.SubscriptionsList.Load(), id.UserID(evt.GetStateKey()))
-		if policy != nil {
+		match := pe.Store.MatchUser(*pe.SubscriptionsList.Load(), id.UserID(evt.GetStateKey()))
+		if match != nil {
 			zerolog.Ctx(ctx).Info().
 				Str("user_id", evt.GetStateKey()).
-				Any("policy", policy).
+				Any("recommendation", match.Recommendations()).
+				Any("matches", match).
 				Msg("Matched user in membership event")
 		}
 	}
