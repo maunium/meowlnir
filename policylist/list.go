@@ -2,9 +2,13 @@ package policylist
 
 import (
 	"sync"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 )
 
 type dplNode struct {
@@ -18,16 +22,18 @@ type dplNode struct {
 // Policies are split into literal rules and dynamic rules. Literal rules are stored in a map for fast matching,
 // while dynamic rules are glob patterns and are evaluated one by one for each query.
 type List struct {
-	byStateKey  map[string]*dplNode
-	byEntity    map[string]*dplNode
-	dynamicHead *dplNode
-	lock        sync.RWMutex
+	matchDuration prometheus.Observer
+	byStateKey    map[string]*dplNode
+	byEntity      map[string]*dplNode
+	dynamicHead   *dplNode
+	lock          sync.RWMutex
 }
 
-func NewList() *List {
+func NewList(roomID id.RoomID, entityType string) *List {
 	return &List{
-		byStateKey: make(map[string]*dplNode),
-		byEntity:   make(map[string]*dplNode),
+		matchDuration: matchDuration.WithLabelValues(roomID.String(), entityType),
+		byStateKey:    make(map[string]*dplNode),
+		byEntity:      make(map[string]*dplNode),
 	}
 }
 
@@ -103,9 +109,21 @@ func (l *List) Remove(eventType event.Type, stateKey string) *Policy {
 	return nil
 }
 
+var matchDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name: "meowlnir_policylist_match_duration_nanoseconds",
+	Help: "Time taken to evaluate an entity against all policies",
+	Buckets: []float64{
+		// 1µs - 100µs
+		1_000, 5_000, 10_000, 25_000, 50_000, 75_000, 100_000,
+		// 250µs - 10ms
+		250_000, 500_000, 750_000, 1_000_000, 5_000_000, 10_000_000,
+	},
+}, []string{"policy_list", "entity_type"})
+
 func (l *List) Match(entity string) (output Match) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
+	start := time.Now()
 	if value, ok := l.byEntity[entity]; ok {
 		output = Match{value.Policy}
 	}
@@ -114,5 +132,6 @@ func (l *List) Match(entity string) (output Match) {
 			output = append(output, item.Policy)
 		}
 	}
+	l.matchDuration.Observe(float64(time.Since(start)))
 	return
 }

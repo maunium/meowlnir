@@ -18,9 +18,9 @@ type Room struct {
 func NewRoom(roomID id.RoomID) *Room {
 	return &Room{
 		RoomID:      roomID,
-		UserRules:   NewList(),
-		RoomRules:   NewList(),
-		ServerRules: NewList(),
+		UserRules:   NewList(roomID, "user"),
+		RoomRules:   NewList(roomID, "room"),
+		ServerRules: NewList(roomID, "server"),
 	}
 }
 
