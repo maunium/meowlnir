@@ -2,6 +2,7 @@ package policyeval
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/rs/zerolog"
@@ -34,7 +35,40 @@ func (pe *PolicyEvaluator) HandleConfigChange(ctx context.Context, evt *event.Ev
 func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 	checkRules := pe.updateUser(id.UserID(evt.GetStateKey()), evt.RoomID, evt.Content.AsMember().Membership)
 	if checkRules {
-		pe.EvaluateNewMember(ctx, id.UserID(evt.GetStateKey()))
+		pe.EvaluateUser(ctx, id.UserID(evt.GetStateKey()))
+	}
+}
+
+func addActionString(rec event.PolicyRecommendation) string {
+	switch rec {
+	case event.PolicyRecommendationBan:
+		return "banned"
+	case event.PolicyRecommendationUnban:
+		return "added a ban exclusion for"
+	default:
+		return fmt.Sprintf("added a `%s` rule for", rec)
+	}
+}
+
+func changeActionString(rec event.PolicyRecommendation) string {
+	switch rec {
+	case event.PolicyRecommendationBan:
+		return "ban"
+	case event.PolicyRecommendationUnban:
+		return "ban exclusion"
+	default:
+		return fmt.Sprintf("`%s`", rec)
+	}
+}
+
+func removeActionString(rec event.PolicyRecommendation) string {
+	switch rec {
+	case event.PolicyRecommendationBan:
+		return "unbanned"
+	case event.PolicyRecommendationUnban:
+		return "removed a ban exclusion for"
+	default:
+		return fmt.Sprintf("removed a `%s` rule for", rec)
 	}
 }
 
@@ -47,27 +81,28 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 		Any("added", added).
 		Any("removed", removed).
 		Msg("Policy list change")
-	if removed != nil && added != nil && removed.Entity == added.Entity {
-		// probably just a reason change (unless recommendation changed too)
-	}
-	if removed != nil && (added == nil || removed.Entity != added.Entity) {
-		pe.EvaluateRemovedRule(ctx, removed)
-		// TODO include entity type in message
+	removedAndAddedAreEquivalent := removed != nil && added != nil && removed.Entity == added.Entity && removed.Recommendation == added.Recommendation
+	if removedAndAddedAreEquivalent {
 		pe.sendNotice(ctx,
-			"[%s](%s) (%s): [%s](%s) removed `%s`/`%s` rule matching `%s` for %s",
-			policyRoomMeta.Name, policyRoom.URI().MatrixToURL(), policyRoomMeta.Name,
-			removed.Sender, removed.Sender.URI().MatrixToURL(),
-			removed.EntityType, removed.Recommendation, removed.Entity, removed.Reason,
-		)
-	}
-	if added != nil && (removed == nil || removed.Entity != added.Entity) {
-		pe.EvaluateAddedRule(ctx, added)
-		// TODO include entity type in message
-		pe.sendNotice(ctx,
-			"[%s](%s) (%s): [%s](%s) added `%s`/`%s` rule matching `%s` for %s",
-			policyRoomMeta.Name, policyRoom.URI().MatrixToURL(), policyRoomMeta.Name,
-			added.Sender, added.Sender.URI().MatrixToURL(),
-			added.EntityType, added.Recommendation, added.Entity, added.Reason,
-		)
+			"[%s] [%s](%s) changed the %s reason for `%s` from `%s` to `%s`",
+			policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
+			changeActionString(added.Recommendation), added.Entity, removed.Reason, added.Reason)
+	} else {
+		if removed != nil {
+			pe.sendNotice(ctx,
+				"[%s] [%s](%s) %s %ss matching `%s` for %s",
+				policyRoomMeta.Name, removed.Sender, removed.Sender.URI().MatrixToURL(),
+				removeActionString(removed.Recommendation), removed.EntityType, removed.Entity, removed.Reason,
+			)
+			pe.EvaluateRemovedRule(ctx, removed)
+		}
+		if added != nil {
+			pe.sendNotice(ctx,
+				"[%s] [%s](%s) %s %ss matching `%s` for %s",
+				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
+				addActionString(added.Recommendation), added.EntityType, added.Entity, added.Reason,
+			)
+			pe.EvaluateAddedRule(ctx, added)
+		}
 	}
 }

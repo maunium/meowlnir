@@ -3,13 +3,22 @@ package policyeval
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
+	"sync"
 
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/config"
 )
+
+func (pe *PolicyEvaluator) GetProtectedRooms() []id.RoomID {
+	pe.usersLock.RLock()
+	rooms := slices.Collect(maps.Keys(pe.protectedRooms))
+	pe.usersLock.RUnlock()
+	return rooms
+}
 
 func (pe *PolicyEvaluator) IsProtectedRoom(roomID id.RoomID) bool {
 	pe.usersLock.RLock()
@@ -23,23 +32,34 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 	if !ok {
 		return []string{"* Failed to parse protected rooms event"}
 	}
+	var outLock sync.Mutex
+	reevalMembers := make(map[id.UserID]struct{})
+	var wg sync.WaitGroup
 	for _, roomID := range content.Rooms {
 		if pe.IsProtectedRoom(roomID) {
 			continue
 		}
-		members, err := pe.Client.Members(ctx, roomID)
-		if err != nil {
-			out = append(out, fmt.Sprintf("* Failed to get room members for [%s](%s): %v", roomID, roomID.URI().MatrixToURL(), err))
-			continue
-		}
-		pe.markAsProtectedRoom(roomID, members.Chunk)
-		if !isInitial {
-			memberUserIDs := make([]id.UserID, len(members.Chunk))
-			for i, member := range members.Chunk {
-				memberUserIDs[i] = id.UserID(member.GetStateKey())
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			members, err := pe.Client.Members(ctx, roomID)
+			outLock.Lock()
+			defer outLock.Unlock()
+			if err != nil {
+				out = append(out, fmt.Sprintf("* Failed to get room members for [%s](%s): %v", roomID, roomID.URI().MatrixToURL(), err))
+				return
 			}
-			pe.EvaluateAllMembers(ctx, memberUserIDs)
-		}
+			pe.markAsProtectedRoom(roomID, members.Chunk)
+			if !isInitial {
+				for _, member := range members.Chunk {
+					reevalMembers[id.UserID(member.GetStateKey())] = struct{}{}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if len(reevalMembers) > 0 {
+		pe.EvaluateAllMembers(ctx, slices.Collect(maps.Keys(reevalMembers)))
 	}
 	return
 }

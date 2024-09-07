@@ -1,9 +1,10 @@
 package policylist
 
 import (
+	"maps"
+	"slices"
 	"sync"
 
-	"golang.org/x/exp/maps"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
@@ -85,7 +86,7 @@ func (s *Store) Contains(roomID id.RoomID) bool {
 func (s *Store) match(listIDs []id.RoomID, entity string, listGetter func(*Room) *List) (output Match) {
 	if listIDs == nil {
 		s.roomsLock.Lock()
-		listIDs = maps.Keys(s.rooms)
+		listIDs = slices.Collect(maps.Keys(s.rooms))
 		s.roomsLock.Unlock()
 	}
 	for _, roomID := range listIDs {

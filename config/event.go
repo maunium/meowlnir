@@ -13,8 +13,9 @@ var (
 )
 
 type WatchedPolicyList struct {
-	RoomID id.RoomID `json:"room_id"`
-	Name   string    `json:"name"`
+	RoomID    id.RoomID `json:"room_id"`
+	Name      string    `json:"name"`
+	AutoUnban bool      `json:"auto_unban"`
 }
 
 type WatchedListsEventContent struct {

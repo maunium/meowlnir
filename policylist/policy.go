@@ -24,21 +24,16 @@ type Policy struct {
 type Match []*Policy
 
 type Recommendations struct {
-	Ban   bool
-	Unban bool
+	BanOrUnban *Policy
 }
 
 // Recommendations aggregates the recommendations in the match.
 func (m Match) Recommendations() (output Recommendations) {
 	for _, policy := range m {
 		switch policy.Recommendation {
-		case event.PolicyRecommendationBan:
-			if !output.Unban {
-				output.Ban = true
-			}
-		case event.PolicyRecommendationUnban:
-			if !output.Ban {
-				output.Unban = true
+		case event.PolicyRecommendationBan, event.PolicyRecommendationUnban:
+			if output.BanOrUnban == nil {
+				output.BanOrUnban = policy
 			}
 		}
 	}

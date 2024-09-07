@@ -15,12 +15,17 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/config"
+	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
+	"go.mau.fi/meowlnir/synapsedb"
 )
 
 type PolicyEvaluator struct {
-	Client *mautrix.Client
-	Store  *policylist.Store
+	Client    *mautrix.Client
+	Store     *policylist.Store
+	SynapseDB *synapsedb.SynapseDB
+	DB        *database.Database
+	DryRun    bool
 
 	ManagementRoom id.RoomID
 	Admins         *exsync.Set[id.UserID]
@@ -36,8 +41,10 @@ type PolicyEvaluator struct {
 	usersLock      sync.RWMutex
 }
 
-func NewPolicyEvaluator(client *mautrix.Client, store *policylist.Store, managementRoom id.RoomID) *PolicyEvaluator {
+func NewPolicyEvaluator(client *mautrix.Client, store *policylist.Store, managementRoom id.RoomID, db *database.Database, synapseDB *synapsedb.SynapseDB) *PolicyEvaluator {
 	pe := &PolicyEvaluator{
+		DB:              db,
+		SynapseDB:       synapseDB,
 		Client:          client,
 		Store:           store,
 		ManagementRoom:  managementRoom,

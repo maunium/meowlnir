@@ -128,7 +128,7 @@ func (m *Meowlnir) Init(ctx context.Context, configPath string, noSaveConfig boo
 	m.EvaluatorByProtectedRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
 	m.EvaluatorByManagementRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator, len(m.Config.Meowlnir.ManagementRooms))
 	for _, roomID := range m.Config.Meowlnir.ManagementRooms {
-		m.EvaluatorByManagementRoom[roomID] = policyeval.NewPolicyEvaluator(m.Client, m.PolicyStore, roomID)
+		m.EvaluatorByManagementRoom[roomID] = policyeval.NewPolicyEvaluator(m.Client, m.PolicyStore, roomID, m.DB, m.SynapseDB)
 	}
 
 	m.Log.Debug().Msg("Preparing crypto helper")
@@ -173,7 +173,12 @@ func (m *Meowlnir) ensureBotRegistered(ctx context.Context) {
 }
 
 func (m *Meowlnir) Run(ctx context.Context) {
-	err := m.StateStore.Upgrade(ctx)
+	err := m.DB.Upgrade(ctx)
+	if err != nil {
+		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to upgrade main db")
+		os.Exit(20)
+	}
+	err = m.StateStore.Upgrade(ctx)
 	if err != nil {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to upgrade state store")
 		os.Exit(20)
