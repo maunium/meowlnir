@@ -92,7 +92,7 @@ func updatePolicyList(evt *event.Event, entityType string, rules *List) (added, 
 	if !ok || evt.StateKey == nil {
 		return
 	} else if content.Entity == "" || content.Recommendation == "" {
-		rules.Remove(evt.Type, *evt.StateKey)
+		removed = rules.Remove(evt.Type, *evt.StateKey)
 		return
 	}
 	if content.Recommendation == event.PolicyRecommendationUnstableBan {
