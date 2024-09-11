@@ -32,10 +32,10 @@ func (pe *PolicyEvaluator) GetWatchedLists() []id.RoomID {
 	return pe.watchedListsList
 }
 
-func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Event, isInitial bool) (out []string) {
+func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Event, isInitial bool) (output, errors []string) {
 	content, ok := evt.Content.Parsed.(*config.WatchedListsEventContent)
 	if !ok {
-		return []string{"* Failed to parse watched lists event"}
+		return nil, []string{"* Failed to parse watched lists event"}
 	}
 	watchedList := make([]id.RoomID, 0, len(content.Lists))
 	watchedMap := make(map[id.RoomID]*config.WatchedPolicyList, len(content.Lists))
@@ -44,7 +44,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	for _, listInfo := range content.Lists {
 		if _, alreadyWatched := watchedMap[listInfo.RoomID]; alreadyWatched {
 			outLock.Lock()
-			out = append(out, fmt.Sprintf("* Duplicate watched list [%s](%s)", listInfo.Name, listInfo.RoomID.URI().MatrixToURL()))
+			errors = append(errors, fmt.Sprintf("* Duplicate watched list [%s](%s)", listInfo.Name, listInfo.RoomID.URI().MatrixToURL()))
 			outLock.Unlock()
 			continue
 		}
@@ -52,10 +52,10 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 		go func() {
 			defer wg.Done()
 			if !pe.Store.Contains(listInfo.RoomID) {
-				state, err := pe.Client.State(ctx, listInfo.RoomID)
+				state, err := pe.Bot.State(ctx, listInfo.RoomID)
 				if err != nil {
 					outLock.Lock()
-					out = append(out, fmt.Sprintf("* Failed to get room state for [%s](%s): %v", listInfo.Name, listInfo.RoomID.URI().MatrixToURL(), err))
+					errors = append(errors, fmt.Sprintf("* Failed to get room state for [%s](%s): %v", listInfo.Name, listInfo.RoomID.URI().MatrixToURL(), err))
 					outLock.Unlock()
 					return
 				}
@@ -75,6 +75,12 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	pe.watchedListsLock.Unlock()
 	if !isInitial {
 		unsubscribed, subscribed := exslices.Diff(oldWatchedList, watchedList)
+		for _, roomID := range subscribed {
+			output = append(output, fmt.Sprintf("* Subscribed to %s [%s](%s)", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
+		}
+		for _, roomID := range unsubscribed {
+			output = append(output, fmt.Sprintf("* Unsubscribed from [%s](%s)", roomID, roomID.URI().MatrixToURL()))
+		}
 		go func(ctx context.Context) {
 			if len(unsubscribed) > 0 {
 				pe.ReevaluateAffectedByLists(ctx, unsubscribed)

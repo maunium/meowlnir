@@ -1,4 +1,18 @@
 -- v0 -> v1 (compatible with v1+): Latest schema
+CREATE TABLE bot (
+    username     TEXT PRIMARY KEY NOT NULL,
+    displayname  TEXT NOT NULL,
+    avatar_url   TEXT NOT NULL
+);
+
+CREATE TABLE management_room (
+    room_id      TEXT PRIMARY KEY NOT NULL,
+    bot_username TEXT NOT NULL,
+
+    CONSTRAINT management_room_bot_fkey FOREIGN KEY (bot_username) REFERENCES bot (username)
+        ON UPDATE CASCADE ON DELETE CASCADE
+);
+
 CREATE TABLE taken_action (
     target_user TEXT   NOT NULL,
     in_room_id  TEXT   NOT NULL,

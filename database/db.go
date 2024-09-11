@@ -8,7 +8,9 @@ import (
 
 type Database struct {
 	*dbutil.Database
-	TakenAction *TakenActionQuery
+	TakenAction    *TakenActionQuery
+	Bot            *BotQuery
+	ManagementRoom *ManagementRoomQuery
 }
 
 func New(db *dbutil.Database) *Database {
@@ -19,6 +21,14 @@ func New(db *dbutil.Database) *Database {
 			QueryHelper: dbutil.MakeQueryHelper(db, func(qh *dbutil.QueryHelper[*TakenAction]) *TakenAction {
 				return &TakenAction{}
 			}),
+		},
+		Bot: &BotQuery{
+			QueryHelper: dbutil.MakeQueryHelper(db, func(qh *dbutil.QueryHelper[*Bot]) *Bot {
+				return &Bot{}
+			}),
+		},
+		ManagementRoom: &ManagementRoomQuery{
+			Database: db,
 		},
 	}
 }

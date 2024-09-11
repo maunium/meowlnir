@@ -18,14 +18,14 @@ import (
 )
 
 func (pe *PolicyEvaluator) getRoomsUserIsIn(userID id.UserID) []id.RoomID {
-	pe.usersLock.RLock()
-	rooms := slices.Clone(pe.users[userID])
-	pe.usersLock.RUnlock()
+	pe.protectedRoomsLock.RLock()
+	rooms := slices.Clone(pe.protectedRoomMembers[userID])
+	pe.protectedRoomsLock.RUnlock()
 	return rooms
 }
 
 func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, policy policylist.Match) {
-	if userID == pe.Client.UserID {
+	if userID == pe.Bot.UserID {
 		return
 	}
 	recs := policy.Recommendations()
@@ -34,6 +34,9 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 		if recs.BanOrUnban.Recommendation == event.PolicyRecommendationBan {
 			for _, room := range rooms {
 				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
+			}
+			if recs.BanOrUnban.Reason == "spam" {
+				go pe.RedactUser(context.WithoutCancel(ctx), userID, recs.BanOrUnban.Reason, true)
 			}
 		} else {
 			// TODO unban if banned in some rooms? or just require doing that manually
@@ -59,7 +62,7 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 	}
 	var err error
 	if !pe.DryRun {
-		_, err = pe.Client.BanUser(ctx, roomID, &mautrix.ReqBanUser{
+		_, err = pe.Bot.BanUser(ctx, roomID, &mautrix.ReqBanUser{
 			Reason: policy.Reason,
 			UserID: userID,
 		})
@@ -81,9 +84,6 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 		zerolog.Ctx(ctx).Info().Any("taken_action", ta).Msg("Took action")
 		pe.sendNotice(ctx, "Banned [%s](%s) in [%s](%s) for %s", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason)
 	}
-	if policy.Reason == "spam" {
-		go pe.RedactUser(context.WithoutCancel(ctx), userID, policy.Reason)
-	}
 }
 
 func pluralize(value int, unit string) string {
@@ -93,8 +93,8 @@ func pluralize(value int, unit string) string {
 	return fmt.Sprintf("%d %ss", value, unit)
 }
 
-func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, reason string) {
-	events, err := pe.SynapseDB.GetEventsToRedact(ctx, userID, pe.GetProtectedRooms())
+func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, reason string, allowReredact bool) {
+	events, maxTS, err := pe.SynapseDB.GetEventsToRedact(ctx, userID, pe.GetProtectedRooms())
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).
 			Stringer("user_id", userID).
@@ -106,6 +106,7 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 	} else if len(events) == 0 {
 		return
 	}
+	needsReredact := allowReredact && time.Since(maxTS) < 5*time.Minute
 	var errorMessages []string
 	var redactedCount int
 	for roomID, roomEvents := range events {
@@ -124,6 +125,10 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 		output += "\n\n" + strings.Join(errorMessages, "\n")
 	}
 	pe.sendNotice(ctx, output)
+	if needsReredact {
+		time.Sleep(15 * time.Second)
+		pe.RedactUser(ctx, userID, reason, false)
+	}
 }
 
 func (pe *PolicyEvaluator) redactEventsInRoom(ctx context.Context, userID id.UserID, roomID id.RoomID, events []id.EventID, reason string) (successCount, failedCount int) {
@@ -131,7 +136,7 @@ func (pe *PolicyEvaluator) redactEventsInRoom(ctx context.Context, userID id.Use
 		var resp *mautrix.RespSendEvent
 		var err error
 		if !pe.DryRun {
-			resp, err = pe.Client.RedactEvent(ctx, roomID, evtID, mautrix.ReqRedact{Reason: reason})
+			resp, err = pe.Bot.RedactEvent(ctx, roomID, evtID, mautrix.ReqRedact{Reason: reason})
 		} else {
 			resp = &mautrix.RespSendEvent{EventID: "$fake-redaction-id"}
 		}

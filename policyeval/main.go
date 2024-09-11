@@ -9,11 +9,10 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exsync"
-	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
+	"go.mau.fi/meowlnir/bot"
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
@@ -21,7 +20,7 @@ import (
 )
 
 type PolicyEvaluator struct {
-	Client    *mautrix.Client
+	Bot       *bot.Bot
 	Store     *policylist.Store
 	SynapseDB *synapsedb.SynapseDB
 	DB        *database.Database
@@ -36,44 +35,46 @@ type PolicyEvaluator struct {
 
 	configLock sync.Mutex
 
-	protectedRooms map[id.RoomID]struct{}
-	users          map[id.UserID][]id.RoomID
-	usersLock      sync.RWMutex
+	claimProtected       func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator
+	protectedRooms       map[id.RoomID]struct{}
+	wantToProtect        map[id.RoomID]struct{}
+	protectedRoomMembers map[id.UserID][]id.RoomID
+	protectedRoomsLock   sync.RWMutex
 }
 
-func NewPolicyEvaluator(client *mautrix.Client, store *policylist.Store, managementRoom id.RoomID, db *database.Database, synapseDB *synapsedb.SynapseDB) *PolicyEvaluator {
+func NewPolicyEvaluator(
+	bot *bot.Bot,
+	store *policylist.Store,
+	managementRoom id.RoomID,
+	db *database.Database,
+	synapseDB *synapsedb.SynapseDB,
+	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
+) *PolicyEvaluator {
 	pe := &PolicyEvaluator{
-		DB:              db,
-		SynapseDB:       synapseDB,
-		Client:          client,
-		Store:           store,
-		ManagementRoom:  managementRoom,
-		Admins:          exsync.NewSet[id.UserID](),
-		users:           make(map[id.UserID][]id.RoomID),
-		watchedListsMap: make(map[id.RoomID]*config.WatchedPolicyList),
-		protectedRooms:  make(map[id.RoomID]struct{}),
+		Bot:                  bot,
+		DB:                   db,
+		SynapseDB:            synapseDB,
+		Store:                store,
+		ManagementRoom:       managementRoom,
+		Admins:               exsync.NewSet[id.UserID](),
+		protectedRoomMembers: make(map[id.UserID][]id.RoomID),
+		watchedListsMap:      make(map[id.RoomID]*config.WatchedPolicyList),
+		protectedRooms:       make(map[id.RoomID]struct{}),
+		wantToProtect:        make(map[id.RoomID]struct{}),
+		claimProtected:       claimProtected,
 	}
 	return pe
 }
 
 func (pe *PolicyEvaluator) sendNotice(ctx context.Context, message string, args ...any) {
-	if len(args) > 0 {
-		message = fmt.Sprintf(message, args...)
-	}
-	content := format.RenderMarkdown(message, true, false)
-	content.MsgType = event.MsgNotice
-	_, err := pe.Client.SendMessageEvent(ctx, pe.ManagementRoom, event.EventMessage, &content)
-	if err != nil {
-		zerolog.Ctx(ctx).Err(err).
-			Msg("Failed to send management room message")
-	}
+	pe.Bot.SendNotice(ctx, pe.ManagementRoom, message, args...)
 }
 
 func (pe *PolicyEvaluator) Load(ctx context.Context) {
 	err := pe.tryLoad(ctx)
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Msg("Failed to load initial state")
-		// TODO send notice to room
+		pe.sendNotice(ctx, "Failed to load initial state: %v", err)
 	} else {
 		zerolog.Ctx(ctx).Info().Msg("Loaded initial state")
 	}
@@ -84,7 +85,7 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 	pe.configLock.Lock()
 	defer pe.configLock.Unlock()
 	start := time.Now()
-	state, err := pe.Client.State(ctx, pe.ManagementRoom)
+	state, err := pe.Bot.State(ctx, pe.ManagementRoom)
 	if err != nil {
 		return fmt.Errorf("failed to get management room state: %w", err)
 	}
@@ -97,23 +98,23 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 	if evt, ok := state[config.StateWatchedLists][""]; !ok {
 		zerolog.Ctx(ctx).Info().Msg("No watched lists event found in management room")
 	} else {
-		errorMsgs := pe.handleWatchedLists(ctx, evt, true)
+		_, errorMsgs := pe.handleWatchedLists(ctx, evt, true)
 		errors = append(errors, errorMsgs...)
 	}
 	if evt, ok := state[config.StateProtectedRooms][""]; !ok {
 		zerolog.Ctx(ctx).Info().Msg("No protected rooms event found in management room")
 	} else {
-		errorMsgs := pe.handleProtectedRooms(ctx, evt, true)
+		_, errorMsgs := pe.handleProtectedRooms(ctx, evt, true)
 		errors = append(errors, errorMsgs...)
 	}
 	initDuration := time.Since(start)
 	start = time.Now()
 	pe.EvaluateAll(ctx)
 	evalDuration := time.Since(start)
-	pe.usersLock.Lock()
-	userCount := len(pe.users)
+	pe.protectedRoomsLock.Lock()
+	userCount := len(pe.protectedRoomMembers)
 	protectedRoomsCount := len(pe.protectedRooms)
-	pe.usersLock.Unlock()
+	pe.protectedRoomsLock.Unlock()
 	if len(errors) > 0 {
 		pe.sendNotice(ctx,
 			"Errors occurred during initialization:\n\n%s\n\nProtecting %d rooms with %d users using %d lists.",

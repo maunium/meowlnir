@@ -14,9 +14,9 @@ import (
 )
 
 func (pe *PolicyEvaluator) EvaluateAll(ctx context.Context) {
-	pe.usersLock.RLock()
-	users := slices.Collect(maps.Keys(pe.users))
-	pe.usersLock.RUnlock()
+	pe.protectedRoomsLock.RLock()
+	users := slices.Collect(maps.Keys(pe.protectedRoomMembers))
+	pe.protectedRoomsLock.RUnlock()
 	pe.EvaluateAllMembers(ctx, users)
 }
 
@@ -42,9 +42,9 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 	if policy.Recommendation == event.PolicyRecommendationUnban {
 		// When an unban rule is removed, evaluate all joined users against the removed rule
 		// to see if they should be re-evaluated against all rules (and possibly banned)
-		pe.usersLock.RLock()
-		users := slices.Collect(maps.Keys(pe.users))
-		pe.usersLock.RUnlock()
+		pe.protectedRoomsLock.RLock()
+		users := slices.Collect(maps.Keys(pe.protectedRoomMembers))
+		pe.protectedRoomsLock.RUnlock()
 		for _, userID := range users {
 			if policy.Pattern.Match(string(userID)) {
 				pe.EvaluateUser(ctx, userID)
@@ -64,9 +64,9 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 }
 
 func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policylist.Policy) {
-	pe.usersLock.RLock()
-	users := slices.Collect(maps.Keys(pe.users))
-	pe.usersLock.RUnlock()
+	pe.protectedRoomsLock.RLock()
+	users := slices.Collect(maps.Keys(pe.protectedRoomMembers))
+	pe.protectedRoomsLock.RUnlock()
 	for _, userID := range users {
 		if policy.Pattern.Match(string(userID)) {
 			pe.ApplyPolicy(ctx, userID, policylist.Match{policy})

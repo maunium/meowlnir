@@ -16,26 +16,59 @@ import (
 func (pe *PolicyEvaluator) HandleConfigChange(ctx context.Context, evt *event.Event) {
 	pe.configLock.Lock()
 	defer pe.configLock.Unlock()
-	var errorMsg string
+	var errorMsg, successMsg string
 	switch evt.Type {
 	case event.StatePowerLevels:
 		errorMsg = pe.handlePowerLevels(evt)
 	case config.StateWatchedLists:
-		errorMsgs := pe.handleWatchedLists(ctx, evt, false)
+		successMsgs, errorMsgs := pe.handleWatchedLists(ctx, evt, false)
+		successMsg = strings.Join(successMsgs, "\n")
 		errorMsg = strings.Join(errorMsgs, "\n")
 	case config.StateProtectedRooms:
-		errorMsgs := pe.handleProtectedRooms(ctx, evt, false)
+		successMsgs, errorMsgs := pe.handleProtectedRooms(ctx, evt, false)
+		successMsg = strings.Join(successMsgs, "\n")
 		errorMsg = strings.Join(errorMsgs, "\n")
 	}
-	if errorMsg != "" {
-		pe.sendNotice(ctx, "Errors occurred while handling config change:\n\n%s", errorMsg)
+	var output string
+	if successMsg != "" {
+		if errorMsg != "" {
+			output = fmt.Sprintf("Handled `%s` event with errors:\n\n%s\n%s", evt.Type.Type, successMsg, errorMsg)
+		} else {
+			output = fmt.Sprintf("Successfully handled `%s` event:\n\n%s", evt.Type.Type, successMsg)
+		}
+	} else if errorMsg != "" {
+		output = fmt.Sprintf("Failed to handle `%s` event:\n\n%s", evt.Type.Type, errorMsg)
+	}
+	if output != "" {
+		pe.sendNotice(ctx, output)
 	}
 }
 
 func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
-	checkRules := pe.updateUser(id.UserID(evt.GetStateKey()), evt.RoomID, evt.Content.AsMember().Membership)
-	if checkRules {
-		pe.EvaluateUser(ctx, id.UserID(evt.GetStateKey()))
+	userID := id.UserID(evt.GetStateKey())
+	content := evt.Content.AsMember()
+	if userID == pe.Bot.UserID {
+		pe.protectedRoomsLock.RLock()
+		_, isProtecting := pe.protectedRooms[evt.RoomID]
+		_, wantToProtect := pe.wantToProtect[evt.RoomID]
+		pe.protectedRoomsLock.RUnlock()
+		if isProtecting && (content.Membership == event.MembershipLeave || content.Membership == event.MembershipBan) {
+			pe.sendNotice(ctx, "⚠️ Bot was removed from [%s](%s)", evt.RoomID, evt.RoomID.URI().MatrixToURL())
+		} else if wantToProtect && (content.Membership == event.MembershipJoin || content.Membership == event.MembershipInvite) {
+			_, err := pe.Bot.JoinRoomByID(ctx, evt.RoomID)
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to join room [%s](%s): %v", evt.RoomID, evt.RoomID.URI().MatrixToURL(), err)
+			} else if _, errMsg := pe.tryProtectingRoom(ctx, nil, evt.RoomID, true); errMsg != "" {
+				pe.sendNotice(ctx, "Retried protecting room after joining room, but failed: %s", strings.TrimPrefix(errMsg, "* "))
+			} else {
+				pe.sendNotice(ctx, "Bot was invited to room, now protecting [%s](%s)", evt.RoomID, evt.RoomID.URI().MatrixToURL())
+			}
+		}
+	} else {
+		checkRules := pe.updateUser(userID, evt.RoomID, content.Membership)
+		if checkRules {
+			pe.EvaluateUser(ctx, userID)
+		}
 	}
 }
 
