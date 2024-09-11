@@ -94,6 +94,8 @@ func (m *Meowlnir) HandleCommand(ctx context.Context, evt *event.Event) {
 		for _, arg := range args {
 			m.Client.JoinRoomByID(ctx, id.RoomID(arg))
 		}
+	case "!redact":
+		room.RedactUser(ctx, id.UserID(args[0]), strings.Join(args[1:], " "))
 	case "!match":
 		start := time.Now()
 		match := m.PolicyStore.MatchUser(nil, id.UserID(args[0]))
