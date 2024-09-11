@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -14,11 +15,14 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/hlog"
 	up "go.mau.fi/util/configupgrade"
 	"go.mau.fi/util/dbutil"
 	_ "go.mau.fi/util/dbutil/litestream"
+	"go.mau.fi/util/exhttp"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/ptr"
+	"go.mau.fi/util/requestlog"
 	"gopkg.in/yaml.v3"
 	flag "maunium.net/go/mauflag"
 	"maunium.net/go/mautrix"
@@ -123,6 +127,13 @@ func (m *Meowlnir) Init(ctx context.Context, configPath string, noSaveConfig boo
 	m.AS.StateStore = m.StateStore
 	m.Client = m.AS.BotClient()
 	m.Client.SetAppServiceDeviceID = true
+
+	router := m.AS.Router.PathPrefix("/_matrix/client").Subrouter()
+	router.Use(hlog.NewHandler(m.Log.With().Str("component", "reporting").Logger()))
+	router.Use(exhttp.CORSMiddleware)
+	router.Use(requestlog.AccessLogger(false))
+	router.HandleFunc("/v3/rooms/{roomID}/report/{eventID}", m.sendReport).Methods(http.MethodPost, http.MethodOptions)
+	router.HandleFunc("/v3/rooms/{roomID}", m.sendReport).Methods(http.MethodPost, http.MethodOptions)
 
 	m.PolicyStore = policylist.NewStore()
 	m.EvaluatorByProtectedRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)

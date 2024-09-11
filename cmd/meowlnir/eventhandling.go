@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -109,4 +110,8 @@ func (m *Meowlnir) HandleCommand(ctx context.Context, evt *event.Event) {
 			m.Client.SendNotice(ctx, evt.RoomID, "No match in "+dur.String())
 		}
 	}
+}
+
+func (m *Meowlnir) sendReport(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("{}"))
 }
