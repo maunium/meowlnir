@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/json"
 	"maps"
 	"net/http"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
+	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/id"
 
@@ -84,8 +86,61 @@ func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
 
-func (m *Meowlnir) PutBot(w http.ResponseWriter, r *http.Request) {
+type PutBotRequest struct {
+	Displayname *string        `json:"displayname"`
+	AvatarURL   *id.ContentURI `json:"avatar_url"`
+}
 
+func (m *Meowlnir) PutBot(w http.ResponseWriter, r *http.Request) {
+	var req PutBotRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		mautrix.MBadJSON.WithMessage("Invalid JSON").Write(w)
+		return
+	}
+	username := r.PathValue("username")
+	userID := id.NewUserID(username, m.AS.HomeserverDomain)
+	m.MapLock.Lock()
+	defer m.MapLock.Unlock()
+	bot, ok := m.Bots[userID]
+	if !ok {
+		dbBot := &database.Bot{
+			Username:    username,
+			Displayname: ptr.Val(req.Displayname),
+			AvatarURL:   ptr.Val(req.AvatarURL),
+		}
+		err = m.DB.Bot.Put(r.Context(), dbBot)
+		if err != nil {
+			hlog.FromRequest(r).Err(err).Msg("Failed to save bot to database")
+			mautrix.MUnknown.WithMessage("Failed to save new bot to database").Write(w)
+			return
+		}
+		bot = m.initBot(r.Context(), dbBot)
+	} else {
+		if req.Displayname != nil && bot.Meta.Displayname != *req.Displayname {
+			err = bot.Intent.SetDisplayName(r.Context(), *req.Displayname)
+			if err != nil {
+				bot.Log.Err(err).Msg("Failed to set displayname")
+			} else {
+				bot.Meta.Displayname = *req.Displayname
+			}
+		}
+		if req.AvatarURL != nil && bot.Meta.AvatarURL != *req.AvatarURL {
+			err = bot.Intent.SetAvatarURL(r.Context(), *req.AvatarURL)
+			if err != nil {
+				bot.Log.Err(err).Msg("Failed to set avatar")
+			} else {
+				bot.Meta.AvatarURL = *req.AvatarURL
+			}
+		}
+		err = m.DB.Bot.Put(r.Context(), bot.Meta)
+		if err != nil {
+			bot.Log.Err(err).Msg("Failed to save bot to database")
+			mautrix.MUnknown.WithMessage("Failed to save updated bot to database").Write(w)
+			return
+		}
+	}
+	exhttp.WriteJSONResponse(w, http.StatusOK, bot.Meta)
 }
 
 func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {

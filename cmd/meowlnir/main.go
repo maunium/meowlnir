@@ -164,7 +164,7 @@ func (m *Meowlnir) claimProtectedRoom(roomID id.RoomID, eval *policyeval.PolicyE
 	return eval
 }
 
-func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) {
+func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	intent := m.AS.Intent(id.NewUserID(db.Username, m.AS.HomeserverDomain))
 	wrapped := bot.NewBot(
 		db, intent, m.Log.With().Str("bot", db.Username).Logger(),
@@ -184,6 +184,7 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) {
 			wrapped, m.PolicyStore, roomID, m.DB, m.SynapseDB, m.claimProtectedRoom,
 		)
 	}
+	return wrapped
 }
 
 func (m *Meowlnir) Run(ctx context.Context) {
