@@ -62,6 +62,8 @@ func NewPolicyEvaluator(
 		protectedRooms:       make(map[id.RoomID]struct{}),
 		wantToProtect:        make(map[id.RoomID]struct{}),
 		claimProtected:       claimProtected,
+
+		DryRun: true,
 	}
 	return pe
 }

@@ -20,6 +20,8 @@ type AppserviceConfig struct {
 	ASToken   string `yaml:"as_token"`
 	HSToken   string `yaml:"hs_token"`
 	PickleKey string `yaml:"pickle_key"`
+
+	ManagementSecret string `yaml:"management_secret"`
 }
 
 type ServerConfig struct {

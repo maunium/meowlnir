@@ -33,9 +33,9 @@ func (bq *BotQuery) GetAll(ctx context.Context) ([]*Bot, error) {
 }
 
 type Bot struct {
-	Username    string
-	Displayname string
-	AvatarURL   id.ContentURI
+	Username    string        `json:"username"`
+	Displayname string        `json:"displayname"`
+	AvatarURL   id.ContentURI `json:"avatar_url"`
 }
 
 func (b *Bot) sqlVariables() []any {

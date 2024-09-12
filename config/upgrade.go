@@ -27,6 +27,7 @@ func upgradeConfig(helper up.Helper) {
 	generateOrCopy(helper, "appservice", "as_token")
 	generateOrCopy(helper, "appservice", "hs_token")
 	generateOrCopy(helper, "appservice", "pickle_key")
+	generateOrCopy(helper, "appservice", "management_secret")
 
 	helper.Copy(up.Str, "server", "address")
 	helper.Copy(up.Str, "server", "hostname")

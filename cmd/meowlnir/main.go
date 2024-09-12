@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -46,6 +49,8 @@ type Meowlnir struct {
 	AS             *appservice.AppService
 	EventProcessor *appservice.EventProcessor
 
+	ManagementSecret [32]byte
+
 	PolicyStore               *policylist.Store
 	MapLock                   sync.RWMutex
 	Bots                      map[id.UserID]*bot.Bot
@@ -56,6 +61,21 @@ type Meowlnir struct {
 func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	var err error
 	m.Config = loadConfig(configPath, noSaveConfig)
+	if strings.HasPrefix(m.Config.Appservice.ManagementSecret, "sha256:") {
+		var decoded []byte
+		decoded, err = hex.DecodeString(strings.TrimPrefix(m.Config.Appservice.ManagementSecret, "sha256:"))
+		if err != nil {
+			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to decode management secret hash")
+			os.Exit(10)
+		} else if len(decoded) != 32 {
+			m.Log.WithLevel(zerolog.FatalLevel).Msg("Management secret hash is not 32 bytes long")
+			os.Exit(10)
+		}
+		m.ManagementSecret = [32]byte(decoded)
+	} else {
+		m.ManagementSecret = sha256.Sum256([]byte(m.Config.Appservice.ManagementSecret))
+	}
+
 	m.Log, err = m.Config.Logging.Compile()
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "Failed to configure logger:", err)
@@ -151,6 +171,7 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) {
 		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Appservice.PickleKey,
 	)
 	wrapped.Init(ctx)
+	wrapped.CryptoHelper.CustomPostDecrypt = m.HandleMessage
 	m.Bots[wrapped.Client.UserID] = wrapped
 
 	managementRooms, err := m.DB.ManagementRoom.GetAll(ctx, db.Username)

@@ -15,6 +15,9 @@ appservice:
     # Pickle key used for encrypting encryption keys.
     # If set to generate, a random key will be generated.
     pickle_key: generate
+    # Management secret used for the management API. If set to generate, a random secret will be generated.
+    # If prefixed with sha256:, the rest of the string will be hex-decoded and used as the hash of the secret.
+    management_secret: generate
 
 # Configuration for Meowlnir's HTTP server. This is used for both appservice transactions and external traffic.
 server:

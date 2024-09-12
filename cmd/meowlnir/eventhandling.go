@@ -44,6 +44,7 @@ func (m *Meowlnir) AddEventHandlers() {
 	m.EventProcessor.On(event.StateMember, m.HandleMember)
 	m.EventProcessor.On(event.EventMessage, m.HandleMessage)
 	m.EventProcessor.On(event.EventSticker, m.HandleMessage)
+	m.EventProcessor.On(event.EventEncrypted, m.HandleEncrypted)
 }
 
 func (m *Meowlnir) HandleToDeviceEvent(ctx context.Context, evt *event.Event) {
@@ -117,15 +118,35 @@ func (m *Meowlnir) HandleMember(ctx context.Context, evt *event.Event) {
 	}
 }
 
+func (m *Meowlnir) HandleEncrypted(ctx context.Context, evt *event.Event) {
+	m.MapLock.RLock()
+	_, isBot := m.Bots[evt.Sender]
+	managementRoom, isManagement := m.EvaluatorByManagementRoom[evt.RoomID]
+	//roomProtector, isProtected := m.EvaluatorByProtectedRoom[evt.RoomID]
+	m.MapLock.RUnlock()
+	if isBot {
+		return
+	} else if isManagement {
+		managementRoom.Bot.CryptoHelper.HandleEncrypted(ctx, evt)
+	}
+	//else if isProtected {
+	//	roomProtector.HandleMessage(ctx, evt)
+	//}
+}
+
 func (m *Meowlnir) HandleMessage(ctx context.Context, evt *event.Event) {
 	content, ok := evt.Content.Parsed.(*event.MessageEventContent)
 	if !ok {
 		return
 	}
 	m.MapLock.RLock()
+	_, isBot := m.Bots[evt.Sender]
 	managementRoom, isManagement := m.EvaluatorByManagementRoom[evt.RoomID]
 	//roomProtector, isProtected := m.EvaluatorByProtectedRoom[evt.RoomID]
 	m.MapLock.RUnlock()
+	if isBot {
+		return
+	}
 	if isManagement {
 		if content.MsgType == event.MsgText && managementRoom.Admins.Has(evt.Sender) {
 			managementRoom.HandleCommand(ctx, evt)

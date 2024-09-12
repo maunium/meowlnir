@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
@@ -9,20 +10,35 @@ import (
 )
 
 func (m *Meowlnir) AddHTTPEndpoints() {
-	clientRouter := m.AS.Router.PathPrefix("/_matrix/client").Subrouter()
-	clientRouter.Use(hlog.NewHandler(m.Log.With().Str("component", "reporting api").Logger()))
-	clientRouter.Use(exhttp.CORSMiddleware)
-	clientRouter.Use(requestlog.AccessLogger(false))
-	clientRouter.HandleFunc("/v3/rooms/{roomID}/report/{eventID}", m.PostReport).Methods(http.MethodPost, http.MethodOptions)
-	clientRouter.HandleFunc("/v3/rooms/{roomID}", m.PostReport).Methods(http.MethodPost, http.MethodOptions)
+	clientRouter := http.NewServeMux()
+	clientRouter.HandleFunc("POST /v3/rooms/{roomID}/report/{eventID}", m.PostReport)
+	clientRouter.HandleFunc("POST /v3/rooms/{roomID}", m.PostReport)
+	m.AS.Router.PathPrefix("/_matrix/client").Handler(applyMiddleware(
+		http.StripPrefix("/_matrix/client", clientRouter),
+		hlog.NewHandler(m.Log.With().Str("component", "reporting api").Logger()),
+		exhttp.CORSMiddleware,
+		requestlog.AccessLogger(false),
+	))
 
-	managementRouter := m.AS.Router.PathPrefix("/_matrix/meowlnir").Subrouter()
-	managementRouter.Use(hlog.NewHandler(m.Log.With().Str("component", "management api").Logger()))
-	managementRouter.Use(exhttp.CORSMiddleware)
-	managementRouter.Use(requestlog.AccessLogger(false))
-	managementRouter.HandleFunc("/v1/...", m.PostReport).Methods(http.MethodPost, http.MethodOptions)
+	managementRouter := http.NewServeMux()
+	managementRouter.HandleFunc("GET /v1/bots", m.GetBots)
+	managementRouter.HandleFunc("PUT /v1/bot/{username}", m.PutBot)
+	managementRouter.HandleFunc("POST /v1/bot/{username}/verify", m.PostVerifyBot)
+	managementRouter.HandleFunc("PUT /v1/management_room/{roomID}", m.PutManagementRoom)
+
+	m.AS.Router.PathPrefix("/_matrix/meowlnir").Handler(applyMiddleware(
+		http.StripPrefix("/_matrix/meowlnir", managementRouter),
+		hlog.NewHandler(m.Log.With().Str("component", "management api").Logger()),
+		exhttp.CORSMiddleware,
+		requestlog.AccessLogger(false),
+		m.ManagementAuth,
+	))
 }
 
-func (m *Meowlnir) PostReport(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("{}"))
+func applyMiddleware(router http.Handler, middleware ...func(http.Handler) http.Handler) http.Handler {
+	slices.Reverse(middleware)
+	for _, m := range middleware {
+		router = m(router)
+	}
+	return router
 }
