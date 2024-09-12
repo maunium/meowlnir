@@ -17,6 +17,7 @@ repos:
           - "go.mau.fi/meowlnir"
           - "-w"
       - id: go-vet-repo-mod
+      - id: go-mod-tidy
       - id: go-staticcheck-repo-mod
 
   - repo: https://github.com/beeper/pre-commit-go
@@ -24,3 +25,4 @@ repos:
     hooks:
       - id: zerolog-ban-msgf
       - id: zerolog-use-stringer
+      - id: prevent-literal-http-methods
