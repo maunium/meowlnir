@@ -52,7 +52,10 @@ func (m *Meowlnir) HandleToDeviceEvent(ctx context.Context, evt *event.Event) {
 	bot, ok := m.Bots[evt.ToUserID]
 	m.MapLock.RUnlock()
 	if !ok {
-		zerolog.Ctx(ctx).Warn().Stringer("user_id", evt.ToUserID).Msg("Received to-device event for unknown user")
+		zerolog.Ctx(ctx).Warn().
+			Stringer("user_id", evt.ToUserID).
+			Stringer("device_id", evt.ToDeviceID).
+			Msg("Received to-device event for unknown user")
 	} else {
 		bot.Mach.HandleToDeviceEvent(ctx, evt)
 	}
@@ -63,7 +66,10 @@ func (m *Meowlnir) HandleOTKCounts(ctx context.Context, evt *mautrix.OTKCount) {
 	bot, ok := m.Bots[evt.UserID]
 	m.MapLock.RUnlock()
 	if !ok {
-		zerolog.Ctx(ctx).Warn().Stringer("user_id", evt.UserID).Msg("Received OTK count for unknown user")
+		zerolog.Ctx(ctx).Warn().
+			Stringer("user_id", evt.UserID).
+			Stringer("device_id", evt.DeviceID).
+			Msg("Received OTK count for unknown user")
 	} else {
 		bot.Mach.HandleOTKCounts(ctx, evt)
 	}
