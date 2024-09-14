@@ -117,10 +117,17 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 		Msg("Policy list change")
 	removedAndAddedAreEquivalent := removed != nil && added != nil && removed.Entity == added.Entity && removed.Recommendation == added.Recommendation
 	if removedAndAddedAreEquivalent {
-		pe.sendNotice(ctx,
-			"[%s] [%s](%s) changed the %s reason for `%s` from `%s` to `%s`",
-			policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
-			changeActionString(added.Recommendation), added.Entity, removed.Reason, added.Reason)
+		if removed.Reason == added.Reason {
+			pe.sendNotice(ctx,
+				"[%s] [%s](%s) re-banned `%s` for `%s`",
+				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
+				changeActionString(added.Recommendation), added.Entity, added.Reason)
+		} else {
+			pe.sendNotice(ctx,
+				"[%s] [%s](%s) changed the %s reason for `%s` from `%s` to `%s`",
+				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
+				changeActionString(added.Recommendation), added.Entity, removed.Reason, added.Reason)
+		}
 	} else {
 		if removed != nil {
 			pe.sendNotice(ctx,
