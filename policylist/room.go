@@ -62,23 +62,28 @@ func (r *Room) Update(evt *event.Event) (added, removed *Policy) {
 
 // ParseState updates the state of this object with the given state events.
 func (r *Room) ParseState(state map[event.Type]map[string]*event.Event) *Room {
-	mergeUnstableEvents(state[event.StatePolicyUser], state[event.StateLegacyPolicyUser], state[event.StateUnstablePolicyUser])
-	mergeUnstableEvents(state[event.StatePolicyRoom], state[event.StateLegacyPolicyRoom], state[event.StateUnstablePolicyRoom])
-	mergeUnstableEvents(state[event.StatePolicyServer], state[event.StateLegacyPolicyServer], state[event.StateUnstablePolicyServer])
-	massUpdatePolicyList(state[event.StatePolicyUser], entityTypeUser, r.UserRules)
-	massUpdatePolicyList(state[event.StatePolicyRoom], entityTypeRoom, r.RoomRules)
-	massUpdatePolicyList(state[event.StatePolicyServer], entityTypeServer, r.ServerRules)
+	userPolicies := mergeUnstableEvents(state[event.StatePolicyUser], state[event.StateLegacyPolicyUser], state[event.StateUnstablePolicyUser])
+	roomPolicies := mergeUnstableEvents(state[event.StatePolicyRoom], state[event.StateLegacyPolicyRoom], state[event.StateUnstablePolicyRoom])
+	serverPolicies := mergeUnstableEvents(state[event.StatePolicyServer], state[event.StateLegacyPolicyServer], state[event.StateUnstablePolicyServer])
+	massUpdatePolicyList(userPolicies, entityTypeUser, r.UserRules)
+	massUpdatePolicyList(roomPolicies, entityTypeRoom, r.RoomRules)
+	massUpdatePolicyList(serverPolicies, entityTypeServer, r.ServerRules)
 	return r
 }
 
-func mergeUnstableEvents(into map[string]*event.Event, sources ...map[string]*event.Event) {
+func mergeUnstableEvents(into map[string]*event.Event, sources ...map[string]*event.Event) (output map[string]*event.Event) {
+	output = into
+	if output == nil {
+		output = make(map[string]*event.Event)
+	}
 	for _, source := range sources {
 		for key, evt := range source {
-			if _, ok := into[key]; !ok {
-				into[key] = evt
+			if _, ok := output[key]; !ok {
+				output[key] = evt
 			}
 		}
 	}
+	return output
 }
 
 func massUpdatePolicyList(input map[string]*event.Event, entityType string, rules *List) {
