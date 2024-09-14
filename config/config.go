@@ -15,25 +15,23 @@ type HomeserverConfig struct {
 	Domain  string `yaml:"domain"`
 }
 
-type AppserviceConfig struct {
-	ID        string `yaml:"id"`
-	ASToken   string `yaml:"as_token"`
-	HSToken   string `yaml:"hs_token"`
-	PickleKey string `yaml:"pickle_key"`
+type MeowlnirConfig struct {
+	ID      string `yaml:"id"`
+	ASToken string `yaml:"as_token"`
+	HSToken string `yaml:"hs_token"`
 
-	ManagementSecret string `yaml:"management_secret"`
-}
-
-type ServerConfig struct {
 	Address  string `yaml:"address"`
 	Hostname string `yaml:"hostname"`
 	Port     uint16 `yaml:"port"`
+
+	PickleKey        string `yaml:"pickle_key"`
+	ManagementSecret string `yaml:"management_secret"`
+	DryRun           bool   `yaml:"dry_run"`
 }
 
 type Config struct {
 	Homeserver HomeserverConfig  `yaml:"homeserver"`
-	Appservice AppserviceConfig  `yaml:"appservice"`
-	Server     ServerConfig      `yaml:"server"`
+	Meowlnir   MeowlnirConfig    `yaml:"meowlnir"`
 	Database   dbutil.Config     `yaml:"database"`
 	SynapseDB  dbutil.Config     `yaml:"synapse_db"`
 	Logging    zeroconfig.Config `yaml:"logging"`

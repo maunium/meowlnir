@@ -23,15 +23,15 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "homeserver", "address")
 	helper.Copy(up.Str, "homeserver", "domain")
 
-	helper.Copy(up.Str, "appservice", "id")
-	generateOrCopy(helper, "appservice", "as_token")
-	generateOrCopy(helper, "appservice", "hs_token")
-	generateOrCopy(helper, "appservice", "pickle_key")
-	generateOrCopy(helper, "appservice", "management_secret")
-
-	helper.Copy(up.Str, "server", "address")
-	helper.Copy(up.Str, "server", "hostname")
-	helper.Copy(up.Int, "server", "port")
+	helper.Copy(up.Str, "meowlnir", "id")
+	generateOrCopy(helper, "meowlnir", "as_token")
+	generateOrCopy(helper, "meowlnir", "hs_token")
+	helper.Copy(up.Str, "meowlnir", "address")
+	helper.Copy(up.Str, "meowlnir", "hostname")
+	helper.Copy(up.Int, "meowlnir", "port")
+	generateOrCopy(helper, "meowlnir", "pickle_key")
+	generateOrCopy(helper, "meowlnir", "management_secret")
+	helper.Copy(up.Bool, "meowlnir", "dry_run")
 
 	helper.Copy(up.Str, "database", "type")
 	helper.Copy(up.Str, "database", "uri")
@@ -51,8 +51,9 @@ func upgradeConfig(helper up.Helper) {
 }
 
 var SpacedBlocks = [][]string{
-	{"appservice"},
-	{"server"},
+	{"meowlnir"},
+	{"meowlnir", "address"},
+	{"meowlnir", "pickle_key"},
 	{"database"},
 	{"synapse_db"},
 	{"logging"},

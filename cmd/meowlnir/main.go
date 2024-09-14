@@ -61,9 +61,9 @@ type Meowlnir struct {
 func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	var err error
 	m.Config = loadConfig(configPath, noSaveConfig)
-	if strings.HasPrefix(m.Config.Appservice.ManagementSecret, "sha256:") {
+	if strings.HasPrefix(m.Config.Meowlnir.ManagementSecret, "sha256:") {
 		var decoded []byte
-		decoded, err = hex.DecodeString(strings.TrimPrefix(m.Config.Appservice.ManagementSecret, "sha256:"))
+		decoded, err = hex.DecodeString(strings.TrimPrefix(m.Config.Meowlnir.ManagementSecret, "sha256:"))
 		if err != nil {
 			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to decode management secret hash")
 			os.Exit(10)
@@ -73,7 +73,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		}
 		m.ManagementSecret = [32]byte(decoded)
 	} else {
-		m.ManagementSecret = sha256.Sum256([]byte(m.Config.Appservice.ManagementSecret))
+		m.ManagementSecret = sha256.Sum256([]byte(m.Config.Meowlnir.ManagementSecret))
 	}
 
 	m.Log, err = m.Config.Logging.Compile()
@@ -108,10 +108,10 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	m.Log.Debug().Msg("Preparing Matrix client")
 	m.AS, err = appservice.CreateFull(appservice.CreateOpts{
 		Registration: &appservice.Registration{
-			ID:                  m.Config.Appservice.ID,
-			URL:                 m.Config.Server.Address,
-			AppToken:            m.Config.Appservice.ASToken,
-			ServerToken:         m.Config.Appservice.HSToken,
+			ID:                  m.Config.Meowlnir.ID,
+			URL:                 m.Config.Meowlnir.Address,
+			AppToken:            m.Config.Meowlnir.ASToken,
+			ServerToken:         m.Config.Meowlnir.HSToken,
 			RateLimited:         ptr.Ptr(false),
 			SoruEphemeralEvents: true,
 			EphemeralEvents:     true,
@@ -120,8 +120,8 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		HomeserverDomain: m.Config.Homeserver.Domain,
 		HomeserverURL:    m.Config.Homeserver.Address,
 		HostConfig: appservice.HostConfig{
-			Hostname: m.Config.Server.Hostname,
-			Port:     m.Config.Server.Port,
+			Hostname: m.Config.Meowlnir.Hostname,
+			Port:     m.Config.Meowlnir.Port,
 		},
 	})
 	if err != nil {
@@ -168,7 +168,7 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	intent := m.AS.Intent(id.NewUserID(db.Username, m.AS.HomeserverDomain))
 	wrapped := bot.NewBot(
 		db, intent, m.Log.With().Str("bot", db.Username).Logger(),
-		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Appservice.PickleKey,
+		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Meowlnir.PickleKey,
 	)
 	wrapped.Init(ctx)
 	wrapped.CryptoHelper.CustomPostDecrypt = m.HandleMessage
@@ -181,7 +181,7 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	}
 	for _, roomID := range managementRooms {
 		m.EvaluatorByManagementRoom[roomID] = policyeval.NewPolicyEvaluator(
-			wrapped, m.PolicyStore, roomID, m.DB, m.SynapseDB, m.claimProtectedRoom,
+			wrapped, m.PolicyStore, roomID, m.DB, m.SynapseDB, m.claimProtectedRoom, m.Config.Meowlnir.DryRun,
 		)
 	}
 	return wrapped

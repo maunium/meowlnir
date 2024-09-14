@@ -5,27 +5,29 @@ homeserver:
     # The server name of the homeserver.
     domain: example.com
 
-# Appservice settings
-appservice:
+# Meowlnir server settings
+meowlnir:
     # The unique ID for the appservice.
     id: meowlnir
     # Set to generate to generate random tokens.
     as_token: generate
     hs_token: generate
+
+    # The address that the homeserver can use to connect to Meowlnir.
+    address: http://localhost:29339
+    # The hostname and port where Meowlnir should listen
+    hostname: 0.0.0.0
+    port: 29339
+
     # Pickle key used for encrypting encryption keys.
     # If set to generate, a random key will be generated.
     pickle_key: generate
     # Management secret used for the management API. If set to generate, a random secret will be generated.
     # If prefixed with sha256:, the rest of the string will be hex-decoded and used as the hash of the secret.
     management_secret: generate
-
-# Configuration for Meowlnir's HTTP server. This is used for both appservice transactions and external traffic.
-server:
-    # The address that the homeserver can use to connect to Meowlnir.
-    address: http://localhost:29339
-    # The hostname and port where Meowlnir should listen
-    hostname: 0.0.0.0
-    port: 29339
+    # If dry run is set to true, meowlnir won't take any actual actions,
+    # but will do everything else as if it was going to take actions.
+    dry_run: false
 
 # Database config for meowlnir itself.
 database:

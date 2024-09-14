@@ -49,6 +49,7 @@ func NewPolicyEvaluator(
 	db *database.Database,
 	synapseDB *synapsedb.SynapseDB,
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
+	dryRun bool,
 ) *PolicyEvaluator {
 	pe := &PolicyEvaluator{
 		Bot:                  bot,
@@ -63,7 +64,7 @@ func NewPolicyEvaluator(
 		wantToProtect:        make(map[id.RoomID]struct{}),
 		claimProtected:       claimProtected,
 
-		DryRun: true,
+		DryRun: dryRun,
 	}
 	return pe
 }
