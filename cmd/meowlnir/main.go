@@ -187,6 +187,29 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	return wrapped
 }
 
+func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot *bot.Bot) bool {
+	m.MapLock.Lock()
+	defer m.MapLock.Unlock()
+	eval, ok := m.EvaluatorByManagementRoom[roomID]
+	if ok {
+		if eval.Bot == bot {
+			return false
+		}
+		delete(m.EvaluatorByManagementRoom, roomID)
+		for _, room := range m.EvaluatorByProtectedRoom {
+			if room == eval {
+				delete(m.EvaluatorByProtectedRoom, roomID)
+			}
+		}
+	}
+	eval = policyeval.NewPolicyEvaluator(
+		bot, m.PolicyStore, roomID, m.DB, m.SynapseDB, m.claimProtectedRoom, m.Config.Meowlnir.DryRun,
+	)
+	m.EvaluatorByManagementRoom[roomID] = eval
+	eval.Load(ctx)
+	return true
+}
+
 func (m *Meowlnir) Run(ctx context.Context) {
 	err := m.SynapseDB.CheckVersion(ctx)
 	if err != nil {

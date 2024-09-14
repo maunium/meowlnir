@@ -216,6 +216,28 @@ func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
+type ReqPutManagementRoom struct {
+	BotUsername string `json:"bot_username"`
+}
 
+func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
+	var req ReqPutManagementRoom
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		mautrix.MNotJSON.WithMessage("Invalid JSON").Write(w)
+		return
+	}
+	userID := id.NewUserID(req.BotUsername, m.AS.HomeserverDomain)
+	m.MapLock.RLock()
+	bot, ok := m.Bots[userID]
+	m.MapLock.RUnlock()
+	if !ok {
+		mautrix.MNotFound.WithMessage("Bot not found").Write(w)
+		return
+	}
+	didUpdate := m.loadManagementRoom(r.Context(), id.RoomID(r.PathValue("roomID")), bot)
+	if didUpdate {
+		exhttp.WriteEmptyJSONResponse(w, http.StatusCreated)
+	}
+	exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 }
