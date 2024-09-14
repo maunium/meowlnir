@@ -19,7 +19,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 	switch strings.ToLower(cmd) {
 	case "!join":
 		for _, arg := range args {
-			pe.Bot.JoinRoomByID(ctx, id.RoomID(arg))
+			pe.Bot.JoinRoom(ctx, arg, "", nil)
 		}
 	case "!redact":
 		pe.RedactUser(ctx, id.UserID(args[0]), strings.Join(args[1:], " "), false)
