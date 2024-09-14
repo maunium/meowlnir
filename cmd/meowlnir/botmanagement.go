@@ -86,16 +86,16 @@ func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
 
-type PutBotRequest struct {
+type ReqPutBot struct {
 	Displayname *string        `json:"displayname"`
 	AvatarURL   *id.ContentURI `json:"avatar_url"`
 }
 
 func (m *Meowlnir) PutBot(w http.ResponseWriter, r *http.Request) {
-	var req PutBotRequest
+	var req ReqPutBot
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
-		mautrix.MBadJSON.WithMessage("Invalid JSON").Write(w)
+		mautrix.MNotJSON.WithMessage("Invalid JSON").Write(w)
 		return
 	}
 	username := r.PathValue("username")
@@ -143,8 +143,77 @@ func (m *Meowlnir) PutBot(w http.ResponseWriter, r *http.Request) {
 	exhttp.WriteJSONResponse(w, http.StatusOK, bot.Meta)
 }
 
-func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
+var (
+	ErrAlreadyVerified = mautrix.RespError{
+		ErrCode:    "FI.MAU.MEOWLNIR.ALREADY_VERIFIED",
+		Err:        "The bot is already verified.",
+		StatusCode: http.StatusConflict,
+	}
+	ErrAlreadyHaveKeys = mautrix.RespError{
+		ErrCode:    "FI.MAU.MEOWLNIR.ALREADY_HAS_KEYS",
+		Err:        "The bot already has cross-signing set up.",
+		StatusCode: http.StatusConflict,
+	}
+)
 
+type ReqVerifyBot struct {
+	RecoveryKey   string `json:"recovery_key"`
+	Generate      bool   `json:"generate"`
+	ForceGenerate bool   `json:"force_generate"`
+	ForceVerify   bool   `json:"force_verify"`
+}
+
+type RespVerifyBot struct {
+	RecoveryKey string `json:"recovery_key"`
+}
+
+func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
+	var req ReqVerifyBot
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		mautrix.MNotJSON.WithMessage("Invalid JSON").Write(w)
+		return
+	} else if !req.Generate && req.RecoveryKey == "" {
+		mautrix.MBadJSON.WithMessage("Recovery key or generate flag must be provided").Write(w)
+		return
+	}
+	userID := id.NewUserID(r.PathValue("username"), m.AS.HomeserverDomain)
+	m.MapLock.RLock()
+	bot, ok := m.Bots[userID]
+	m.MapLock.RUnlock()
+	if !ok {
+		mautrix.MNotFound.WithMessage("Bot not found").Write(w)
+		return
+	}
+	hasKeys, isVerified, err := bot.GetVerificationStatus(r.Context())
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Msg("Failed to get bot verification status")
+		mautrix.MUnknown.WithMessage("Failed to get bot verification status").Write(w)
+		return
+	} else if isVerified && !req.ForceVerify {
+		ErrAlreadyVerified.Write(w)
+		return
+	} else if hasKeys && req.Generate && !req.ForceGenerate {
+		ErrAlreadyHaveKeys.Write(w)
+		return
+	}
+	if req.Generate {
+		recoveryKey, err := bot.GenerateRecoveryKey(r.Context())
+		if err != nil {
+			hlog.FromRequest(r).Err(err).Msg("Failed to generate recovery key")
+			mautrix.MUnknown.WithMessage("Failed to generate recovery key: " + err.Error()).Write(w)
+		} else {
+			exhttp.WriteJSONResponse(w, http.StatusCreated, &RespVerifyBot{RecoveryKey: recoveryKey})
+		}
+	} else {
+		err = bot.VerifyWithRecoveryKey(r.Context(), req.RecoveryKey)
+		if err != nil {
+			hlog.FromRequest(r).Err(err).Msg("Failed to verify bot with recovery key")
+			mautrix.MUnknown.WithMessage("Failed to verify bot with recovery key: " + err.Error()).Write(w)
+		} else {
+			exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
+		}
+	}
 }
 
 func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
