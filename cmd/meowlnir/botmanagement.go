@@ -235,6 +235,12 @@ func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
 		mautrix.MNotFound.WithMessage("Bot not found").Write(w)
 		return
 	}
+	err = m.DB.ManagementRoom.Put(r.Context(), id.RoomID(r.PathValue("roomID")), bot.Meta.Username)
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Msg("Failed to save management room to database")
+		mautrix.MUnknown.WithMessage("Failed to save management room to database").Write(w)
+		return
+	}
 	didUpdate := m.loadManagementRoom(r.Context(), id.RoomID(r.PathValue("roomID")), bot)
 	if didUpdate {
 		exhttp.WriteEmptyJSONResponse(w, http.StatusCreated)
