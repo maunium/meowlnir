@@ -63,7 +63,9 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 			}
 			outLock.Lock()
 			watchedMap[listInfo.RoomID] = &listInfo
-			watchedList = append(watchedList, listInfo.RoomID)
+			if !listInfo.DontApply {
+				watchedList = append(watchedList, listInfo.RoomID)
+			}
 			outLock.Unlock()
 		}()
 	}

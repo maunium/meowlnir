@@ -111,6 +111,7 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 		return
 	}
 	zerolog.Ctx(ctx).Info().
+		Bool("dont_apply", policyRoomMeta.DontApply).
 		Any("added", added).
 		Any("removed", removed).
 		Msg("Policy list change")
@@ -127,7 +128,9 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 				policyRoomMeta.Name, removed.Sender, removed.Sender.URI().MatrixToURL(),
 				removeActionString(removed.Recommendation), removed.EntityType, removed.Entity, removed.Reason,
 			)
-			pe.EvaluateRemovedRule(ctx, removed)
+			if !policyRoomMeta.DontApply {
+				pe.EvaluateRemovedRule(ctx, removed)
+			}
 		}
 		if added != nil {
 			pe.sendNotice(ctx,
@@ -135,7 +138,9 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
 				addActionString(added.Recommendation), added.EntityType, added.Entity, added.Reason,
 			)
-			pe.EvaluateAddedRule(ctx, added)
+			if !policyRoomMeta.DontApply {
+				pe.EvaluateAddedRule(ctx, added)
+			}
 		}
 	}
 }

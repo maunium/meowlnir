@@ -15,6 +15,7 @@ var (
 type WatchedPolicyList struct {
 	RoomID    id.RoomID `json:"room_id"`
 	Name      string    `json:"name"`
+	DontApply bool      `json:"dont_apply"`
 	AutoUnban bool      `json:"auto_unban"`
 }
 
