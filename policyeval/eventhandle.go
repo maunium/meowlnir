@@ -119,9 +119,9 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 	if removedAndAddedAreEquivalent {
 		if removed.Reason == added.Reason {
 			pe.sendNotice(ctx,
-				"[%s] [%s](%s) re-banned `%s` for `%s`",
+				"[%s] [%s](%s) re-%s `%s` for `%s`",
 				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
-				changeActionString(added.Recommendation), added.Entity, added.Reason)
+				addActionString(added.Recommendation), added.Entity, added.Reason)
 		} else {
 			pe.sendNotice(ctx,
 				"[%s] [%s](%s) changed the %s reason for `%s` from `%s` to `%s`",
