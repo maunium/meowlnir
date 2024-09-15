@@ -10,13 +10,14 @@ are built in [mau.dev CI] the same way as all mautrix bridges. `build.sh` also
 works the same way as in bridges.
 
 [`dock.mau.dev/maunium/meowlnir`]: https://mau.dev/maunium/meowlnir/container_registry
-[`mau.dev CI`]: https://mau.dev/maunium/meowlnir/-/pipelines
-[./config/example-config.yaml]: (https://github.com/maunium/meowlnir/blob/main/config/example-config.yaml).
+[mau.dev CI]: https://mau.dev/maunium/meowlnir/-/pipelines
 
 ### Configuration
 The example config can be found in [./config/example-config.yaml]. Meowlnir
 requires both its own database (both SQLite and Postgres are supported), as
 well as read-only access to the Synapse database.
+
+[./config/example-config.yaml]: (https://github.com/maunium/meowlnir/blob/main/config/example-config.yaml).
 
 #### Notes on Synapse database access
 A read-only user can be created with something like this:
