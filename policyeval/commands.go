@@ -2,13 +2,18 @@ package policyeval
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/meowlnir/policylist"
 )
 
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
@@ -38,4 +43,65 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "No match in %s", dur.String())
 		}
 	}
+}
+
+func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {
+	stateKeyHash := sha256.Sum256(append([]byte(content.Entity), []byte(content.Recommendation)...))
+	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), base64.StdEncoding.EncodeToString(stateKeyHash[:]), content)
+}
+
+func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
+	evt, err := pe.Bot.Client.GetEvent(ctx, roomID, eventID)
+	if err != nil {
+		pe.sendNotice(
+			ctx, `[%s](%s) reported [an event](%s) for %s, but the event could not be fetched: %v`,
+			sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(), reason, err,
+		)
+		return fmt.Errorf("failed to fetch event: %w", err)
+	}
+	if !pe.Admins.Has(sender) || !strings.HasPrefix(reason, "/") {
+		pe.sendNotice(
+			ctx, `[%s](%s) reported [an event](%s) from [%s](%s) for %s`,
+			sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(),
+			evt.Sender, evt.Sender.URI().MatrixToURL(),
+			reason,
+		)
+		return nil
+	}
+	fields := strings.Fields(reason)
+	cmd := strings.TrimPrefix(fields[0], "/")
+	args := fields[1:]
+	switch strings.ToLower(cmd) {
+	case "ban":
+		if len(args) < 2 {
+			return fmt.Errorf("not enough arguments for ban")
+		}
+		list := pe.FindListByShortcode(args[0])
+		if list == nil {
+			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of [%s](%s): list %q not found`,
+				sender, sender.URI().MatrixToURL(), evt.Sender, evt.Sender.URI().MatrixToURL(), args[0])
+			return fmt.Errorf("list %q not found", args[0])
+		}
+		policy := &event.ModPolicyContent{
+			Entity:         string(evt.Sender),
+			Reason:         strings.Join(args[1:], " "),
+			Recommendation: event.PolicyRecommendationBan,
+		}
+		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, policy)
+		if err != nil {
+			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of [%s](%s) for %s ([%s](%s)): %v`,
+				sender, sender.URI().MatrixToURL(), evt.Sender, evt.Sender.URI().MatrixToURL(),
+				list.Name, list.RoomID, list.RoomID.URI().MatrixToURL(), err)
+			return fmt.Errorf("failed to send policy: %w", err)
+		}
+		zerolog.Ctx(ctx).Info().
+			Stringer("policy_list", list.RoomID).
+			Any("policy", policy).
+			Stringer("policy_event_id", resp.EventID).
+			Msg("Sent ban policy from report")
+		pe.sendNotice(ctx, `Processed [%s](%s)'s report of [%s](%s) and sent a ban policy to %s ([%s](%s)) for %s`,
+			sender, sender.URI().MatrixToURL(), evt.Sender, evt.Sender.URI().MatrixToURL(),
+			list.Name, list.RoomID, list.RoomID.URI().MatrixToURL(), policy.Reason)
+	}
+	return nil
 }

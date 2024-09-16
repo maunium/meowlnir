@@ -36,10 +36,24 @@ func (r *Room) GetServerRules() *List {
 	return r.ServerRules
 }
 
+type EntityType string
+
+func (et EntityType) EventType() event.Type {
+	switch et {
+	case EntityTypeUser:
+		return event.StatePolicyUser
+	case EntityTypeRoom:
+		return event.StatePolicyRoom
+	case EntityTypeServer:
+		return event.StatePolicyServer
+	}
+	return event.Type{}
+}
+
 const (
-	entityTypeUser   = "user"
-	entityTypeRoom   = "room"
-	entityTypeServer = "server"
+	EntityTypeUser   EntityType = "user"
+	EntityTypeRoom   EntityType = "room"
+	EntityTypeServer EntityType = "server"
 )
 
 // Update updates the state of this object with the given policy event.
@@ -51,11 +65,11 @@ func (r *Room) Update(evt *event.Event) (added, removed *Policy) {
 	}
 	switch evt.Type {
 	case event.StatePolicyUser, event.StateLegacyPolicyUser, event.StateUnstablePolicyUser:
-		added, removed = updatePolicyList(evt, entityTypeUser, r.UserRules)
+		added, removed = updatePolicyList(evt, EntityTypeUser, r.UserRules)
 	case event.StatePolicyRoom, event.StateLegacyPolicyRoom, event.StateUnstablePolicyRoom:
-		added, removed = updatePolicyList(evt, entityTypeRoom, r.RoomRules)
+		added, removed = updatePolicyList(evt, EntityTypeRoom, r.RoomRules)
 	case event.StatePolicyServer, event.StateLegacyPolicyServer, event.StateUnstablePolicyServer:
-		added, removed = updatePolicyList(evt, entityTypeServer, r.ServerRules)
+		added, removed = updatePolicyList(evt, EntityTypeServer, r.ServerRules)
 	}
 	return
 }
@@ -65,9 +79,9 @@ func (r *Room) ParseState(state map[event.Type]map[string]*event.Event) *Room {
 	userPolicies := mergeUnstableEvents(state[event.StatePolicyUser], state[event.StateLegacyPolicyUser], state[event.StateUnstablePolicyUser])
 	roomPolicies := mergeUnstableEvents(state[event.StatePolicyRoom], state[event.StateLegacyPolicyRoom], state[event.StateUnstablePolicyRoom])
 	serverPolicies := mergeUnstableEvents(state[event.StatePolicyServer], state[event.StateLegacyPolicyServer], state[event.StateUnstablePolicyServer])
-	massUpdatePolicyList(userPolicies, entityTypeUser, r.UserRules)
-	massUpdatePolicyList(roomPolicies, entityTypeRoom, r.RoomRules)
-	massUpdatePolicyList(serverPolicies, entityTypeServer, r.ServerRules)
+	massUpdatePolicyList(userPolicies, EntityTypeUser, r.UserRules)
+	massUpdatePolicyList(roomPolicies, EntityTypeRoom, r.RoomRules)
+	massUpdatePolicyList(serverPolicies, EntityTypeServer, r.ServerRules)
 	return r
 }
 
@@ -86,13 +100,13 @@ func mergeUnstableEvents(into map[string]*event.Event, sources ...map[string]*ev
 	return output
 }
 
-func massUpdatePolicyList(input map[string]*event.Event, entityType string, rules *List) {
+func massUpdatePolicyList(input map[string]*event.Event, entityType EntityType, rules *List) {
 	for _, evt := range input {
 		updatePolicyList(evt, entityType, rules)
 	}
 }
 
-func updatePolicyList(evt *event.Event, entityType string, rules *List) (added, removed *Policy) {
+func updatePolicyList(evt *event.Event, entityType EntityType, rules *List) (added, removed *Policy) {
 	content, ok := evt.Content.Parsed.(*event.ModPolicyContent)
 	if !ok || evt.StateKey == nil {
 		return

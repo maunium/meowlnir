@@ -18,6 +18,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		hlog.NewHandler(m.Log.With().Str("component", "reporting api").Logger()),
 		exhttp.CORSMiddleware,
 		requestlog.AccessLogger(false),
+		m.ClientAuth,
 	))
 
 	managementRouter := http.NewServeMux()

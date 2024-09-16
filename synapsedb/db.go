@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/dbutil"
 	"go.mau.fi/util/exslices"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
 
@@ -50,6 +51,13 @@ const getUnredactedEventsBySenderInRoomQuery = `
 	WHERE events.sender = $1 AND events.room_id = ANY($2) AND redactions.redacts IS NULL
 `
 
+const getEventQuery = `
+	SELECT events.room_id, sender, type, state_key, origin_server_ts, json
+	FROM events
+	LEFT JOIN event_json ON events.event_id=event_json.event_id
+	WHERE events.event_id = $1
+`
+
 type roomEventTuple struct {
 	RoomID    id.RoomID
 	EventID   id.EventID
@@ -72,6 +80,14 @@ func (s *SynapseDB) GetEventsToRedact(ctx context.Context, sender id.UserID, inR
 		return true, nil
 	})
 	return output, time.UnixMilli(maxTSRaw), err
+}
+
+func (s *SynapseDB) GetEvent(ctx context.Context, eventID id.EventID) (*event.Event, error) {
+	var evt event.Event
+	evt.ID = eventID
+	// TODO get redaction event?
+	return dbutil.ValueOrErr(&evt, s.DB.QueryRow(ctx, getEventQuery, eventID).
+		Scan(&evt.RoomID, &evt.Sender, &evt.Type, &evt.StateKey, &evt.Timestamp, dbutil.JSON{Data: &evt}))
 }
 
 func (s *SynapseDB) Close() error {

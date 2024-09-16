@@ -5,6 +5,7 @@ import (
 
 	"go.mau.fi/util/dbutil"
 	"go.mau.fi/zeroconfig"
+	"maunium.net/go/mautrix/id"
 )
 
 //go:embed example-config.yaml
@@ -27,6 +28,8 @@ type MeowlnirConfig struct {
 	PickleKey        string `yaml:"pickle_key"`
 	ManagementSecret string `yaml:"management_secret"`
 	DryRun           bool   `yaml:"dry_run"`
+
+	ReportRoom id.RoomID `yaml:"report_room"`
 }
 
 type Config struct {

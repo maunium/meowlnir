@@ -11,7 +11,7 @@ type Policy struct {
 	*event.ModPolicyContent
 	Pattern glob.Glob
 
-	EntityType string
+	EntityType EntityType
 	RoomID     id.RoomID
 	StateKey   string
 	Sender     id.UserID

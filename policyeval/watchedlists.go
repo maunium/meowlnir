@@ -3,6 +3,7 @@ package policyeval
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"go.mau.fi/util/exslices"
@@ -24,6 +25,18 @@ func (pe *PolicyEvaluator) GetWatchedListMeta(roomID id.RoomID) *config.WatchedP
 	meta := pe.watchedListsMap[roomID]
 	pe.watchedListsLock.RUnlock()
 	return meta
+}
+
+func (pe *PolicyEvaluator) FindListByShortcode(shortcode string) *config.WatchedPolicyList {
+	shortcode = strings.ToLower(shortcode)
+	pe.watchedListsLock.RLock()
+	defer pe.watchedListsLock.RUnlock()
+	for _, meta := range pe.watchedListsMap {
+		if strings.ToLower(meta.Shortcode) == shortcode {
+			return meta
+		}
+	}
+	return nil
 }
 
 func (pe *PolicyEvaluator) GetWatchedLists() []id.RoomID {
