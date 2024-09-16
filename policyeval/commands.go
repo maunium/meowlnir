@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -74,13 +75,29 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, r
 	switch strings.ToLower(cmd) {
 	case "ban":
 		if len(args) < 2 {
-			return fmt.Errorf("not enough arguments for ban")
+			return mautrix.MInvalidParam.WithMessage("Not enough arguments for ban")
+		}
+		match := pe.Store.MatchUser(pe.GetWatchedLists(), evt.Sender)
+		if rec := match.Recommendations().BanOrUnban; rec != nil {
+			if rec.Recommendation == event.PolicyRecommendationUnban {
+				return mautrix.RespError{
+					ErrCode:    "FI.MAU.MEOWLNIR.UNBAN_RECOMMENDED",
+					Err:        fmt.Sprintf("%s has an unban recommendation: %s", evt.Sender, rec.Reason),
+					StatusCode: http.StatusConflict,
+				}
+			} else {
+				return mautrix.RespError{
+					ErrCode:    "FI.MAU.MEOWLNIR.ALREADY_BANNED",
+					Err:        fmt.Sprintf("%s is already banned for: %s", evt.Sender, rec.Reason),
+					StatusCode: http.StatusConflict,
+				}
+			}
 		}
 		list := pe.FindListByShortcode(args[0])
 		if list == nil {
 			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of [%s](%s): list %q not found`,
 				sender, sender.URI().MatrixToURL(), evt.Sender, evt.Sender.URI().MatrixToURL(), args[0])
-			return fmt.Errorf("list %q not found", args[0])
+			return mautrix.MNotFound.WithMessage(fmt.Sprintf("List with shortcode %q not found", args[0]))
 		}
 		policy := &event.ModPolicyContent{
 			Entity:         string(evt.Sender),

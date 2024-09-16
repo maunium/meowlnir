@@ -63,10 +63,22 @@ func (m *Meowlnir) PostReport(w http.ResponseWriter, r *http.Request) {
 	roomID := id.RoomID(r.PathValue("roomID"))
 	eventID := id.EventID(r.PathValue("eventID"))
 	userID := r.Context().Value(contextKeyClientUserID).(id.UserID)
-	err = mgmtRoom.HandleReport(context.WithoutCancel(r.Context()), userID, roomID, eventID, req.Reason)
+	log := hlog.FromRequest(r).With().
+		Stringer("report_room_id", roomID).
+		Stringer("report_event_id", eventID).
+		Stringer("reporter_sender", userID).
+		Str("action", "handle report").
+		Logger()
+	ctx := context.WithoutCancel(log.WithContext(r.Context()))
+	err = mgmtRoom.HandleReport(ctx, userID, roomID, eventID, req.Reason)
 	if err != nil {
-		hlog.FromRequest(r).Err(err).Msg("Failed to handle report")
-		mautrix.MUnknown.WithMessage("Failed to handle report: " + err.Error()).Write(w)
+		log.Err(err).Msg("Failed to handle report")
+		var respErr mautrix.RespError
+		if errors.As(err, &respErr) {
+			respErr.Write(w)
+		} else {
+			mautrix.MUnknown.WithMessage(err.Error()).Write(w)
+		}
 	} else {
 		exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 	}
