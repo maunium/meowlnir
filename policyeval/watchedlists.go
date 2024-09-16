@@ -42,10 +42,11 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	var outLock sync.Mutex
 	var wg sync.WaitGroup
 	for _, listInfo := range content.Lists {
-		if _, alreadyWatched := watchedMap[listInfo.RoomID]; alreadyWatched {
-			outLock.Lock()
+		outLock.Lock()
+		_, alreadyWatched := watchedMap[listInfo.RoomID]
+		outLock.Unlock()
+		if alreadyWatched {
 			errors = append(errors, fmt.Sprintf("* Duplicate watched list [%s](%s)", listInfo.Name, listInfo.RoomID.URI().MatrixToURL()))
-			outLock.Unlock()
 			continue
 		}
 		wg.Add(1)
