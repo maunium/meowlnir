@@ -41,6 +41,7 @@ func initVersion() {
 			VersionWithCommit = fmt.Sprintf("%s%s.unknown", Version, suffix)
 		}
 	} else {
+		VersionWithCommit = Version
 		LinkifiedVersion = fmt.Sprintf("[v%s](%s/releases/v%s)", Version, URL, Tag)
 	}
 	if BuildTime != "" {
