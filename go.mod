@@ -8,11 +8,11 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/prometheus/client_golang v1.20.3
 	github.com/rs/zerolog v1.33.0
-	go.mau.fi/util v0.7.1-0.20240913091524-7617daa66719
+	go.mau.fi/util v0.8.0
 	go.mau.fi/zeroconfig v0.1.3
 	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mauflag v1.0.0
-	maunium.net/go/mautrix v0.20.1-0.20240914222050-b5602fd4fe1b
+	maunium.net/go/mautrix v0.21.0
 )
 
 require (
