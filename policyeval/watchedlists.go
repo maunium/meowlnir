@@ -50,19 +50,10 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	if !ok {
 		return nil, []string{"* Failed to parse watched lists event"}
 	}
-	watchedList := make([]id.RoomID, 0, len(content.Lists))
-	watchedMap := make(map[id.RoomID]*config.WatchedPolicyList, len(content.Lists))
-	var outLock sync.Mutex
 	var wg sync.WaitGroup
+	var outLock sync.Mutex
+	wg.Add(len(content.Lists))
 	for _, listInfo := range content.Lists {
-		outLock.Lock()
-		_, alreadyWatched := watchedMap[listInfo.RoomID]
-		outLock.Unlock()
-		if alreadyWatched {
-			errors = append(errors, fmt.Sprintf("* Duplicate watched list [%s](%s)", listInfo.Name, listInfo.RoomID.URI().MatrixToURL()))
-			continue
-		}
-		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			if !pe.Store.Contains(listInfo.RoomID) {
@@ -75,15 +66,21 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 				}
 				pe.Store.Add(listInfo.RoomID, state)
 			}
-			outLock.Lock()
+		}()
+	}
+	wg.Wait()
+	watchedList := make([]id.RoomID, 0, len(content.Lists))
+	watchedMap := make(map[id.RoomID]*config.WatchedPolicyList, len(content.Lists))
+	for _, listInfo := range content.Lists {
+		if _, alreadyWatched := watchedMap[listInfo.RoomID]; alreadyWatched {
+			errors = append(errors, fmt.Sprintf("* Duplicate watched list [%s](%s)", listInfo.Name, listInfo.RoomID.URI().MatrixToURL()))
+		} else {
 			watchedMap[listInfo.RoomID] = &listInfo
 			if !listInfo.DontApply {
 				watchedList = append(watchedList, listInfo.RoomID)
 			}
-			outLock.Unlock()
-		}()
+		}
 	}
-	wg.Wait()
 	pe.watchedListsLock.Lock()
 	oldWatchedList := pe.watchedListsList
 	pe.watchedListsMap = watchedMap
