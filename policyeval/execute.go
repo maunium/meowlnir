@@ -32,6 +32,10 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 	rooms := pe.getRoomsUserIsIn(userID)
 	if recs.BanOrUnban != nil {
 		if recs.BanOrUnban.Recommendation == event.PolicyRecommendationBan {
+			zerolog.Ctx(ctx).Info().
+				Stringer("user_id", userID).
+				Any("matches", policy).
+				Msg("Applying ban recommendation")
 			for _, room := range rooms {
 				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
 			}

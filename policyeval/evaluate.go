@@ -31,10 +31,6 @@ func (pe *PolicyEvaluator) EvaluateUser(ctx context.Context, userID id.UserID) {
 	if match == nil {
 		return
 	}
-	zerolog.Ctx(ctx).Debug().
-		Stringer("user_id", userID).
-		Any("matches", match).
-		Msg("Found matches for user")
 	pe.ApplyPolicy(ctx, userID, match)
 }
 
