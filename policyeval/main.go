@@ -73,6 +73,13 @@ func (pe *PolicyEvaluator) sendNotice(ctx context.Context, message string, args 
 	pe.Bot.SendNotice(ctx, pe.ManagementRoom, message, args...)
 }
 
+func (pe *PolicyEvaluator) sendSuccessReaction(ctx context.Context, eventID id.EventID) {
+	_, err := pe.Bot.SendReaction(ctx, pe.ManagementRoom, eventID, "✅")
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).Msg("Failed to send reaction to confirm successful handling of command")
+	}
+}
+
 func (pe *PolicyEvaluator) Load(ctx context.Context) {
 	err := pe.tryLoad(ctx)
 	if err != nil {

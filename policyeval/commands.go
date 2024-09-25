@@ -32,12 +32,51 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				pe.sendNotice(ctx, "Joined room %q", arg)
 			}
 		}
+		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!redact":
 		if len(args) < 1 {
 			pe.sendNotice(ctx, "Usage: `!redact <user ID> [reason]`")
 			return
 		}
 		pe.RedactUser(ctx, id.UserID(args[0]), strings.Join(args[1:], " "), false)
+		pe.sendSuccessReaction(ctx, evt.ID)
+	case "!ban":
+		if len(args) < 2 {
+			pe.sendNotice(ctx, "Usage: `!ban <list shortcode> <user ID> <reason>`")
+			return
+		}
+		list := pe.FindListByShortcode(args[0])
+		if list == nil {
+			pe.sendNotice(ctx, `List %q not found`, args[0])
+			return
+		}
+		target := args[1]
+		match := pe.Store.MatchUser(pe.GetWatchedLists(), id.UserID(target))
+		var existingStateKey string
+		if rec := match.Recommendations().BanOrUnban; rec != nil {
+			if rec.Recommendation == event.PolicyRecommendationUnban {
+				pe.sendNotice(ctx, "%s has an unban recommendation: %s", target, rec.Reason)
+				return
+			} else if rec.RoomID == list.RoomID {
+				existingStateKey = rec.StateKey
+			}
+		}
+		policy := &event.ModPolicyContent{
+			Entity:         target,
+			Reason:         strings.Join(args[2:], " "),
+			Recommendation: event.PolicyRecommendationBan,
+		}
+		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, existingStateKey, policy)
+		if err != nil {
+			pe.sendNotice(ctx, `Failed to send ban policy: %v`, err)
+			return
+		}
+		zerolog.Ctx(ctx).Info().
+			Stringer("policy_list", list.RoomID).
+			Any("policy", policy).
+			Stringer("policy_event_id", resp.EventID).
+			Msg("Sent ban policy from report")
+		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!match":
 		start := time.Now()
 		match := pe.Store.MatchUser(nil, id.UserID(args[0]))
@@ -55,9 +94,12 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 	}
 }
 
-func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {
-	stateKeyHash := sha256.Sum256(append([]byte(content.Entity), []byte(content.Recommendation)...))
-	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), base64.StdEncoding.EncodeToString(stateKeyHash[:]), content)
+func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, stateKey string, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {
+	if stateKey == "" {
+		stateKeyHash := sha256.Sum256(append([]byte(content.Entity), []byte(content.Recommendation)...))
+		stateKey = base64.StdEncoding.EncodeToString(stateKeyHash[:])
+	}
+	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), stateKey, content)
 }
 
 func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
@@ -121,7 +163,7 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, r
 			Reason:         strings.Join(args[1:], " "),
 			Recommendation: event.PolicyRecommendationBan,
 		}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, policy)
+		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, "", policy)
 		if err != nil {
 			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of [%s](%s) for %s ([%s](%s)): %v`,
 				sender, sender.URI().MatrixToURL(), evt.Sender, evt.Sender.URI().MatrixToURL(),
