@@ -71,9 +71,10 @@ func (l *List) Add(value *Policy) (*Policy, bool) {
 			// There's an existing policy with the same state key, but a newer event type, ignore this one.
 			return nil, false
 		} else if existing.Entity == value.Entity {
+			oldPolicy := existing.Policy
 			// The entity in the policy didn't change, just update the policy.
 			existing.Policy = value
-			return existing.Policy, true
+			return oldPolicy, true
 		}
 		// There's an existing event with the same state key, but the entity changed, remove the old node.
 		l.removeFromLinkedList(existing)
