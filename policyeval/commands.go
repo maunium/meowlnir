@@ -25,9 +25,18 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 	switch strings.ToLower(cmd) {
 	case "!join":
 		for _, arg := range args {
-			pe.Bot.JoinRoom(ctx, arg, "", nil)
+			_, err := pe.Bot.JoinRoom(ctx, arg, "", nil)
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to join room %q: %v", arg, err)
+			} else {
+				pe.sendNotice(ctx, "Joined room %q", arg)
+			}
 		}
 	case "!redact":
+		if len(args) < 1 {
+			pe.sendNotice(ctx, "Usage: `!redact <user ID> [reason]`")
+			return
+		}
 		pe.RedactUser(ctx, id.UserID(args[0]), strings.Join(args[1:], " "), false)
 	case "!match":
 		start := time.Now()
