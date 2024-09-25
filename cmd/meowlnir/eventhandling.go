@@ -148,7 +148,7 @@ func (m *Meowlnir) HandleMessage(ctx context.Context, evt *event.Event) {
 	m.MapLock.RLock()
 	_, isBot := m.Bots[evt.Sender]
 	managementRoom, isManagement := m.EvaluatorByManagementRoom[evt.RoomID]
-	//roomProtector, isProtected := m.EvaluatorByProtectedRoom[evt.RoomID]
+	roomProtector, isProtected := m.EvaluatorByProtectedRoom[evt.RoomID]
 	m.MapLock.RUnlock()
 	if isBot {
 		return
@@ -157,8 +157,7 @@ func (m *Meowlnir) HandleMessage(ctx context.Context, evt *event.Event) {
 		if content.MsgType == event.MsgText && managementRoom.Admins.Has(evt.Sender) {
 			managementRoom.HandleCommand(ctx, evt)
 		}
+	} else if isProtected {
+		roomProtector.HandleMessage(ctx, evt)
 	}
-	//else if isProtected {
-	//	roomProtector.HandleMessage(ctx, evt)
-	//}
 }

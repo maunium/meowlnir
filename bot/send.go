@@ -14,8 +14,24 @@ func (bot *Bot) SendNotice(ctx context.Context, roomID id.RoomID, message string
 	if len(args) > 0 {
 		message = fmt.Sprintf(message, args...)
 	}
-	content := format.RenderMarkdown(message, true, false)
+	bot.SendNoticeOpts(ctx, roomID, message, nil)
+}
+
+type SendNoticeOpts struct {
+	DisallowMarkdown bool
+	AllowHTML        bool
+	Mentions         *event.Mentions
+}
+
+func (bot *Bot) SendNoticeOpts(ctx context.Context, roomID id.RoomID, message string, opts *SendNoticeOpts) {
+	if opts == nil {
+		opts = &SendNoticeOpts{}
+	}
+	content := format.RenderMarkdown(message, !opts.DisallowMarkdown, opts.AllowHTML)
 	content.MsgType = event.MsgNotice
+	if opts.Mentions != nil {
+		content.Mentions = opts.Mentions
+	}
 	_, err := bot.Client.SendMessageEvent(ctx, roomID, event.EventMessage, &content)
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).
