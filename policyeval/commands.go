@@ -54,11 +54,19 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
 	evt, err := pe.Bot.Client.GetEvent(ctx, roomID, eventID)
 	if err != nil {
-		pe.sendNotice(
-			ctx, `[%s](%s) reported [an event](%s) for %s, but the event could not be fetched: %v`,
-			sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(), reason, err,
-		)
-		return fmt.Errorf("failed to fetch event: %w", err)
+		var synErr error
+		evt, synErr = pe.SynapseDB.GetEvent(ctx, eventID)
+		if synErr != nil {
+			zerolog.Ctx(ctx).
+				Err(err).
+				AnErr("db_error", synErr).
+				Msg("Failed to get report target event from both API and database")
+			pe.sendNotice(
+				ctx, `[%s](%s) reported [an event](%s) for %s, but the event could not be fetched: %v`,
+				sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(), reason, err,
+			)
+			return fmt.Errorf("failed to fetch event: %w", err)
+		}
 	}
 	if !pe.Admins.Has(sender) || !strings.HasPrefix(reason, "/") {
 		pe.sendNotice(
