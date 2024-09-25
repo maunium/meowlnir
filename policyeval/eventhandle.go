@@ -140,10 +140,15 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 			}
 		}
 		if added != nil {
+			var suffix string
+			if added.Ignored {
+				suffix = " (rule was ignored)"
+			}
 			pe.sendNotice(ctx,
-				"[%s] [%s](%s) %s %ss matching `%s` for %s",
+				"[%s] [%s](%s) %s %ss matching `%s` for %s%s",
 				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
 				addActionString(added.Recommendation), added.EntityType, added.Entity, added.Reason,
+				suffix,
 			)
 			if !policyRoomMeta.DontApply {
 				pe.EvaluateAddedRule(ctx, added)

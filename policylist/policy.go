@@ -18,6 +18,7 @@ type Policy struct {
 	Type       event.Type
 	Timestamp  int64
 	ID         id.EventID
+	Ignored    bool
 }
 
 // Match represent a list of policies that matched a specific entity.

@@ -75,6 +75,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	} else {
 		m.ManagementSecret = sha256.Sum256([]byte(m.Config.Meowlnir.ManagementSecret))
 	}
+	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
 
 	m.Log, err = m.Config.Logging.Compile()
 	if err != nil {

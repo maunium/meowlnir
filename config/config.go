@@ -30,6 +30,8 @@ type MeowlnirConfig struct {
 	DryRun           bool   `yaml:"dry_run"`
 
 	ReportRoom id.RoomID `yaml:"report_room"`
+
+	HackyRuleFilter []string `yaml:"hacky_rule_filter"`
 }
 
 type Config struct {

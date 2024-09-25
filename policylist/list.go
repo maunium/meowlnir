@@ -82,8 +82,10 @@ func (l *List) Add(value *Policy) (*Policy, bool) {
 	}
 	node := &dplNode{Policy: value}
 	l.byStateKey[value.StateKey] = node
-	l.byEntity[value.Entity] = node
-	if _, isStatic := value.Pattern.(glob.ExactGlob); !isStatic {
+	if !value.Ignored {
+		l.byEntity[value.Entity] = node
+	}
+	if _, isStatic := value.Pattern.(glob.ExactGlob); !isStatic && !value.Ignored {
 		if l.dynamicHead != nil {
 			node.next = l.dynamicHead
 			l.dynamicHead.prev = node
@@ -129,7 +131,7 @@ func (l *List) Match(entity string) (output Match) {
 		output = Match{value.Policy}
 	}
 	for item := l.dynamicHead; item != nil; item = item.next {
-		if item.Pattern.Match(entity) {
+		if !item.Ignored && item.Pattern.Match(entity) {
 			output = append(output, item.Policy)
 		}
 	}

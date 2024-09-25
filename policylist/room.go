@@ -106,6 +106,8 @@ func massUpdatePolicyList(input map[string]*event.Event, entityType EntityType, 
 	}
 }
 
+var HackyRuleFilter []string
+
 func updatePolicyList(evt *event.Event, entityType EntityType, rules *List) (added, removed *Policy) {
 	content, ok := evt.Content.Parsed.(*event.ModPolicyContent)
 	if !ok || evt.StateKey == nil {
@@ -128,6 +130,11 @@ func updatePolicyList(evt *event.Event, entityType EntityType, rules *List) (add
 		Type:       evt.Type,
 		Timestamp:  evt.Timestamp,
 		ID:         evt.ID,
+	}
+	for _, entry := range HackyRuleFilter {
+		if added.Pattern.Match(entry) {
+			added.Ignored = true
+		}
 	}
 	var wasAdded bool
 	removed, wasAdded = rules.Add(added)
