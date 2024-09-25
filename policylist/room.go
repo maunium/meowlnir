@@ -131,9 +131,11 @@ func updatePolicyList(evt *event.Event, entityType EntityType, rules *List) (add
 		Timestamp:  evt.Timestamp,
 		ID:         evt.ID,
 	}
-	for _, entry := range HackyRuleFilter {
-		if added.Pattern.Match(entry) {
-			added.Ignored = true
+	if added.Recommendation == event.PolicyRecommendationBan {
+		for _, entry := range HackyRuleFilter {
+			if added.Pattern.Match(entry) {
+				added.Ignored = true
+			}
 		}
 	}
 	var wasAdded bool
