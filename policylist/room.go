@@ -6,12 +6,18 @@ import (
 	"maunium.net/go/mautrix/id"
 )
 
+type typeStateKeyTuple struct {
+	Type     event.Type
+	StateKey string
+}
+
 // Room represents a single moderation policy room and all the policies inside it.
 type Room struct {
 	RoomID      id.RoomID
 	UserRules   *List
 	RoomRules   *List
 	ServerRules *List
+	byEventID   map[id.EventID]typeStateKeyTuple
 }
 
 // NewRoom creates a new store for a single policy room.
@@ -21,6 +27,7 @@ func NewRoom(roomID id.RoomID) *Room {
 		UserRules:   NewList(roomID, "user"),
 		RoomRules:   NewList(roomID, "room"),
 		ServerRules: NewList(roomID, "server"),
+		byEventID:   make(map[id.EventID]typeStateKeyTuple),
 	}
 }
 
@@ -65,11 +72,27 @@ func (r *Room) Update(evt *event.Event) (added, removed *Policy) {
 	}
 	switch evt.Type {
 	case event.StatePolicyUser, event.StateLegacyPolicyUser, event.StateUnstablePolicyUser:
-		added, removed = updatePolicyList(evt, EntityTypeUser, r.UserRules)
+		added, removed = r.updatePolicyList(evt, EntityTypeUser, r.UserRules)
 	case event.StatePolicyRoom, event.StateLegacyPolicyRoom, event.StateUnstablePolicyRoom:
-		added, removed = updatePolicyList(evt, EntityTypeRoom, r.RoomRules)
+		added, removed = r.updatePolicyList(evt, EntityTypeRoom, r.RoomRules)
 	case event.StatePolicyServer, event.StateLegacyPolicyServer, event.StateUnstablePolicyServer:
-		added, removed = updatePolicyList(evt, EntityTypeServer, r.ServerRules)
+		added, removed = r.updatePolicyList(evt, EntityTypeServer, r.ServerRules)
+	case event.EventRedaction:
+		redacts := evt.Redacts
+		if redacts == "" {
+			redacts = evt.Content.AsRedaction().Redacts
+		}
+		target, ok := r.byEventID[redacts]
+		if ok {
+			switch target.Type {
+			case event.StatePolicyUser, event.StateLegacyPolicyUser, event.StateUnstablePolicyUser:
+				removed = r.UserRules.Remove(target.Type, target.StateKey)
+			case event.StatePolicyRoom, event.StateLegacyPolicyRoom, event.StateUnstablePolicyRoom:
+				removed = r.RoomRules.Remove(target.Type, target.StateKey)
+			case event.StatePolicyServer, event.StateLegacyPolicyServer, event.StateUnstablePolicyServer:
+				removed = r.ServerRules.Remove(target.Type, target.StateKey)
+			}
+		}
 	}
 	return
 }
@@ -79,9 +102,9 @@ func (r *Room) ParseState(state map[event.Type]map[string]*event.Event) *Room {
 	userPolicies := mergeUnstableEvents(state[event.StatePolicyUser], state[event.StateLegacyPolicyUser], state[event.StateUnstablePolicyUser])
 	roomPolicies := mergeUnstableEvents(state[event.StatePolicyRoom], state[event.StateLegacyPolicyRoom], state[event.StateUnstablePolicyRoom])
 	serverPolicies := mergeUnstableEvents(state[event.StatePolicyServer], state[event.StateLegacyPolicyServer], state[event.StateUnstablePolicyServer])
-	massUpdatePolicyList(userPolicies, EntityTypeUser, r.UserRules)
-	massUpdatePolicyList(roomPolicies, EntityTypeRoom, r.RoomRules)
-	massUpdatePolicyList(serverPolicies, EntityTypeServer, r.ServerRules)
+	r.massUpdatePolicyList(userPolicies, EntityTypeUser, r.UserRules)
+	r.massUpdatePolicyList(roomPolicies, EntityTypeRoom, r.RoomRules)
+	r.massUpdatePolicyList(serverPolicies, EntityTypeServer, r.ServerRules)
 	return r
 }
 
@@ -100,19 +123,21 @@ func mergeUnstableEvents(into map[string]*event.Event, sources ...map[string]*ev
 	return output
 }
 
-func massUpdatePolicyList(input map[string]*event.Event, entityType EntityType, rules *List) {
+func (r *Room) massUpdatePolicyList(input map[string]*event.Event, entityType EntityType, rules *List) {
 	for _, evt := range input {
-		updatePolicyList(evt, entityType, rules)
+		r.updatePolicyList(evt, entityType, rules)
 	}
 }
 
 var HackyRuleFilter []string
 
-func updatePolicyList(evt *event.Event, entityType EntityType, rules *List) (added, removed *Policy) {
+func (r *Room) updatePolicyList(evt *event.Event, entityType EntityType, rules *List) (added, removed *Policy) {
 	content, ok := evt.Content.Parsed.(*event.ModPolicyContent)
 	if !ok || evt.StateKey == nil {
 		return
-	} else if content.Entity == "" || content.Recommendation == "" {
+	}
+	r.byEventID[evt.ID] = typeStateKeyTuple{Type: evt.Type, StateKey: *evt.StateKey}
+	if content.Entity == "" || content.Recommendation == "" {
 		removed = rules.Remove(evt.Type, *evt.StateKey)
 		return
 	}

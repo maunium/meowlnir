@@ -52,7 +52,8 @@ func (s *Store) Update(evt *event.Event) (added, removed *Policy) {
 	switch evt.Type {
 	case event.StatePolicyUser, event.StateLegacyPolicyUser, event.StateUnstablePolicyUser,
 		event.StatePolicyRoom, event.StateLegacyPolicyRoom, event.StateUnstablePolicyRoom,
-		event.StatePolicyServer, event.StateLegacyPolicyServer, event.StateUnstablePolicyServer:
+		event.StatePolicyServer, event.StateLegacyPolicyServer, event.StateUnstablePolicyServer,
+		event.EventRedaction:
 	default:
 		return
 	}

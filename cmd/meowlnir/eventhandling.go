@@ -36,6 +36,7 @@ func (m *Meowlnir) AddEventHandlers() {
 	m.EventProcessor.On(event.StateUnstablePolicyUser, m.UpdatePolicyList)
 	m.EventProcessor.On(event.StateUnstablePolicyRoom, m.UpdatePolicyList)
 	m.EventProcessor.On(event.StateUnstablePolicyServer, m.UpdatePolicyList)
+	m.EventProcessor.On(event.EventRedaction, m.UpdatePolicyList)
 	// Management room config
 	m.EventProcessor.On(config.StateWatchedLists, m.HandleConfigChange)
 	m.EventProcessor.On(config.StateProtectedRooms, m.HandleConfigChange)
