@@ -65,7 +65,8 @@ func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policy
 	pe.protectedRoomsLock.RUnlock()
 	for _, userID := range users {
 		if policy.Pattern.Match(string(userID)) {
-			pe.ApplyPolicy(ctx, userID, policylist.Match{policy})
+			// Do a full evaluation to ensure new policies don't bypass existing higher priority policies
+			pe.EvaluateUser(ctx, userID)
 		}
 	}
 }
