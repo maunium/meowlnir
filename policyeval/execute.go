@@ -24,12 +24,23 @@ func (pe *PolicyEvaluator) getRoomsUserIsIn(userID id.UserID) []id.RoomID {
 	return rooms
 }
 
-func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, policy policylist.Match) {
+func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, policy policylist.Match, isNew bool) {
 	if userID == pe.Bot.UserID {
 		return
 	}
 	recs := policy.Recommendations()
 	rooms := pe.getRoomsUserIsIn(userID)
+	if !isNew && len(rooms) == 0 {
+		// Don't apply policies to left users when re-evaluating rules,
+		// because it would lead to unnecessarily scanning for events to redact.
+		// Left users do need to be scanned when a new rule is added though
+		// in case they spammed and left right before getting banned.
+		zerolog.Ctx(ctx).Trace().
+			Stringer("user_id", userID).
+			Any("matches", policy).
+			Msg("Not applying old policy to user who isn't in any rooms")
+		return
+	}
 	if recs.BanOrUnban != nil {
 		if recs.BanOrUnban.Recommendation == event.PolicyRecommendationBan {
 			zerolog.Ctx(ctx).Info().

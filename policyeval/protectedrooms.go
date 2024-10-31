@@ -178,18 +178,17 @@ func (pe *PolicyEvaluator) updateUser(userID id.UserID, roomID id.RoomID, member
 
 func (pe *PolicyEvaluator) unlockedUpdateUser(userID id.UserID, roomID id.RoomID, membership event.Membership) bool {
 	add := isInRoom(membership)
+	existingList, ok := pe.protectedRoomMembers[userID]
 	if add {
-		if !slices.Contains(pe.protectedRoomMembers[userID], roomID) {
-			pe.protectedRoomMembers[userID] = append(pe.protectedRoomMembers[userID], roomID)
+		if !slices.Contains(existingList, roomID) {
+			pe.protectedRoomMembers[userID] = append(existingList, roomID)
 			return true
 		}
-	} else if idx := slices.Index(pe.protectedRoomMembers[userID], roomID); idx >= 0 {
-		deleted := slices.Delete(pe.protectedRoomMembers[userID], idx, idx+1)
-		if len(deleted) == 0 {
-			delete(pe.protectedRoomMembers, userID)
-		} else {
-			pe.protectedRoomMembers[userID] = deleted
-		}
+	} else if idx := slices.Index(existingList, roomID); idx >= 0 {
+		pe.protectedRoomMembers[userID] = slices.Delete(existingList, idx, idx+1)
+	} else if !ok && membership != event.MembershipBan {
+		// Even left users are added to the map to ensure events are redacted if they leave before being banned
+		pe.protectedRoomMembers[userID] = []id.RoomID{}
 	}
 	return false
 }

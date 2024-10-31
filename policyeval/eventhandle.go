@@ -67,7 +67,7 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 	} else {
 		checkRules := pe.updateUser(userID, evt.RoomID, content.Membership)
 		if checkRules {
-			pe.EvaluateUser(ctx, userID)
+			pe.EvaluateUser(ctx, userID, false)
 		}
 	}
 }

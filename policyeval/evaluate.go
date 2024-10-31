@@ -22,16 +22,16 @@ func (pe *PolicyEvaluator) EvaluateAll(ctx context.Context) {
 
 func (pe *PolicyEvaluator) EvaluateAllMembers(ctx context.Context, members []id.UserID) {
 	for _, member := range members {
-		pe.EvaluateUser(ctx, member)
+		pe.EvaluateUser(ctx, member, false)
 	}
 }
 
-func (pe *PolicyEvaluator) EvaluateUser(ctx context.Context, userID id.UserID) {
+func (pe *PolicyEvaluator) EvaluateUser(ctx context.Context, userID id.UserID, isNewRule bool) {
 	match := pe.Store.MatchUser(pe.GetWatchedLists(), userID)
 	if match == nil {
 		return
 	}
-	pe.ApplyPolicy(ctx, userID, match)
+	pe.ApplyPolicy(ctx, userID, match, isNewRule)
 }
 
 func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *policylist.Policy) {
@@ -43,7 +43,7 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 		pe.protectedRoomsLock.RUnlock()
 		for _, userID := range users {
 			if policy.Pattern.Match(string(userID)) {
-				pe.EvaluateUser(ctx, userID)
+				pe.EvaluateUser(ctx, userID, false)
 			}
 		}
 	} else {
@@ -66,7 +66,7 @@ func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policy
 	for _, userID := range users {
 		if policy.Pattern.Match(string(userID)) {
 			// Do a full evaluation to ensure new policies don't bypass existing higher priority policies
-			pe.EvaluateUser(ctx, userID)
+			pe.EvaluateUser(ctx, userID, true)
 		}
 	}
 }

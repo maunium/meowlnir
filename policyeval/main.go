@@ -123,17 +123,23 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 	evalDuration := time.Since(start)
 	pe.protectedRoomsLock.Lock()
 	userCount := len(pe.protectedRoomMembers)
+	var joinedUserCount int
+	for _, rooms := range pe.protectedRoomMembers {
+		if len(rooms) > 0 {
+			joinedUserCount++
+		}
+	}
 	protectedRoomsCount := len(pe.protectedRooms)
 	pe.protectedRoomsLock.Unlock()
 	if len(errors) > 0 {
 		pe.sendNotice(ctx,
-			"Errors occurred during initialization:\n\n%s\n\nProtecting %d rooms with %d users using %d lists.",
-			strings.Join(errors, "\n"), protectedRoomsCount, userCount, len(pe.GetWatchedLists()))
+			"Errors occurred during initialization:\n\n%s\n\nProtecting %d rooms with %d users (%d all time) using %d lists.",
+			strings.Join(errors, "\n"), protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
 	} else {
 		pe.sendNotice(ctx,
 			"Initialization completed successfully (took %s to load data and %s to evaluate rules). "+
-				"Protecting %d rooms with %d users using %d lists.",
-			initDuration, evalDuration, protectedRoomsCount, userCount, len(pe.GetWatchedLists()))
+				"Protecting %d rooms with %d users (%d all time) using %d lists.",
+			initDuration, evalDuration, protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
 	}
 	return nil
 }
