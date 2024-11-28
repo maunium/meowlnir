@@ -65,6 +65,13 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 	}
 }
 
+func filterReason(reason string) string {
+	if reason == "<no reason supplied>" {
+		return ""
+	}
+	return reason
+}
+
 func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomID id.RoomID, policy *policylist.Policy) {
 	ta := &database.TakenAction{
 		TargetUser: userID,
@@ -78,7 +85,7 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 	var err error
 	if !pe.DryRun {
 		_, err = pe.Bot.BanUser(ctx, roomID, &mautrix.ReqBanUser{
-			Reason: policy.Reason,
+			Reason: filterReason(policy.Reason),
 			UserID: userID,
 		})
 	}
@@ -121,6 +128,7 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 	} else if len(events) == 0 {
 		return
 	}
+	reason = filterReason(reason)
 	needsReredact := allowReredact && time.Since(maxTS) < 5*time.Minute
 	var errorMessages []string
 	var redactedCount int
