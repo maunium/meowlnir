@@ -131,7 +131,7 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 	} else {
 		if removed != nil {
 			pe.sendNotice(ctx,
-				"[%s] [%s](%s) %s %ss matching `%s` for %s",
+				"[%s] [%s](%s) %s %ss matching `%s` for `%s`",
 				policyRoomMeta.Name, removed.Sender, removed.Sender.URI().MatrixToURL(),
 				removeActionString(removed.Recommendation), removed.EntityType, removed.Entity, removed.Reason,
 			)
@@ -145,7 +145,7 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 				suffix = " (rule was ignored)"
 			}
 			pe.sendNotice(ctx,
-				"[%s] [%s](%s) %s %ss matching `%s` for %s%s",
+				"[%s] [%s](%s) %s %ss matching `%s` for `%s`%s",
 				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
 				addActionString(added.Recommendation), added.EntityType, added.Entity, added.Reason,
 				suffix,
