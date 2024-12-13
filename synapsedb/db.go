@@ -86,8 +86,16 @@ func (s *SynapseDB) GetEvent(ctx context.Context, eventID id.EventID) (*event.Ev
 	var evt event.Event
 	evt.ID = eventID
 	// TODO get redaction event?
-	return dbutil.ValueOrErr(&evt, s.DB.QueryRow(ctx, getEventQuery, eventID).
-		Scan(&evt.RoomID, &evt.Sender, &evt.Type, &evt.StateKey, &evt.Timestamp, dbutil.JSON{Data: &evt}))
+	err := s.DB.QueryRow(ctx, getEventQuery, eventID).
+		Scan(&evt.RoomID, &evt.Sender, &evt.Type.Type, &evt.StateKey, &evt.Timestamp, dbutil.JSON{Data: &evt})
+	if err != nil {
+		return nil, err
+	}
+	evt.Type.Class = event.MessageEventType
+	if evt.StateKey != nil {
+		evt.Type.Class = event.StateEventType
+	}
+	return &evt, nil
 }
 
 func (s *SynapseDB) Close() error {
