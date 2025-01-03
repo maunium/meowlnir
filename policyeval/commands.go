@@ -40,6 +40,31 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		}
 		pe.RedactUser(ctx, id.UserID(args[0]), strings.Join(args[1:], " "), false)
 		pe.sendSuccessReaction(ctx, evt.ID)
+	case "!kick":
+		if len(args) < 1 {
+			pe.sendNotice(ctx, "Usage: `!kick <user ID> [reason]`")
+			return
+		}
+		userID := id.UserID(args[0])
+		rooms := pe.getRoomsUserIsIn(userID)
+		if len(rooms) == 0 {
+			pe.sendNotice(ctx, "User `%s` is not in any rooms", userID)
+			return
+		}
+		reason := strings.Join(args[1:], " ")
+		successCount := 0
+		for _, room := range rooms {
+			_, err := pe.Bot.KickUser(ctx, room, &mautrix.ReqKickUser{
+				Reason: reason,
+				UserID: userID,
+			})
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to kick `%s` from `%s`: %v", userID, room, err)
+			} else {
+				successCount++
+			}
+		}
+		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!ban", "!ban-user", "!ban-server":
 		if len(args) < 2 {
 			if cmd == "!ban-server" {
@@ -67,7 +92,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		var existingStateKey string
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			if rec.Recommendation == event.PolicyRecommendationUnban {
-				pe.sendNotice(ctx, "%s has an unban recommendation: %s", target, rec.Reason)
+				pe.sendNotice(ctx, "`%s` has an unban recommendation: %s", target, rec.Reason)
 				return
 			} else if rec.RoomID == list.RoomID {
 				existingStateKey = rec.StateKey
