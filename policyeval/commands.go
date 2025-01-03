@@ -19,10 +19,10 @@ import (
 
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
 	fields := strings.Fields(evt.Content.AsMessage().Body)
-	cmd := fields[0]
+	cmd := strings.ToLower(fields[0])
 	args := fields[1:]
 	zerolog.Ctx(ctx).Info().Str("command", cmd).Msg("Handling command")
-	switch strings.ToLower(cmd) {
+	switch cmd {
 	case "!join":
 		for _, arg := range args {
 			_, err := pe.Bot.JoinRoom(ctx, arg, "", nil)
@@ -40,9 +40,13 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		}
 		pe.RedactUser(ctx, id.UserID(args[0]), strings.Join(args[1:], " "), false)
 		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!ban":
+	case "!ban", "!ban-user", "!ban-server":
 		if len(args) < 2 {
-			pe.sendNotice(ctx, "Usage: `!ban <list shortcode> <user ID> <reason>`")
+			if cmd == "!ban-server" {
+				pe.sendNotice(ctx, "Usage: `!ban-server <list shortcode> <server name> <reason>`")
+			} else {
+				pe.sendNotice(ctx, "Usage: `!ban <list shortcode> <user ID> <reason>`")
+			}
 			return
 		}
 		list := pe.FindListByShortcode(args[0])
@@ -51,7 +55,15 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			return
 		}
 		target := args[1]
-		match := pe.Store.MatchUser(pe.GetWatchedLists(), id.UserID(target))
+		var match policylist.Match
+		var entityType policylist.EntityType
+		if cmd == "!ban-server" {
+			entityType = policylist.EntityTypeServer
+			match = pe.Store.MatchServer(pe.GetWatchedLists(), target)
+		} else {
+			entityType = policylist.EntityTypeUser
+			match = pe.Store.MatchUser(pe.GetWatchedLists(), id.UserID(target))
+		}
 		var existingStateKey string
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			if rec.Recommendation == event.PolicyRecommendationUnban {
@@ -66,7 +78,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Reason:         strings.Join(args[2:], " "),
 			Recommendation: event.PolicyRecommendationBan,
 		}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, existingStateKey, policy)
+		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, policy)
 		if err != nil {
 			pe.sendNotice(ctx, `Failed to send ban policy: %v`, err)
 			return
@@ -75,7 +87,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Stringer("policy_list", list.RoomID).
 			Any("policy", policy).
 			Stringer("policy_event_id", resp.EventID).
-			Msg("Sent ban policy from report")
+			Msg("Sent ban policy from command")
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!match":
 		start := time.Now()
