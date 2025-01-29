@@ -216,7 +216,7 @@ func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot
 		bot, m.PolicyStore, roomID, m.DB, m.SynapseDB, m.claimProtectedRoom, m.Config.Meowlnir.DryRun,
 	)
 	m.EvaluatorByManagementRoom[roomID] = eval
-	eval.Load(ctx)
+	go eval.Load(ctx)
 	return true
 }
 
@@ -258,9 +258,17 @@ func (m *Meowlnir) Run(ctx context.Context) {
 	m.EventProcessor.Start(ctx)
 	go m.AS.Start()
 
+	var wg sync.WaitGroup
+	m.MapLock.Lock()
+	wg.Add(len(m.EvaluatorByManagementRoom))
 	for _, room := range m.EvaluatorByManagementRoom {
-		room.Load(ctx)
+		go func() {
+			defer wg.Done()
+			room.Load(ctx)
+		}()
 	}
+	m.MapLock.Unlock()
+	wg.Wait()
 
 	<-ctx.Done()
 	err = m.DB.Close()
