@@ -115,7 +115,37 @@ func pluralize(value int, unit string) string {
 	return fmt.Sprintf("%d %ss", value, unit)
 }
 
-func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, reason string, allowReredact bool) {
+func (pe *PolicyEvaluator) redactUserMSC4194(ctx context.Context, userID id.UserID, reason string) {
+	rooms := pe.GetProtectedRooms()
+	var errorMessages []string
+	var redactedCount, roomCount int
+Outer:
+	for _, roomID := range rooms {
+		hasMore := true
+		roomCounted := false
+		for hasMore {
+			resp, err := pe.Bot.UnstableRedactUserEvents(ctx, roomID, userID, &mautrix.ReqRedactUser{Reason: reason})
+			if err != nil {
+				zerolog.Ctx(ctx).Err(err).Stringer("room_id", roomID).Msg("Failed to redact messages")
+				errorMessages = append(errorMessages, fmt.Sprintf(
+					"* Failed to redact events from [%s](%s) in [%s](%s): %v",
+					userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), err))
+				continue Outer
+			}
+			hasMore = resp.IsMoreEvents
+			if resp.RedactedEvents.Total > 0 {
+				redactedCount += resp.RedactedEvents.Total
+				if !roomCounted {
+					roomCount++
+					roomCounted = true
+				}
+			}
+		}
+	}
+	pe.sendRedactResult(ctx, redactedCount, roomCount, userID, errorMessages)
+}
+
+func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.UserID, reason string, allowReredact bool) {
 	events, maxTS, err := pe.SynapseDB.GetEventsToRedact(ctx, userID, pe.GetProtectedRooms())
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).
@@ -141,16 +171,32 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 		}
 		redactedCount += successCount
 	}
+	pe.sendRedactResult(ctx, redactedCount, len(events), userID, errorMessages)
+	if needsReredact {
+		time.Sleep(15 * time.Second)
+		pe.RedactUser(ctx, userID, reason, false)
+	}
+}
+
+func (pe *PolicyEvaluator) sendRedactResult(ctx context.Context, events, rooms int, userID id.UserID, errorMessages []string) {
 	output := fmt.Sprintf("Redacted %s across %s from [%s](%s)",
-		pluralize(redactedCount, "event"), pluralize(len(events), "room"),
+		pluralize(events, "event"), pluralize(rooms, "room"),
 		userID, userID.URI().MatrixToURL())
 	if len(errorMessages) > 0 {
 		output += "\n\n" + strings.Join(errorMessages, "\n")
 	}
 	pe.sendNotice(ctx, output)
-	if needsReredact {
-		time.Sleep(15 * time.Second)
-		pe.RedactUser(ctx, userID, reason, false)
+}
+
+func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, reason string, allowReredact bool) {
+	if pe.SynapseDB != nil {
+		pe.redactUserSynapse(ctx, userID, reason, allowReredact)
+	} else if pe.Bot.Client.SpecVersions.Supports(mautrix.FeatureUserRedaction) {
+		pe.redactUserMSC4194(ctx, userID, reason)
+	} else {
+		zerolog.Ctx(ctx).Debug().
+			Stringer("user_id", userID).
+			Msg("Not redacting messages: server doesn't support redacting all messages")
 	}
 }
 

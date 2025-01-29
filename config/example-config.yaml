@@ -19,9 +19,6 @@ meowlnir:
     hostname: 0.0.0.0
     port: 29339
 
-    # Pickle key used for encrypting encryption keys.
-    # If set to generate, a random key will be generated.
-    pickle_key: generate
     # Management secret used for the management API. If set to generate, a random secret will be generated.
     # If prefixed with sha256:, the rest of the string will be hex-decoded and used as the hash of the secret.
     management_secret: generate
@@ -31,11 +28,19 @@ meowlnir:
 
     # Which management room should handle requests to the Matrix report API?
     report_room: '!roomid:example.com'
-
     # If a policy matches any of these user IDs, the policy is ignored entirely.
     # This can be used as a hacky way to protect against policies which are too wide.
     hacky_rule_filter:
     - "@user:example.com"
+
+# Encryption settings.
+encryption:
+    # Should encryption be enabled? This requires MSC3202, MSC4190 and MSC4203 to be implemented on the server.
+    # Meowlnir also implements MSC4153, which means only verified devices will be allowed to send/receive messages.
+    enable: true
+    # Pickle key used for encrypting encryption keys.
+    # If set to generate, a random key will be generated.
+    pickle_key: generate
 
 # Database config for meowlnir itself.
 database:

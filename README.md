@@ -53,10 +53,13 @@ url: http://localhost:29339
 sender_localpart: any random string here
 # Meowlnir will not handle ratelimits, so this must be false.
 rate_limited: false
-# Meowlnir uses MSC2409 & MSC3202 for encryption, so they must be enabled.
+# Meowlnir uses MSC3202, MSC4190 and MSC4203 for encryption, so they must be enabled.
 org.matrix.msc3202: true
+io.element.msc4190: true
+# push_ephemeral is the old name of receive_ephemeral, as Synapse hasn't stabilized MSC2409 support yet.
+# Enabling 2409/receive_ephemeral is required for MSC4203.
 de.sorunome.msc2409.push_ephemeral: true
-push_ephemeral: true
+receive_ephemeral: true
 # Add the bots you want here. If you only want one bot, a static regex is enough.
 # Multiple bots are supported too and can be dynamically added if you set a non-static regex (e.g. `@moderation_.+:example\.com`)
 namespaces:
@@ -69,7 +72,9 @@ Additionally, you'll need to enable some experimental features in the Synapse co
 
 ```yaml
 experimental_features:
+  # Actually MSC4203, but it was previously a part of MSC2409
   msc2409_to_device_messages_enabled: true
+  # MSC3202 has two parts, both need to be enabled
   msc3202_device_masquerading: true
   msc3202_transaction_extensions: true
 ```

@@ -42,24 +42,22 @@ func NewBot(
 ) *Bot {
 	client := intent.Client
 	client.SetAppServiceDeviceID = true
-	cryptoStore := &crypto.SQLCryptoStore{
-		DB:        cryptoStoreDB,
-		AccountID: client.UserID.String(),
-		PickleKey: []byte(pickleKey),
+	var helper *cryptohelper.CryptoHelper
+	var cryptoStore *crypto.SQLCryptoStore
+	if cryptoStoreDB != nil {
+		cryptoStore = &crypto.SQLCryptoStore{
+			DB:        cryptoStoreDB,
+			AccountID: client.UserID.String(),
+			PickleKey: []byte(pickleKey),
+		}
+		cryptoStore.InitFields()
+		// NewCryptoHelper only returns errors on invalid parameters
+		helper = exerrors.Must(cryptohelper.NewCryptoHelper(client, cryptoStore.PickleKey, cryptoStore))
+		helper.DBAccountID = cryptoStore.AccountID
+		helper.MSC4190 = true
+		helper.LoginAs = &mautrix.ReqLogin{InitialDeviceDisplayName: "Meowlnir"}
+		client.Crypto = helper
 	}
-	cryptoStore.InitFields()
-	// NewCryptoHelper only returns errors on invalid parameters
-	helper := exerrors.Must(cryptohelper.NewCryptoHelper(client, cryptoStore.PickleKey, cryptoStore))
-	helper.DBAccountID = cryptoStore.AccountID
-	helper.LoginAs = &mautrix.ReqLogin{
-		Type: mautrix.AuthTypeAppservice,
-		Identifier: mautrix.UserIdentifier{
-			Type: mautrix.IdentifierTypeUser,
-			User: bot.Username,
-		},
-		InitialDeviceDisplayName: "Meowlnir",
-	}
-	client.Crypto = helper
 	return &Bot{
 		Meta:   bot,
 		Client: client,
@@ -110,6 +108,11 @@ func (bot *Bot) Init(ctx context.Context) {
 			bot.Log.Err(err).Msg("Failed to set avatar")
 		}
 	}
+
+	if bot.CryptoHelper == nil {
+		return
+	}
+
 	err := bot.CryptoHelper.Init(ctx)
 	if err != nil {
 		bot.Log.WithLevel(zerolog.FatalLevel).Err(err).

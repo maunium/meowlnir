@@ -25,7 +25,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 	switch cmd {
 	case "!join":
 		for _, arg := range args {
-			_, err := pe.Bot.JoinRoom(ctx, arg, "", nil)
+			_, err := pe.Bot.JoinRoom(ctx, arg, nil)
 			if err != nil {
 				pe.sendNotice(ctx, "Failed to join room %q: %v", arg, err)
 			} else {
@@ -143,7 +143,11 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, r
 	evt, err := pe.Bot.Client.GetEvent(ctx, roomID, eventID)
 	if err != nil {
 		var synErr error
-		evt, synErr = pe.SynapseDB.GetEvent(ctx, eventID)
+		if pe.SynapseDB != nil {
+			evt, synErr = pe.SynapseDB.GetEvent(ctx, eventID)
+		} else {
+			synErr = fmt.Errorf("synapse db not available")
+		}
 		if synErr != nil {
 			zerolog.Ctx(ctx).
 				Err(err).

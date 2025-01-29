@@ -95,16 +95,22 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to connect to Meowlnir database")
 		os.Exit(12)
 	}
-	synapseDB, err = dbutil.NewFromConfig("", m.Config.SynapseDB, dbutil.ZeroLogger(m.Log.With().Str("db_section", "synapse").Logger()))
-	if err != nil {
-		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to connect to Synapse database")
-		os.Exit(12)
+	if m.Config.SynapseDB.URI != "" {
+		synapseDB, err = dbutil.NewFromConfig("", m.Config.SynapseDB, dbutil.ZeroLogger(m.Log.With().Str("db_section", "synapse").Logger()))
+		if err != nil {
+			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to connect to Synapse database")
+			os.Exit(12)
+		}
 	}
 
 	m.DB = database.New(mainDB)
-	m.CryptoStoreDB = mainDB.Child(cryptoupgrade.VersionTableName, cryptoupgrade.Table, dbutil.ZeroLogger(m.Log.With().Str("db_section", "crypto").Logger()))
 	m.StateStore = sqlstatestore.NewSQLStateStore(mainDB, dbutil.ZeroLogger(m.Log.With().Str("db_section", "matrix_state").Logger()), false)
-	m.SynapseDB = &synapsedb.SynapseDB{DB: synapseDB}
+	if m.Config.Encryption.Enable {
+		m.CryptoStoreDB = mainDB.Child(cryptoupgrade.VersionTableName, cryptoupgrade.Table, dbutil.ZeroLogger(m.Log.With().Str("db_section", "crypto").Logger()))
+	}
+	if synapseDB != nil {
+		m.SynapseDB = &synapsedb.SynapseDB{DB: synapseDB}
+	}
 
 	m.Log.Debug().Msg("Preparing Matrix client")
 	m.AS, err = appservice.CreateFull(appservice.CreateOpts{
@@ -117,6 +123,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 			SoruEphemeralEvents: true,
 			EphemeralEvents:     true,
 			MSC3202:             true,
+			MSC4190:             true,
 		},
 		HomeserverDomain: m.Config.Homeserver.Domain,
 		HomeserverURL:    m.Config.Homeserver.Address,
@@ -169,10 +176,12 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	intent := m.AS.Intent(id.NewUserID(db.Username, m.AS.HomeserverDomain))
 	wrapped := bot.NewBot(
 		db, intent, m.Log.With().Str("bot", db.Username).Logger(),
-		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Meowlnir.PickleKey,
+		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Encryption.PickleKey,
 	)
 	wrapped.Init(ctx)
-	wrapped.CryptoHelper.CustomPostDecrypt = m.HandleMessage
+	if wrapped.CryptoHelper != nil {
+		wrapped.CryptoHelper.CustomPostDecrypt = m.HandleMessage
+	}
 	m.Bots[wrapped.Client.UserID] = wrapped
 
 	managementRooms, err := m.DB.ManagementRoom.GetAll(ctx, db.Username)
@@ -212,12 +221,14 @@ func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot
 }
 
 func (m *Meowlnir) Run(ctx context.Context) {
-	err := m.SynapseDB.CheckVersion(ctx)
-	if err != nil {
-		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to check Synapse database schema version")
-		os.Exit(14)
+	if m.SynapseDB != nil {
+		err := m.SynapseDB.CheckVersion(ctx)
+		if err != nil {
+			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to check Synapse database schema version")
+			os.Exit(14)
+		}
 	}
-	err = m.DB.Upgrade(ctx)
+	err := m.DB.Upgrade(ctx)
 	if err != nil {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to upgrade main db")
 		os.Exit(14)
@@ -227,10 +238,12 @@ func (m *Meowlnir) Run(ctx context.Context) {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to upgrade state store")
 		os.Exit(14)
 	}
-	err = m.CryptoStoreDB.Upgrade(ctx)
-	if err != nil {
-		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to upgrade crypto store")
-		os.Exit(14)
+	if m.CryptoStoreDB != nil {
+		err = m.CryptoStoreDB.Upgrade(ctx)
+		if err != nil {
+			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to upgrade crypto store")
+			os.Exit(14)
+		}
 	}
 
 	bots, err := m.DB.Bot.GetAll(ctx)
@@ -254,9 +267,11 @@ func (m *Meowlnir) Run(ctx context.Context) {
 	if err != nil {
 		m.Log.Err(err).Msg("Failed to close database")
 	}
-	err = m.SynapseDB.Close()
-	if err != nil {
-		m.Log.Err(err).Msg("Failed to close Synapse database")
+	if m.SynapseDB != nil {
+		err = m.SynapseDB.Close()
+		if err != nil {
+			m.Log.Err(err).Msg("Failed to close Synapse database")
+		}
 	}
 }
 

@@ -25,18 +25,22 @@ type MeowlnirConfig struct {
 	Hostname string `yaml:"hostname"`
 	Port     uint16 `yaml:"port"`
 
-	PickleKey        string `yaml:"pickle_key"`
 	ManagementSecret string `yaml:"management_secret"`
 	DryRun           bool   `yaml:"dry_run"`
 
-	ReportRoom id.RoomID `yaml:"report_room"`
+	ReportRoom      id.RoomID `yaml:"report_room"`
+	HackyRuleFilter []string  `yaml:"hacky_rule_filter"`
+}
 
-	HackyRuleFilter []string `yaml:"hacky_rule_filter"`
+type EncryptionConfig struct {
+	Enable    bool   `yaml:"enable"`
+	PickleKey string `yaml:"pickle_key"`
 }
 
 type Config struct {
 	Homeserver HomeserverConfig  `yaml:"homeserver"`
 	Meowlnir   MeowlnirConfig    `yaml:"meowlnir"`
+	Encryption EncryptionConfig  `yaml:"encryption"`
 	Database   dbutil.Config     `yaml:"database"`
 	SynapseDB  dbutil.Config     `yaml:"synapse_db"`
 	Logging    zeroconfig.Config `yaml:"logging"`

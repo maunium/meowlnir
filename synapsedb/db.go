@@ -16,7 +16,7 @@ type SynapseDB struct {
 	DB *dbutil.Database
 }
 
-const PreferredVersion = 86
+const PreferredVersion = 88
 
 func (s *SynapseDB) CheckVersion(ctx context.Context) error {
 	var current, compat int

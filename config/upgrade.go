@@ -29,11 +29,18 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "meowlnir", "address")
 	helper.Copy(up.Str, "meowlnir", "hostname")
 	helper.Copy(up.Int, "meowlnir", "port")
-	generateOrCopy(helper, "meowlnir", "pickle_key")
+
 	generateOrCopy(helper, "meowlnir", "management_secret")
 	helper.Copy(up.Bool, "meowlnir", "dry_run")
 	helper.Copy(up.Str|up.Null, "meowlnir", "report_room")
 	helper.Copy(up.List, "meowlnir", "hacky_rule_filter")
+
+	if secret, ok := helper.Get(up.Str, "meowlnir", "pickle_key"); ok && secret != "generate" {
+		helper.Set(up.Str, secret, "encryption", "pickle_key")
+	} else {
+		generateOrCopy(helper, "encryption", "pickle_key")
+	}
+	helper.Copy(up.Bool, "encryption", "enable")
 
 	helper.Copy(up.Str, "database", "type")
 	helper.Copy(up.Str, "database", "uri")
@@ -42,10 +49,10 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str|up.Null, "database", "max_conn_idle_time")
 	helper.Copy(up.Str|up.Null, "database", "max_conn_lifetime")
 
-	helper.Copy(up.Str, "synapse_db", "type")
-	helper.Copy(up.Str, "synapse_db", "uri")
-	helper.Copy(up.Int, "synapse_db", "max_open_conns")
-	helper.Copy(up.Int, "synapse_db", "max_idle_conns")
+	helper.Copy(up.Str|up.Null, "synapse_db", "type")
+	helper.Copy(up.Str|up.Null, "synapse_db", "uri")
+	helper.Copy(up.Int|up.Null, "synapse_db", "max_open_conns")
+	helper.Copy(up.Int|up.Null, "synapse_db", "max_idle_conns")
 	helper.Copy(up.Str|up.Null, "synapse_db", "max_conn_idle_time")
 	helper.Copy(up.Str|up.Null, "synapse_db", "max_conn_lifetime")
 
@@ -55,7 +62,9 @@ func upgradeConfig(helper up.Helper) {
 var SpacedBlocks = [][]string{
 	{"meowlnir"},
 	{"meowlnir", "address"},
-	{"meowlnir", "pickle_key"},
+	{"meowlnir", "management_secret"},
+	{"meowlnir", "report_room"},
+	{"encryption"},
 	{"database"},
 	{"synapse_db"},
 	{"logging"},

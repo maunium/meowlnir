@@ -13,18 +13,20 @@ import (
 
 func (m *Meowlnir) AddEventHandlers() {
 	// Crypto stuff
-	m.EventProcessor.OnOTK(m.HandleOTKCounts)
-	m.EventProcessor.On(event.ToDeviceEncrypted, m.HandleToDeviceEvent)
-	m.EventProcessor.On(event.ToDeviceRoomKeyRequest, m.HandleToDeviceEvent)
-	m.EventProcessor.On(event.ToDeviceRoomKeyWithheld, m.HandleToDeviceEvent)
-	m.EventProcessor.On(event.ToDeviceBeeperRoomKeyAck, m.HandleToDeviceEvent)
-	m.EventProcessor.On(event.ToDeviceOrgMatrixRoomKeyWithheld, m.HandleToDeviceEvent)
-	m.EventProcessor.On(event.ToDeviceVerificationRequest, m.HandleToDeviceEvent)
-	m.EventProcessor.On(event.ToDeviceVerificationStart, m.HandleToDeviceEvent)
-	m.EventProcessor.On(event.ToDeviceVerificationAccept, m.HandleToDeviceEvent)
-	m.EventProcessor.On(event.ToDeviceVerificationKey, m.HandleToDeviceEvent)
-	m.EventProcessor.On(event.ToDeviceVerificationMAC, m.HandleToDeviceEvent)
-	m.EventProcessor.On(event.ToDeviceVerificationCancel, m.HandleToDeviceEvent)
+	if m.Config.Encryption.Enable {
+		m.EventProcessor.OnOTK(m.HandleOTKCounts)
+		m.EventProcessor.On(event.ToDeviceEncrypted, m.HandleToDeviceEvent)
+		m.EventProcessor.On(event.ToDeviceRoomKeyRequest, m.HandleToDeviceEvent)
+		m.EventProcessor.On(event.ToDeviceRoomKeyWithheld, m.HandleToDeviceEvent)
+		m.EventProcessor.On(event.ToDeviceBeeperRoomKeyAck, m.HandleToDeviceEvent)
+		m.EventProcessor.On(event.ToDeviceOrgMatrixRoomKeyWithheld, m.HandleToDeviceEvent)
+		m.EventProcessor.On(event.ToDeviceVerificationRequest, m.HandleToDeviceEvent)
+		m.EventProcessor.On(event.ToDeviceVerificationStart, m.HandleToDeviceEvent)
+		m.EventProcessor.On(event.ToDeviceVerificationAccept, m.HandleToDeviceEvent)
+		m.EventProcessor.On(event.ToDeviceVerificationKey, m.HandleToDeviceEvent)
+		m.EventProcessor.On(event.ToDeviceVerificationMAC, m.HandleToDeviceEvent)
+		m.EventProcessor.On(event.ToDeviceVerificationCancel, m.HandleToDeviceEvent)
+	}
 
 	// Policy list updating
 	m.EventProcessor.On(event.StatePolicyUser, m.UpdatePolicyList)
@@ -133,7 +135,7 @@ func (m *Meowlnir) HandleEncrypted(ctx context.Context, evt *event.Event) {
 	m.MapLock.RUnlock()
 	if isBot {
 		return
-	} else if isManagement {
+	} else if isManagement && managementRoom.Bot.CryptoHelper != nil {
 		managementRoom.Bot.CryptoHelper.HandleEncrypted(ctx, evt)
 	}
 	//else if isProtected {

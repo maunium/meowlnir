@@ -56,11 +56,15 @@ func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
 	m.MapLock.RUnlock()
 	resp := &RespGetBots{Bots: make([]*RespBot, len(bots))}
 	for i, bot := range bots {
-		verified, csSetUp, err := bot.GetVerificationStatus(r.Context())
-		if err != nil {
-			hlog.FromRequest(r).Err(err).Str("bot_username", bot.Meta.Username).Msg("Failed to get bot verification status")
-			mautrix.MUnknown.WithMessage("Failed to get bot verification status").Write(w)
-			return
+		var verified, csSetUp bool
+		if m.Config.Encryption.Enable {
+			var err error
+			verified, csSetUp, err = bot.GetVerificationStatus(r.Context())
+			if err != nil {
+				hlog.FromRequest(r).Err(err).Str("bot_username", bot.Meta.Username).Msg("Failed to get bot verification status")
+				mautrix.MUnknown.WithMessage("Failed to get bot verification status").Write(w)
+				return
+			}
 		}
 		botMgmtRooms := make([]*RespManagementRoom, 0)
 		for _, room := range mgmtRooms {
@@ -168,6 +172,10 @@ type RespVerifyBot struct {
 }
 
 func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
+	if !m.Config.Encryption.Enable {
+		mautrix.MForbidden.WithMessage("Encryption is not enabled on this Meowlnir instance").Write(w)
+		return
+	}
 	var req ReqVerifyBot
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
