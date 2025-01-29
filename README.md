@@ -125,11 +125,11 @@ Finally, you need to define a management room. Create the room normally, get
 the room ID and run:
 
 ```shell
-curl -H "$AUTH" 'https://meowlnir.example.com/_matrix/meowlnir/v1/management_room/!randomroomid:example.com' -d '{"bot_username": "abuse"}'
+curl -H "$AUTH" -X PUT 'https://meowlnir.example.com/_matrix/meowlnir/v1/management_room/!randomroomid:example.com' -d '{"bot_username": "abuse"}'
 ```
 
 After defining the room, you can invite the bot, and it should accept the invite
-(if you invite beforehand, it won't accept).
+(you can also invite the bot beforehand if you prefer).
 
 ### Configuring the bot
 The bot will read state events in the management room to determine which policy
