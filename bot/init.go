@@ -13,6 +13,7 @@ import (
 	"maunium.net/go/mautrix/appservice"
 	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/crypto/cryptohelper"
+	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/database"
 )
@@ -120,6 +121,8 @@ func (bot *Bot) Init(ctx context.Context) {
 		os.Exit(31)
 	}
 	bot.Mach = bot.CryptoHelper.Machine()
+	bot.Mach.SendKeysMinTrust = id.TrustStateCrossSignedTOFU
+	bot.Mach.ShareKeysMinTrust = id.TrustStateCrossSignedTOFU
 	bot.eventProcessor.OnDeviceList(bot.Mach.HandleDeviceLists)
 
 	hasKeys, isVerified, err := bot.GetVerificationStatus(ctx)

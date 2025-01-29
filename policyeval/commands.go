@@ -18,6 +18,12 @@ import (
 )
 
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
+	if evt.Mautrix.WasEncrypted && evt.Mautrix.TrustState < id.TrustStateCrossSignedTOFU {
+		zerolog.Ctx(ctx).Warn().
+			Stringer("trust_state", evt.Mautrix.TrustState).
+			Msg("Dropping encrypted event with insufficient trust state")
+		return
+	}
 	fields := strings.Fields(evt.Content.AsMessage().Body)
 	cmd := strings.ToLower(fields[0])
 	args := fields[1:]
