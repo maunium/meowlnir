@@ -181,7 +181,11 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				existingStateKey = rec.StateKey
 			}
 		}
-		policy := &event.ModPolicyContent{}
+		policy := &event.ModPolicyContent{
+			Entity:         target,
+			Reason:         strings.Join(args[2:], " "),
+			Recommendation: event.PolicyRecommendationUnban,
+		}
 		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, policy)
 		if err != nil {
 			pe.sendNotice(ctx, `Failed to send unban policy: %v`, err)
