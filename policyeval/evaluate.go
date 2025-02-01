@@ -91,5 +91,24 @@ func (pe *PolicyEvaluator) ReevaluateAffectedByLists(ctx context.Context, policy
 }
 
 func (pe *PolicyEvaluator) ReevaluateActions(ctx context.Context, actions []*database.TakenAction) {
-
+	for _, action := range actions {
+		if action.TargetUser == "" {
+			zerolog.Ctx(ctx).Warn().Any("action", action).Msg("Action has no target user")
+			continue
+		}
+		// unban users that were previously banned by this rule
+		if action.ActionType == database.TakenActionTypeBanOrUnban && action.Action == event.PolicyRecommendationBan {
+			// ensure that the user is actually banned in the room
+			if pe.Bot.StateStore.IsMembership(ctx, action.InRoomID, action.TargetUser, event.MembershipBan) {
+				// This is hacky
+				policy := &policylist.Policy{
+					RoomID: action.InRoomID,
+					ModPolicyContent: &event.ModPolicyContent{
+						Entity: action.RuleEntity,
+					},
+				}
+				pe.ApplyUnban(ctx, action.TargetUser, action.InRoomID, policy)
+			}
+		}
+	}
 }
