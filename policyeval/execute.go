@@ -61,6 +61,10 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 			//	pe.sendNotice(ctx, "Database error in ApplyPolicy (GetAllByTargetUser): %v", err)
 			//	return
 			//}
+			zerolog.Ctx(ctx).Info().
+				Stringer("user_id", userID).
+				Any("matches", policy).
+				Msg("Applying unban recommendation")
 			for _, room := range rooms {
 				pe.ApplyUnban(ctx, userID, room, recs.BanOrUnban)
 			}
