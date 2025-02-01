@@ -30,6 +30,10 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 	zerolog.Ctx(ctx).Info().Str("command", cmd).Msg("Handling command")
 	switch cmd {
 	case "!join":
+		if len(args) == 0 {
+			pe.sendNotice(ctx, "Usage: `!join <room ID>...`")
+			return
+		}
 		for _, arg := range args {
 			_, err := pe.Bot.JoinRoom(ctx, arg, nil)
 			if err != nil {
@@ -39,6 +43,30 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			}
 		}
 		pe.sendSuccessReaction(ctx, evt.ID)
+	case "!leave":
+		if len(args) == 0 {
+			pe.sendNotice(ctx, "Usage: `!leave <room ID>...`")
+			return
+		}
+		var target id.RoomID
+		if strings.HasPrefix(args[0], "#") {
+			rawTarget, err := pe.Bot.ResolveAlias(ctx, id.RoomAlias(args[0]))
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to resolve alias %q: %v", args[0], err)
+				return
+			}
+			target = rawTarget.RoomID
+		} else {
+			target = id.RoomID(args[0])
+		}
+		for _, arg := range args {
+			_, err := pe.Bot.LeaveRoom(ctx, target, nil)
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to leave room %q: %v", arg, err)
+			} else {
+				pe.sendNotice(ctx, "Left room %q", arg)
+			}
+		}
 	case "!redact":
 		if len(args) < 1 {
 			pe.sendNotice(ctx, "Usage: `!redact <user ID> [reason]`")
