@@ -165,6 +165,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		target := args[1]
 		var match policylist.Match
 		var entityType policylist.EntityType
+		currentlyBanned := false
 		if cmd == "!unban-server" {
 			entityType = policylist.EntityTypeServer
 			match = pe.Store.MatchServer(pe.GetWatchedLists(), target)
@@ -174,6 +175,9 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		}
 		var existingStateKey string
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
+			if rec.Recommendation == event.PolicyRecommendationBan {
+				currentlyBanned = true
+			}
 			if rec.Recommendation == event.PolicyRecommendationUnban {
 				pe.sendNotice(ctx, "`%s` has an unban recommendation: %s", target, rec.Reason)
 				return
@@ -185,6 +189,9 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Entity:         target,
 			Reason:         strings.Join(args[2:], " "),
 			Recommendation: event.PolicyRecommendationUnban,
+		}
+		if currentlyBanned {
+			policy = &event.ModPolicyContent{} // just remove the ban, don't prevent it
 		}
 		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, policy)
 		if err != nil {
