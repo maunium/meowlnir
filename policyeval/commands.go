@@ -191,7 +191,10 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Recommendation: event.PolicyRecommendationUnban,
 		}
 		if currentlyBanned {
+			pe.sendNotice(ctx, `Removing the ban policy for %s`, target)
 			policy = &event.ModPolicyContent{} // just remove the ban, don't prevent it
+		} else {
+			pe.sendNotice(ctx, `Preventing future bans for %s`, target)
 		}
 		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, policy)
 		if err != nil {
