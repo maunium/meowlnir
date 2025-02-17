@@ -137,9 +137,16 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		rooms := pe.getRoomsUserIsIn(id.UserID(args[0]))
 		if len(rooms) > 0 {
 			formattedRooms := make([]string, len(rooms))
+			pe.protectedRoomsLock.RLock()
 			for i, roomID := range rooms {
-				formattedRooms[i] = fmt.Sprintf("* [%s](%s)", roomID, roomID.URI().MatrixToURL())
+				name := roomID.String()
+				meta := pe.protectedRooms[roomID]
+				if meta != nil && meta.Name != "" {
+					name = meta.Name
+				}
+				formattedRooms[i] = fmt.Sprintf("* [%s](%s)", name, roomID.URI().MatrixToURL())
 			}
+			pe.protectedRoomsLock.RUnlock()
 			pe.sendNotice(ctx, "User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
 		}
 	}

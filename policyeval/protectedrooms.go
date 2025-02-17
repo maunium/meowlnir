@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -29,7 +30,21 @@ func (pe *PolicyEvaluator) IsProtectedRoom(roomID id.RoomID) bool {
 	return protected
 }
 
-func (pe *PolicyEvaluator) HandleProtectedRoomPowerLevels(ctx context.Context, evt *event.Event) {
+func (pe *PolicyEvaluator) HandleProtectedRoomMeta(ctx context.Context, evt *event.Event) {
+	switch evt.Type {
+	case event.StatePowerLevels:
+		pe.handleProtectedRoomPowerLevels(ctx, evt)
+	case event.StateRoomName:
+		pe.protectedRoomsLock.Lock()
+		meta, ok := pe.protectedRooms[evt.RoomID]
+		if ok {
+			meta.Name = evt.Content.AsRoomName().Name
+		}
+		pe.protectedRoomsLock.Unlock()
+	}
+}
+
+func (pe *PolicyEvaluator) handleProtectedRoomPowerLevels(ctx context.Context, evt *event.Event) {
 	powerLevels := evt.Content.AsPowerLevels()
 	ownLevel := powerLevels.GetUserLevel(pe.Bot.UserID)
 	minLevel := max(powerLevels.Ban(), powerLevels.Redact())
@@ -82,7 +97,12 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 	if err != nil {
 		return nil, fmt.Sprintf("* Failed to get room members for [%s](%s): %v", roomID, roomID.URI().MatrixToURL(), err)
 	}
-	pe.markAsProtectedRoom(roomID, members.Chunk)
+	var name event.RoomNameEventContent
+	err = pe.Bot.StateEvent(ctx, roomID, event.StateRoomName, "", &name)
+	if err != nil {
+		zerolog.Ctx(ctx).Warn().Err(err).Stringer("room_id", roomID).Msg("Failed to get room name")
+	}
+	pe.markAsProtectedRoom(roomID, name.Name, members.Chunk)
 	if doReeval {
 		memberIDs := make([]id.UserID, len(members.Chunk))
 		for i, member := range members.Chunk {
@@ -148,10 +168,10 @@ func (pe *PolicyEvaluator) markAsWantToProtect(roomID id.RoomID) {
 	pe.wantToProtect[roomID] = struct{}{}
 }
 
-func (pe *PolicyEvaluator) markAsProtectedRoom(roomID id.RoomID, evts []*event.Event) {
+func (pe *PolicyEvaluator) markAsProtectedRoom(roomID id.RoomID, name string, evts []*event.Event) {
 	pe.protectedRoomsLock.Lock()
 	defer pe.protectedRoomsLock.Unlock()
-	pe.protectedRooms[roomID] = struct{}{}
+	pe.protectedRooms[roomID] = &protectedRoomMeta{Name: name}
 	delete(pe.wantToProtect, roomID)
 	for _, evt := range evts {
 		pe.unlockedUpdateUser(id.UserID(evt.GetStateKey()), evt.RoomID, evt.Content.AsMember().Membership)

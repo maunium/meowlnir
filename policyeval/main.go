@@ -19,6 +19,10 @@ import (
 	"go.mau.fi/meowlnir/synapsedb"
 )
 
+type protectedRoomMeta struct {
+	Name string
+}
+
 type PolicyEvaluator struct {
 	Bot       *bot.Bot
 	Store     *policylist.Store
@@ -36,7 +40,7 @@ type PolicyEvaluator struct {
 	configLock sync.Mutex
 
 	claimProtected       func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator
-	protectedRooms       map[id.RoomID]struct{}
+	protectedRooms       map[id.RoomID]*protectedRoomMeta
 	wantToProtect        map[id.RoomID]struct{}
 	protectedRoomMembers map[id.UserID][]id.RoomID
 	protectedRoomsLock   sync.RWMutex
@@ -60,7 +64,7 @@ func NewPolicyEvaluator(
 		Admins:               exsync.NewSet[id.UserID](),
 		protectedRoomMembers: make(map[id.UserID][]id.RoomID),
 		watchedListsMap:      make(map[id.RoomID]*config.WatchedPolicyList),
-		protectedRooms:       make(map[id.RoomID]struct{}),
+		protectedRooms:       make(map[id.RoomID]*protectedRoomMeta),
 		wantToProtect:        make(map[id.RoomID]struct{}),
 		claimProtected:       claimProtected,
 
