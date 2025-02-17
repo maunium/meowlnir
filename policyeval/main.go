@@ -42,6 +42,7 @@ type PolicyEvaluator struct {
 	claimProtected       func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator
 	protectedRooms       map[id.RoomID]*protectedRoomMeta
 	wantToProtect        map[id.RoomID]struct{}
+	isJoining            map[id.RoomID]struct{}
 	protectedRoomMembers map[id.UserID][]id.RoomID
 	protectedRoomsLock   sync.RWMutex
 }
@@ -66,6 +67,7 @@ func NewPolicyEvaluator(
 		watchedListsMap:      make(map[id.RoomID]*config.WatchedPolicyList),
 		protectedRooms:       make(map[id.RoomID]*protectedRoomMeta),
 		wantToProtect:        make(map[id.RoomID]struct{}),
+		isJoining:            make(map[id.RoomID]struct{}),
 		claimProtected:       claimProtected,
 
 		DryRun: dryRun,

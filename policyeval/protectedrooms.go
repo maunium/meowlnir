@@ -64,6 +64,21 @@ func (pe *PolicyEvaluator) handleProtectedRoomPowerLevels(ctx context.Context, e
 	}
 }
 
+func (pe *PolicyEvaluator) lockJoin(roomID id.RoomID) func() {
+	pe.protectedRoomsLock.Lock()
+	_, isJoining := pe.isJoining[roomID]
+	pe.isJoining[roomID] = struct{}{}
+	pe.protectedRoomsLock.Unlock()
+	if isJoining {
+		return nil
+	}
+	return func() {
+		pe.protectedRoomsLock.Lock()
+		delete(pe.isJoining, roomID)
+		pe.protectedRoomsLock.Unlock()
+	}
+}
+
 func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *mautrix.RespJoinedRooms, roomID id.RoomID, doReeval bool) (*mautrix.RespMembers, string) {
 	if claimer := pe.claimProtected(roomID, pe, true); claimer != pe {
 		if claimer != nil && claimer.Bot.UserID == pe.Bot.UserID {
@@ -74,6 +89,11 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 	}
 	var err error
 	if joinedRooms == nil {
+		unlock := pe.lockJoin(roomID)
+		if unlock == nil {
+			return nil, ""
+		}
+		defer unlock()
 		joinedRooms, err = pe.Bot.JoinedRooms(ctx)
 		if err != nil {
 			return nil, fmt.Sprintf("* Failed to get joined rooms: %v", err)

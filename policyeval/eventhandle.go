@@ -51,7 +51,11 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 		pe.protectedRoomsLock.RLock()
 		_, isProtecting := pe.protectedRooms[evt.RoomID]
 		_, wantToProtect := pe.wantToProtect[evt.RoomID]
+		_, isJoining := pe.isJoining[evt.RoomID]
 		pe.protectedRoomsLock.RUnlock()
+		if isJoining {
+			return
+		}
 		if isProtecting && (content.Membership == event.MembershipLeave || content.Membership == event.MembershipBan) {
 			pe.sendNotice(ctx, "⚠️ Bot was removed from [%s](%s)", evt.RoomID, evt.RoomID.URI().MatrixToURL())
 		} else if wantToProtect && (content.Membership == event.MembershipJoin || content.Membership == event.MembershipInvite) {
