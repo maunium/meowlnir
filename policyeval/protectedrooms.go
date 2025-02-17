@@ -81,7 +81,10 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 	}
 	pe.markAsWantToProtect(roomID)
 	if !slices.Contains(joinedRooms.JoinedRooms, roomID) {
-		return nil, fmt.Sprintf("* Bot is not in protected room [%s](%s)", roomID, roomID.URI().MatrixToURL())
+		_, err = pe.Bot.JoinRoom(ctx, roomID.String(), nil)
+		if err != nil {
+			return nil, fmt.Sprintf("* Bot is not in protected room [%s](%s) and joining failed: %v", roomID, roomID.URI().MatrixToURL(), err)
+		}
 	}
 	var powerLevels event.PowerLevelsEventContent
 	err = pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &powerLevels)
