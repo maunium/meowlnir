@@ -89,11 +89,6 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 	}
 	var err error
 	if joinedRooms == nil {
-		unlock := pe.lockJoin(roomID)
-		if unlock == nil {
-			return nil, ""
-		}
-		defer unlock()
 		joinedRooms, err = pe.Bot.JoinedRooms(ctx)
 		if err != nil {
 			return nil, fmt.Sprintf("* Failed to get joined rooms: %v", err)
@@ -101,6 +96,11 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 	}
 	pe.markAsWantToProtect(roomID)
 	if !slices.Contains(joinedRooms.JoinedRooms, roomID) {
+		unlock := pe.lockJoin(roomID)
+		if unlock == nil {
+			return nil, ""
+		}
+		defer unlock()
 		_, err = pe.Bot.JoinRoom(ctx, roomID.String(), nil)
 		if err != nil {
 			return nil, fmt.Sprintf("* Bot is not in protected room [%s](%s) and joining failed: %v", roomID, roomID.URI().MatrixToURL(), err)
