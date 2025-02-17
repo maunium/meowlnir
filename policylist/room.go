@@ -1,6 +1,8 @@
 package policylist
 
 import (
+	"sync"
+
 	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -17,6 +19,7 @@ type Room struct {
 	UserRules   *List
 	RoomRules   *List
 	ServerRules *List
+	mapLock     sync.RWMutex
 	byEventID   map[id.EventID]typeStateKeyTuple
 }
 
@@ -82,7 +85,9 @@ func (r *Room) Update(evt *event.Event) (added, removed *Policy) {
 		if redacts == "" {
 			redacts = evt.Content.AsRedaction().Redacts
 		}
+		r.mapLock.RLock()
 		target, ok := r.byEventID[redacts]
+		r.mapLock.RUnlock()
 		if ok {
 			switch target.Type {
 			case event.StatePolicyUser, event.StateLegacyPolicyUser, event.StateUnstablePolicyUser:
@@ -136,7 +141,9 @@ func (r *Room) updatePolicyList(evt *event.Event, entityType EntityType, rules *
 	if !ok || evt.StateKey == nil {
 		return
 	}
+	r.mapLock.Lock()
 	r.byEventID[evt.ID] = typeStateKeyTuple{Type: evt.Type, StateKey: *evt.StateKey}
+	r.mapLock.Unlock()
 	if content.Entity == "" || content.Recommendation == "" {
 		removed = rules.Remove(evt.Type, *evt.StateKey)
 		return
