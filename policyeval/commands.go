@@ -134,6 +134,14 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		} else {
 			pe.sendNotice(ctx, "No match in %s", dur.String())
 		}
+		rooms := pe.getRoomsUserIsIn(id.UserID(args[0]))
+		if len(rooms) > 0 {
+			formattedRooms := make([]string, len(rooms))
+			for i, roomID := range rooms {
+				formattedRooms[i] = fmt.Sprintf("* [%s](%s)", roomID, roomID.URI().MatrixToURL())
+			}
+			pe.sendNotice(ctx, "User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
+		}
 	}
 }
 
