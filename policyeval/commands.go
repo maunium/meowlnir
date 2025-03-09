@@ -160,34 +160,53 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), stateKey, content)
 }
 
-func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
-	evt, err := pe.Bot.Client.GetEvent(ctx, roomID, eventID)
-	if err != nil {
-		var synErr error
-		if pe.SynapseDB != nil {
-			evt, synErr = pe.SynapseDB.GetEvent(ctx, eventID)
-		} else {
-			synErr = fmt.Errorf("synapse db not available")
+func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender, targetUserID id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
+	var evt *event.Event
+	var err error
+	if eventID != "" {
+		evt, err = pe.Bot.Client.GetEvent(ctx, roomID, eventID)
+		if err != nil {
+			var synErr error
+			if pe.SynapseDB != nil {
+				evt, synErr = pe.SynapseDB.GetEvent(ctx, eventID)
+			} else {
+				synErr = fmt.Errorf("synapse db not available")
+			}
+			if synErr != nil {
+				zerolog.Ctx(ctx).
+					Err(err).
+					AnErr("db_error", synErr).
+					Msg("Failed to get report target event from both API and database")
+				pe.sendNotice(
+					ctx, `[%s](%s) reported [an event](%s) for %s, but the event could not be fetched: %v`,
+					sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(), reason, err,
+				)
+				return fmt.Errorf("failed to fetch event: %w", err)
+			}
 		}
-		if synErr != nil {
-			zerolog.Ctx(ctx).
-				Err(err).
-				AnErr("db_error", synErr).
-				Msg("Failed to get report target event from both API and database")
-			pe.sendNotice(
-				ctx, `[%s](%s) reported [an event](%s) for %s, but the event could not be fetched: %v`,
-				sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(), reason, err,
-			)
-			return fmt.Errorf("failed to fetch event: %w", err)
-		}
+		targetUserID = evt.Sender
 	}
-	if !pe.Admins.Has(sender) || !strings.HasPrefix(reason, "/") {
-		pe.sendNotice(
-			ctx, `[%s](%s) reported [an event](%s) from [%s](%s) for %s`,
-			sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(),
-			evt.Sender, evt.Sender.URI().MatrixToURL(),
-			reason,
-		)
+	if !pe.Admins.Has(sender) || !strings.HasPrefix(reason, "/") || targetUserID == "" {
+		if eventID != "" {
+			pe.sendNotice(
+				ctx, `[%s](%s) reported [an event](%s) from [%s](%s) for %s`,
+				sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(),
+				evt.Sender, evt.Sender.URI().MatrixToURL(),
+				reason,
+			)
+		} else if roomID != "" {
+			pe.sendNotice(
+				ctx, `[%s](%s) reported [a room](%s) for %s`,
+				sender, sender.URI().MatrixToURL(), roomID.URI().MatrixToURL(),
+				reason,
+			)
+		} else if targetUserID != "" {
+			pe.sendNotice(
+				ctx, `[%s](%s) reported [%s](%s) for %s`,
+				sender, sender.URI().MatrixToURL(), targetUserID.URI().MatrixToURL(),
+				reason,
+			)
+		}
 		return nil
 	}
 	fields := strings.Fields(reason)
@@ -198,18 +217,18 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, r
 		if len(args) < 2 {
 			return mautrix.MInvalidParam.WithMessage("Not enough arguments for ban")
 		}
-		match := pe.Store.MatchUser(pe.GetWatchedLists(), evt.Sender)
+		match := pe.Store.MatchUser(pe.GetWatchedLists(), targetUserID)
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			if rec.Recommendation == event.PolicyRecommendationUnban {
 				return mautrix.RespError{
 					ErrCode:    "FI.MAU.MEOWLNIR.UNBAN_RECOMMENDED",
-					Err:        fmt.Sprintf("%s has an unban recommendation: %s", evt.Sender, rec.Reason),
+					Err:        fmt.Sprintf("%s has an unban recommendation: %s", targetUserID, rec.Reason),
 					StatusCode: http.StatusConflict,
 				}
 			} else {
 				return mautrix.RespError{
 					ErrCode:    "FI.MAU.MEOWLNIR.ALREADY_BANNED",
-					Err:        fmt.Sprintf("%s is already banned for: %s", evt.Sender, rec.Reason),
+					Err:        fmt.Sprintf("%s is already banned for: %s", targetUserID, rec.Reason),
 					StatusCode: http.StatusConflict,
 				}
 			}
@@ -217,18 +236,18 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, r
 		list := pe.FindListByShortcode(args[0])
 		if list == nil {
 			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of [%s](%s): list %q not found`,
-				sender, sender.URI().MatrixToURL(), evt.Sender, evt.Sender.URI().MatrixToURL(), args[0])
+				sender, sender.URI().MatrixToURL(), targetUserID, targetUserID.URI().MatrixToURL(), args[0])
 			return mautrix.MNotFound.WithMessage(fmt.Sprintf("List with shortcode %q not found", args[0]))
 		}
 		policy := &event.ModPolicyContent{
-			Entity:         string(evt.Sender),
+			Entity:         string(targetUserID),
 			Reason:         strings.Join(args[1:], " "),
 			Recommendation: event.PolicyRecommendationBan,
 		}
 		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, "", policy)
 		if err != nil {
 			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of [%s](%s) for %s ([%s](%s)): %v`,
-				sender, sender.URI().MatrixToURL(), evt.Sender, evt.Sender.URI().MatrixToURL(),
+				sender, sender.URI().MatrixToURL(), targetUserID, targetUserID.URI().MatrixToURL(),
 				list.Name, list.RoomID, list.RoomID.URI().MatrixToURL(), err)
 			return fmt.Errorf("failed to send policy: %w", err)
 		}
@@ -238,7 +257,7 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, r
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent ban policy from report")
 		pe.sendNotice(ctx, `Processed [%s](%s)'s report of [%s](%s) and sent a ban policy to %s ([%s](%s)) for %s`,
-			sender, sender.URI().MatrixToURL(), evt.Sender, evt.Sender.URI().MatrixToURL(),
+			sender, sender.URI().MatrixToURL(), targetUserID, targetUserID.URI().MatrixToURL(),
 			list.Name, list.RoomID, list.RoomID.URI().MatrixToURL(), policy.Reason)
 	}
 	return nil
