@@ -70,7 +70,8 @@ func (m *Meowlnir) PostReport(w http.ResponseWriter, r *http.Request) {
 		Str("action", "handle report").
 		Logger()
 	ctx := context.WithoutCancel(log.WithContext(r.Context()))
-	err = mgmtRoom.HandleReport(ctx, userID, roomID, eventID, req.Reason)
+	userToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	err = mgmtRoom.HandleReport(ctx, userToken, userID, roomID, eventID, req.Reason)
 	if err != nil {
 		log.Err(err).Msg("Failed to handle report")
 		var respErr mautrix.RespError

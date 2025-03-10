@@ -160,9 +160,14 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), stateKey, content)
 }
 
-func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
-	evt, err := pe.Bot.Client.GetEvent(ctx, roomID, eventID)
+func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderToken string, sender id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
+	userClient, err := mautrix.NewClient(pe.Bot.HomeserverURL.String(), sender, senderToken)
 	if err != nil {
+		zerolog.Ctx(ctx).Info().Err(err).Msg("Failed to create client")
+		return fmt.Errorf("failed to create client: %w", err)
+	}
+	evt, fetchErr := userClient.GetEvent(ctx, roomID, eventID)
+	if fetchErr != nil {
 		var synErr error
 		if pe.SynapseDB != nil {
 			evt, synErr = pe.SynapseDB.GetEvent(ctx, eventID)
@@ -171,14 +176,14 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender id.UserID, r
 		}
 		if synErr != nil {
 			zerolog.Ctx(ctx).
-				Err(err).
+				Err(fetchErr).
 				AnErr("db_error", synErr).
 				Msg("Failed to get report target event from both API and database")
 			pe.sendNotice(
 				ctx, `[%s](%s) reported [an event](%s) for %s, but the event could not be fetched: %v`,
-				sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(), reason, err,
+				sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(), reason, fetchErr,
 			)
-			return fmt.Errorf("failed to fetch event: %w", err)
+			return fmt.Errorf("failed to fetch event: %w", fetchErr)
 		}
 	}
 	if !pe.Admins.Has(sender) || !strings.HasPrefix(reason, "/") {
