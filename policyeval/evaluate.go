@@ -100,14 +100,10 @@ func (pe *PolicyEvaluator) ReevaluateActions(ctx context.Context, actions []*dat
 		if action.ActionType == database.TakenActionTypeBanOrUnban && action.Action == event.PolicyRecommendationBan {
 			// ensure that the user is actually banned in the room
 			if pe.Bot.StateStore.IsMembership(ctx, action.InRoomID, action.TargetUser, event.MembershipBan) {
-				// This is hacky
-				policy := &policylist.Policy{
-					RoomID: action.InRoomID,
-					ModPolicyContent: &event.ModPolicyContent{
-						Entity: action.RuleEntity,
-					},
+				match := pe.Store.MatchUser(pe.GetWatchedLists(), action.TargetUser)
+				if match != nil {
+					pe.ApplyPolicy(ctx, action.TargetUser, match, false)
 				}
-				pe.ApplyUnban(ctx, action.TargetUser, action.InRoomID, policy)
 			}
 		}
 	}
