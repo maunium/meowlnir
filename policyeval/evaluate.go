@@ -107,7 +107,14 @@ func (pe *PolicyEvaluator) ReevaluateActions(ctx context.Context, actions []*dat
 						Entity: action.RuleEntity,
 					},
 				}
-				pe.ApplyUnban(ctx, action.TargetUser, action.InRoomID, policy)
+				list, ok := pe.watchedListsMap[policy.RoomID]
+				if !ok {
+					zerolog.Ctx(ctx).Error().Any("policy", policy).Msg("Policy not found in watched lists map")
+					return
+				}
+				if list.AutoUnban {
+					pe.ApplyUnban(ctx, action.TargetUser, action.InRoomID, policy)
+				}
 			}
 		}
 	}
