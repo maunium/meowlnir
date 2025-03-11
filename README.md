@@ -88,10 +88,10 @@ create bots.
 
 Currently existing endpoints:
 
-* `GET /_matrix/meowlnir/v1/bots` - List all bots
-* `PUT /_matrix/meowlnir/v1/bot/{localpart}` - Create a bot
-* `POST /_matrix/meowlnir/v1/bot/{localpart}/verify` - Cross-sign a bot's device
-* `PUT /_matrix/meowlnir/v1/management_room/{roomID}` - Define a room as a management room
+* `GET /_meowlnir/v1/bots` - List all bots
+* `PUT /_meowlnir/v1/bot/{localpart}` - Create a bot
+* `POST /_meowlnir/v1/bot/{localpart}/verify` - Cross-sign a bot's device
+* `PUT /_meowlnir/v1/management_room/{roomID}` - Define a room as a management room
 
 There will be a CLI and/or web UI later, but for now, you can use curl:
 
@@ -103,7 +103,7 @@ First, create a bot. This example copies matrix.org's admin bot (`abuse` as the
 username, `Administrator` as the displayname, and the same avatar):
 
 ```shell
-curl -H "$AUTH" https://meowlnir.example.com/_matrix/meowlnir/v1/bot/abuse -XPUT -d '{"displayname": "Administrator", "avatar_url": "mxc://matrix.org/NZGChxcCXbBvgkCNZTLXlpux"}'
+curl -H "$AUTH" https://meowlnir.example.com/_meowlnir/v1/bot/abuse -XPUT -d '{"displayname": "Administrator", "avatar_url": "mxc://matrix.org/NZGChxcCXbBvgkCNZTLXlpux"}'
 ```
 
 Assuming you didn't have an @abuse user before or if it didn't have encryption,
@@ -111,21 +111,21 @@ you can have Meowlnir generate cross-signing keys to verify itself. This
 command will return the recovery key. Make sure to save it!
 
 ```shell
-curl -H "$AUTH" https://meowlnir.example.com/_matrix/meowlnir/v1/bot/abuse/verify -d '{"generate": true}'
+curl -H "$AUTH" https://meowlnir.example.com/_meowlnir/v1/bot/abuse/verify -d '{"generate": true}'
 ```
 
 Alternatively, if the user already has cross-signing set up, you can provide
 the recovery key for verification:
 
 ```shell
-curl -H "$AUTH" https://meowlnir.example.com/_matrix/meowlnir/v1/bot/abuse/verify -d '{"recovery_key": "EsT* ****..."}'
+curl -H "$AUTH" https://meowlnir.example.com/_meowlnir/v1/bot/abuse/verify -d '{"recovery_key": "EsT* ****..."}'
 ```
 
 Finally, you need to define a management room. Create the room normally, get
 the room ID and run:
 
 ```shell
-curl -H "$AUTH" -X PUT 'https://meowlnir.example.com/_matrix/meowlnir/v1/management_room/!randomroomid:example.com' -d '{"bot_username": "abuse"}'
+curl -H "$AUTH" -X PUT 'https://meowlnir.example.com/_meowlnir/v1/management_room/!randomroomid:example.com' -d '{"bot_username": "abuse"}'
 ```
 
 After defining the room, you can invite the bot, and it should accept the invite

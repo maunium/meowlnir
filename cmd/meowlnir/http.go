@@ -27,9 +27,8 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 	managementRouter.HandleFunc("PUT /v1/bot/{username}", m.PutBot)
 	managementRouter.HandleFunc("POST /v1/bot/{username}/verify", m.PostVerifyBot)
 	managementRouter.HandleFunc("PUT /v1/management_room/{roomID}", m.PutManagementRoom)
-
-	m.AS.Router.PathPrefix("/_matrix/meowlnir").Handler(applyMiddleware(
-		http.StripPrefix("/_matrix/meowlnir", managementRouter),
+	m.AS.Router.PathPrefix("/_meowlnir").Handler(applyMiddleware(
+		http.StripPrefix("/_meowlnir", managementRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "management api").Logger()),
 		exhttp.CORSMiddleware,
 		requestlog.AccessLogger(false),
