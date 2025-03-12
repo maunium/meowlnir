@@ -1,6 +1,8 @@
 package policylist
 
 import (
+	"encoding/base64"
+	"slices"
 	"sync"
 
 	"go.mau.fi/util/glob"
@@ -135,6 +137,13 @@ func (r *Room) massUpdatePolicyList(input map[string]*event.Event, entityType En
 }
 
 var HackyRuleFilter []string
+var HackyRuleFilterHashes [][hashSize]byte
+
+type hashGlob [hashSize]byte
+
+func (hg *hashGlob) Match(entity string) bool {
+	return sha256String(entity) == *hg
+}
 
 func (r *Room) updatePolicyList(evt *event.Event, entityType EntityType, rules *List) (added, removed *Policy) {
 	content, ok := evt.Content.Parsed.(*event.ModPolicyContent)
@@ -144,7 +153,14 @@ func (r *Room) updatePolicyList(evt *event.Event, entityType EntityType, rules *
 	r.mapLock.Lock()
 	r.byEventID[evt.ID] = typeStateKeyTuple{Type: evt.Type, StateKey: *evt.StateKey}
 	r.mapLock.Unlock()
-	if content.Entity == "" || content.Recommendation == "" {
+	var entityHash *[hashSize]byte
+	if content.Entity == "" && content.UnstableHashes != nil && len(content.UnstableHashes.SHA256) == sha256Base64Length {
+		hash, err := base64.StdEncoding.DecodeString(content.UnstableHashes.SHA256)
+		if err == nil && len(hash) == hashSize {
+			entityHash = (*[hashSize]byte)(hash)
+		}
+	}
+	if (content.Entity == "" && entityHash == nil) || content.Recommendation == "" {
 		removed = rules.Remove(evt.Type, *evt.StateKey)
 		return
 	}
@@ -154,19 +170,26 @@ func (r *Room) updatePolicyList(evt *event.Event, entityType EntityType, rules *
 	added = &Policy{
 		ModPolicyContent: content,
 		Pattern:          glob.Compile(content.Entity),
-
-		EntityType: entityType,
-		RoomID:     evt.RoomID,
-		StateKey:   *evt.StateKey,
-		Sender:     evt.Sender,
-		Type:       evt.Type,
-		Timestamp:  evt.Timestamp,
-		ID:         evt.ID,
+		EntityHash:       entityHash,
+		EntityType:       entityType,
+		RoomID:           evt.RoomID,
+		StateKey:         *evt.StateKey,
+		Sender:           evt.Sender,
+		Type:             evt.Type,
+		Timestamp:        evt.Timestamp,
+		ID:               evt.ID,
+	}
+	if entityHash != nil {
+		added.Pattern = (*hashGlob)(entityHash)
 	}
 	if added.Recommendation == event.PolicyRecommendationBan {
-		for _, entry := range HackyRuleFilter {
-			if added.Pattern.Match(entry) {
-				added.Ignored = true
+		if added.EntityHash != nil {
+			added.Ignored = slices.Contains(HackyRuleFilterHashes, *added.EntityHash)
+		} else {
+			for _, entry := range HackyRuleFilter {
+				if added.Pattern.Match(entry) {
+					added.Ignored = true
+				}
 			}
 		}
 	}

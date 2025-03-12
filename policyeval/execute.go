@@ -78,7 +78,7 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 		InRoomID:   roomID,
 		ActionType: database.TakenActionTypeBanOrUnban,
 		PolicyList: policy.RoomID,
-		RuleEntity: policy.Entity,
+		RuleEntity: policy.EntityOrHash(),
 		Action:     policy.Recommendation,
 		TakenAt:    time.Now(),
 	}

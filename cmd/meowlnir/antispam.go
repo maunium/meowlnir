@@ -56,7 +56,7 @@ func (m *Meowlnir) PostUserMayInvite(w http.ResponseWriter, r *http.Request) {
 
 	if rec := mgmtRoom.Store.MatchUser(lists, req.Inviter).Recommendations().BanOrUnban; rec != nil && rec.Recommendation == event.PolicyRecommendationBan {
 		log.Debug().
-			Str("policy_entity", rec.Entity).
+			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
 			Msg("Blocking invite from banned user")
 		mautrix.MForbidden.
@@ -67,7 +67,7 @@ func (m *Meowlnir) PostUserMayInvite(w http.ResponseWriter, r *http.Request) {
 
 	if rec := mgmtRoom.Store.MatchRoom(lists, req.Room).Recommendations().BanOrUnban; rec != nil && rec.Recommendation == event.PolicyRecommendationBan {
 		log.Debug().
-			Str("policy_entity", rec.Entity).
+			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
 			Msg("Blocking invite to banned room")
 		mautrix.MForbidden.
@@ -79,7 +79,7 @@ func (m *Meowlnir) PostUserMayInvite(w http.ResponseWriter, r *http.Request) {
 	inviterServer := req.Inviter.Homeserver()
 	if rec := mgmtRoom.Store.MatchServer(lists, inviterServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation == event.PolicyRecommendationBan {
 		log.Debug().
-			Str("policy_entity", rec.Entity).
+			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
 			Msg("Blocking invite from banned server")
 		mautrix.MForbidden.

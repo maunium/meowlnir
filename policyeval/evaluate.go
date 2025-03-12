@@ -72,9 +72,9 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 		}
 	} else {
 		// For ban rules, find users who were banned by the rule and re-evaluate them.
-		reevalTargets, err := pe.DB.TakenAction.GetAllByRuleEntity(ctx, policy.RoomID, policy.Entity)
+		reevalTargets, err := pe.DB.TakenAction.GetAllByRuleEntity(ctx, policy.RoomID, policy.EntityOrHash())
 		if err != nil {
-			zerolog.Ctx(ctx).Err(err).Str("policy_entity", policy.Entity).
+			zerolog.Ctx(ctx).Err(err).Str("policy_entity", policy.EntityOrHash()).
 				Msg("Failed to get actions taken for removed policy")
 			pe.sendNotice(ctx, "Database error in EvaluateRemovedRule (GetAllByRuleEntity): %v", err)
 			return

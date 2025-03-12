@@ -17,6 +17,7 @@ import (
 	up "go.mau.fi/util/configupgrade"
 	"go.mau.fi/util/dbutil"
 	_ "go.mau.fi/util/dbutil/litestream"
+	"go.mau.fi/util/exslices"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/ptr"
 	"gopkg.in/yaml.v3"
@@ -84,6 +85,9 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	m.AntispamSecret = m.loadSecret(m.Config.Meowlnir.AntispamSecret)
 
 	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
+	policylist.HackyRuleFilterHashes = exslices.CastFunc(policylist.HackyRuleFilter, func(s string) [32]byte {
+		return sha256.Sum256([]byte(s))
+	})
 
 	m.Log, err = m.Config.Logging.Compile()
 	if err != nil {

@@ -9,7 +9,8 @@ import (
 // Policy represents a single moderation policy event with the relevant data parsed out.
 type Policy struct {
 	*event.ModPolicyContent
-	Pattern glob.Glob
+	Pattern    glob.Glob
+	EntityHash *[hashSize]byte
 
 	EntityType EntityType
 	RoomID     id.RoomID
