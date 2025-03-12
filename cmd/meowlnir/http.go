@@ -17,6 +17,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 	m.AS.Router.PathPrefix("/_matrix/client").Handler(applyMiddleware(
 		http.StripPrefix("/_matrix/client", clientRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "reporting api").Logger()),
+		hlog.RequestIDHandler("request_id", "X-Request-ID"),
 		exhttp.CORSMiddleware,
 		requestlog.AccessLogger(false),
 		m.ClientAuth,
@@ -27,6 +28,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 	m.AS.Router.PathPrefix("/_meowlnir/antispam").Handler(applyMiddleware(
 		http.StripPrefix("/_meowlnir/antispam", antispamRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "antispam api").Logger()),
+		hlog.RequestIDHandler("request_id", "X-Request-ID"),
 		requestlog.AccessLogger(false),
 		m.AntispamAuth,
 	))
@@ -39,6 +41,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 	m.AS.Router.PathPrefix("/_meowlnir").Handler(applyMiddleware(
 		http.StripPrefix("/_meowlnir", managementRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "management api").Logger()),
+		hlog.RequestIDHandler("request_id", "X-Request-ID"),
 		exhttp.CORSMiddleware,
 		requestlog.AccessLogger(false),
 		m.ManagementAuth,
