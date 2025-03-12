@@ -62,16 +62,18 @@ func (m *Meowlnir) PostReport(w http.ResponseWriter, r *http.Request) {
 
 	roomID := id.RoomID(r.PathValue("roomID"))
 	eventID := id.EventID(r.PathValue("eventID"))
+	reportedUserID := id.UserID(r.PathValue("userID"))
 	userID := r.Context().Value(contextKeyClientUserID).(id.UserID)
 	log := hlog.FromRequest(r).With().
 		Stringer("report_room_id", roomID).
 		Stringer("report_event_id", eventID).
+		Stringer("reported_user_id", reportedUserID).
 		Stringer("reporter_sender", userID).
 		Str("action", "handle report").
 		Logger()
 	ctx := context.WithoutCancel(log.WithContext(r.Context()))
 	userToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	err = mgmtRoom.HandleReport(ctx, userToken, userID, roomID, eventID, req.Reason)
+	err = mgmtRoom.HandleReport(ctx, userToken, userID, reportedUserID, roomID, eventID, req.Reason)
 	if err != nil {
 		log.Err(err).Msg("Failed to handle report")
 		var respErr mautrix.RespError
