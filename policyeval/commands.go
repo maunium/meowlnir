@@ -134,7 +134,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			if rec.Recommendation == event.PolicyRecommendationUnban {
 				pe.sendNotice(ctx, "`%s` has an unban recommendation: %s", target, rec.Reason)
 				return
-			} else if rec.RoomID == list.RoomID {
+			} else if rec.RoomID == list.RoomID && rec.Entity == target {
 				existingStateKey = rec.StateKey
 			}
 		}
