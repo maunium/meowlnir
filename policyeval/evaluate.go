@@ -2,10 +2,12 @@ package policyeval
 
 import (
 	"context"
+	"iter"
 	"maps"
 	"slices"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
@@ -13,11 +15,36 @@ import (
 	"go.mau.fi/meowlnir/policylist"
 )
 
-func (pe *PolicyEvaluator) EvaluateAll(ctx context.Context) {
+func (pe *PolicyEvaluator) getAllUsers() []id.UserID {
 	pe.protectedRoomsLock.RLock()
-	users := slices.Collect(maps.Keys(pe.protectedRoomMembers))
-	pe.protectedRoomsLock.RUnlock()
-	pe.EvaluateAllMembers(ctx, users)
+	defer pe.protectedRoomsLock.RUnlock()
+	return slices.Collect(maps.Keys(pe.protectedRoomMembers))
+}
+
+func (pe *PolicyEvaluator) findMatchingUsers(pattern glob.Glob) iter.Seq[id.UserID] {
+	return func(yield func(id.UserID) bool) {
+		exact, ok := pattern.(glob.ExactGlob)
+		if ok {
+			userID := id.UserID(exact)
+			pe.protectedRoomsLock.RLock()
+			defer pe.protectedRoomsLock.RUnlock()
+			_, found := pe.protectedRoomMembers[userID]
+			if found {
+				yield(userID)
+			}
+			return
+		}
+		users := pe.getAllUsers()
+		for _, userID := range users {
+			if pattern.Match(string(userID)) {
+				yield(userID)
+			}
+		}
+	}
+}
+
+func (pe *PolicyEvaluator) EvaluateAll(ctx context.Context) {
+	pe.EvaluateAllMembers(ctx, pe.getAllUsers())
 }
 
 func (pe *PolicyEvaluator) EvaluateAllMembers(ctx context.Context, members []id.UserID) {
@@ -38,13 +65,8 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 	if policy.Recommendation == event.PolicyRecommendationUnban {
 		// When an unban rule is removed, evaluate all joined users against the removed rule
 		// to see if they should be re-evaluated against all rules (and possibly banned)
-		pe.protectedRoomsLock.RLock()
-		users := slices.Collect(maps.Keys(pe.protectedRoomMembers))
-		pe.protectedRoomsLock.RUnlock()
-		for _, userID := range users {
-			if policy.Pattern.Match(string(userID)) {
-				pe.EvaluateUser(ctx, userID, false)
-			}
+		for userID := range pe.findMatchingUsers(policy.Pattern) {
+			pe.EvaluateUser(ctx, userID, false)
 		}
 	} else {
 		// For ban rules, find users who were banned by the rule and re-evaluate them.
@@ -60,14 +82,9 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 }
 
 func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policylist.Policy) {
-	pe.protectedRoomsLock.RLock()
-	users := slices.Collect(maps.Keys(pe.protectedRoomMembers))
-	pe.protectedRoomsLock.RUnlock()
-	for _, userID := range users {
-		if policy.Pattern.Match(string(userID)) {
-			// Do a full evaluation to ensure new policies don't bypass existing higher priority policies
-			pe.EvaluateUser(ctx, userID, true)
-		}
+	for userID := range pe.findMatchingUsers(policy.Pattern) {
+		// Do a full evaluation to ensure new policies don't bypass existing higher priority policies
+		pe.EvaluateUser(ctx, userID, true)
 	}
 }
 

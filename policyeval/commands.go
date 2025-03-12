@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -79,24 +80,29 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "Usage: `!kick <user ID> [reason]`")
 			return
 		}
-		userID := id.UserID(args[0])
-		rooms := pe.getRoomsUserIsIn(userID)
-		if len(rooms) == 0 {
-			pe.sendNotice(ctx, "User `%s` is not in any rooms", userID)
-			return
-		}
+		pattern := glob.Compile(args[0])
 		reason := strings.Join(args[1:], " ")
-		successCount := 0
-		for _, room := range rooms {
-			_, err := pe.Bot.KickUser(ctx, room, &mautrix.ReqKickUser{
-				Reason: reason,
-				UserID: userID,
-			})
-			if err != nil {
-				pe.sendNotice(ctx, "Failed to kick `%s` from `%s`: %v", userID, room, err)
-			} else {
-				successCount++
+		userCount := 0
+		for userID := range pe.findMatchingUsers(pattern) {
+			userCount++
+			successCount := 0
+			rooms := pe.getRoomsUserIsIn(userID)
+			for _, room := range rooms {
+				_, err := pe.Bot.KickUser(ctx, room, &mautrix.ReqKickUser{
+					Reason: reason,
+					UserID: userID,
+				})
+				if err != nil {
+					pe.sendNotice(ctx, "Failed to kick `%s` from `%s`: %v", userID, room, err)
+				} else {
+					successCount++
+				}
 			}
+			pe.sendNotice(ctx, "Kicked `%s` from %d rooms", userID, successCount)
+		}
+		if userCount == 0 {
+			pe.sendNotice(ctx, "No users matching `%s` found in any rooms", args[0])
+			return
 		}
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!ban", "!ban-user", "!ban-server":
