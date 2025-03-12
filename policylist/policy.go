@@ -33,7 +33,7 @@ type Recommendations struct {
 func (m Match) Recommendations() (output Recommendations) {
 	for _, policy := range m {
 		switch policy.Recommendation {
-		case event.PolicyRecommendationBan, event.PolicyRecommendationUnban:
+		case event.PolicyRecommendationBan, event.PolicyRecommendationUnban, event.PolicyRecommendationUnstableTakedown:
 			if output.BanOrUnban == nil {
 				output.BanOrUnban = policy
 			}

@@ -54,7 +54,7 @@ func (m *Meowlnir) PostUserMayInvite(w http.ResponseWriter, r *http.Request) {
 
 	lists := mgmtRoom.GetWatchedLists()
 
-	if rec := mgmtRoom.Store.MatchUser(lists, req.Inviter).Recommendations().BanOrUnban; rec != nil && rec.Recommendation == event.PolicyRecommendationBan {
+	if rec := mgmtRoom.Store.MatchUser(lists, req.Inviter).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
 		log.Debug().
 			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
@@ -65,7 +65,7 @@ func (m *Meowlnir) PostUserMayInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if rec := mgmtRoom.Store.MatchRoom(lists, req.Room).Recommendations().BanOrUnban; rec != nil && rec.Recommendation == event.PolicyRecommendationBan {
+	if rec := mgmtRoom.Store.MatchRoom(lists, req.Room).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
 		log.Debug().
 			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
@@ -77,7 +77,7 @@ func (m *Meowlnir) PostUserMayInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	inviterServer := req.Inviter.Homeserver()
-	if rec := mgmtRoom.Store.MatchServer(lists, inviterServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation == event.PolicyRecommendationBan {
+	if rec := mgmtRoom.Store.MatchServer(lists, inviterServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
 		log.Debug().
 			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).

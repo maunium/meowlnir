@@ -42,7 +42,7 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 		return
 	}
 	if recs.BanOrUnban != nil {
-		if recs.BanOrUnban.Recommendation == event.PolicyRecommendationBan {
+		if recs.BanOrUnban.Recommendation == event.PolicyRecommendationBan || recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown {
 			zerolog.Ctx(ctx).Info().
 				Stringer("user_id", userID).
 				Any("matches", policy).
@@ -50,7 +50,7 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 			for _, room := range rooms {
 				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
 			}
-			if recs.BanOrUnban.Reason == "spam" {
+			if recs.BanOrUnban.Reason == "spam" || recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown {
 				go pe.RedactUser(context.WithoutCancel(ctx), userID, recs.BanOrUnban.Reason, true)
 			}
 		} else {
