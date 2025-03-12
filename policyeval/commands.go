@@ -188,29 +188,19 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), stateKey, content)
 }
 
-func (pe *PolicyEvaluator) HandleReport(ctx context.Context, sender, targetUserID id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
+func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderClient *mautrix.Client, targetUserID id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
+	sender := senderClient.UserID
 	var evt *event.Event
 	var err error
 	if eventID != "" {
-		evt, err = pe.Bot.Client.GetEvent(ctx, roomID, eventID)
+		evt, err = senderClient.GetEvent(ctx, roomID, eventID)
 		if err != nil {
-			var synErr error
-			if pe.SynapseDB != nil {
-				evt, synErr = pe.SynapseDB.GetEvent(ctx, eventID)
-			} else {
-				synErr = fmt.Errorf("synapse db not available")
-			}
-			if synErr != nil {
-				zerolog.Ctx(ctx).
-					Err(err).
-					AnErr("db_error", synErr).
-					Msg("Failed to get report target event from both API and database")
-				pe.sendNotice(
-					ctx, `[%s](%s) reported [an event](%s) for %s, but the event could not be fetched: %v`,
-					sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(), reason, err,
-				)
-				return fmt.Errorf("failed to fetch event: %w", err)
-			}
+			zerolog.Ctx(ctx).Err(err).Msg("Failed to get report target event with user's token")
+			pe.sendNotice(
+				ctx, `[%s](%s) reported [an event](%s) for %s, but the event could not be fetched: %v`,
+				sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(), reason, err,
+			)
+			return fmt.Errorf("failed to fetch event: %w", err)
 		}
 		targetUserID = evt.Sender
 	}
