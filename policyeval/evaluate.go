@@ -37,7 +37,9 @@ func (pe *PolicyEvaluator) findMatchingUsers(pattern glob.Glob) iter.Seq[id.User
 		users := pe.getAllUsers()
 		for _, userID := range users {
 			if pattern.Match(string(userID)) {
-				yield(userID)
+				if !yield(userID) {
+					return
+				}
 			}
 		}
 	}
