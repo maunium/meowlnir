@@ -188,18 +188,12 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), stateKey, content)
 }
 
-func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderToken string, sender, targetUserID id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
+func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderClient *mautrix.Client, targetUserID id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
+	sender := senderClient.UserID
 	var evt *event.Event
 	var err error
 	if eventID != "" {
-		userClient := &mautrix.Client{
-			HomeserverURL: pe.Bot.HomeserverURL,
-			Client:        pe.Bot.Client.Client,
-			Log:           *zerolog.Ctx(ctx),
-			UserID:        sender,
-			AccessToken:   senderToken,
-		}
-		evt, err = userClient.GetEvent(ctx, roomID, eventID)
+		evt, err = senderClient.GetEvent(ctx, roomID, eventID)
 		if err != nil {
 			zerolog.Ctx(ctx).Err(err).Msg("Failed to get report target event with user's token")
 			pe.sendNotice(
