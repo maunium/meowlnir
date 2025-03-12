@@ -190,3 +190,17 @@ The event content is simply a `rooms` key which is a list of room IDs.
 
 After adding rooms to this list, you can invite the bot to the room, or use the
 `!join` command.
+
+#### Blocking invites
+To use policy lists for blocking incoming invites, install the
+[synapse-http-antispam] module, then configure it with the ID of the management
+room you want to use plus the antispam API token from the Meowlnir config file:
+
+```yaml
+modules:
+  - module: synapse_http_antispam.HTTPAntispam
+    config:
+      base_url: http://localhost:29339/_meowlnir/antispam/<management room ID>
+      authorization: <value of meowlnir.antispam_secret>
+      enabled_callbacks:
+      - user_may_invite

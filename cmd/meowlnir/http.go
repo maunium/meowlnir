@@ -22,6 +22,15 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		m.ClientAuth,
 	))
 
+	antispamRouter := http.NewServeMux()
+	antispamRouter.HandleFunc("POST /{policyListID}/{callback}", m.PostCallback)
+	m.AS.Router.PathPrefix("/_meowlnir/antispam").Handler(applyMiddleware(
+		http.StripPrefix("/_meowlnir/antispam", antispamRouter),
+		hlog.NewHandler(m.Log.With().Str("component", "antispam api").Logger()),
+		requestlog.AccessLogger(false),
+		m.AntispamAuth,
+	))
+
 	managementRouter := http.NewServeMux()
 	managementRouter.HandleFunc("GET /v1/bots", m.GetBots)
 	managementRouter.HandleFunc("PUT /v1/bot/{username}", m.PutBot)

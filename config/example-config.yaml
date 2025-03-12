@@ -22,6 +22,8 @@ meowlnir:
     # Management secret used for the management API. If set to generate, a random secret will be generated.
     # If prefixed with sha256:, the rest of the string will be hex-decoded and used as the hash of the secret.
     management_secret: generate
+    # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret.
+    antispam_secret: generate
     # If dry run is set to true, meowlnir won't take any actual actions,
     # but will do everything else as if it was going to take actions.
     dry_run: false

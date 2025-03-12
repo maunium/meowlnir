@@ -49,6 +49,17 @@ func (m *Meowlnir) ManagementAuth(next http.Handler) http.Handler {
 	})
 }
 
+func (m *Meowlnir) AntispamAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHash := sha256.Sum256([]byte(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
+		if !hmac.Equal(authHash[:], m.AntispamSecret[:]) {
+			mautrix.MUnknown.WithMessage("Invalid antispam secret").Write(w)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
 	m.MapLock.RLock()
 	bots := slices.Collect(maps.Values(m.Bots))

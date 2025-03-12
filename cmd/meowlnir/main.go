@@ -50,6 +50,7 @@ type Meowlnir struct {
 	EventProcessor *appservice.EventProcessor
 
 	ManagementSecret [32]byte
+	AntispamSecret   [32]byte
 
 	PolicyStore               *policylist.Store
 	MapLock                   sync.RWMutex
@@ -58,12 +59,11 @@ type Meowlnir struct {
 	EvaluatorByManagementRoom map[id.RoomID]*policyeval.PolicyEvaluator
 }
 
-func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
-	var err error
-	m.Config = loadConfig(configPath, noSaveConfig)
-	if strings.HasPrefix(m.Config.Meowlnir.ManagementSecret, "sha256:") {
+func (m *Meowlnir) loadSecret(secret string) [32]byte {
+	if strings.HasPrefix(secret, "sha256:") {
 		var decoded []byte
-		decoded, err = hex.DecodeString(strings.TrimPrefix(m.Config.Meowlnir.ManagementSecret, "sha256:"))
+		var err error
+		decoded, err = hex.DecodeString(strings.TrimPrefix(secret, "sha256:"))
 		if err != nil {
 			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to decode management secret hash")
 			os.Exit(10)
@@ -71,10 +71,18 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 			m.Log.WithLevel(zerolog.FatalLevel).Msg("Management secret hash is not 32 bytes long")
 			os.Exit(10)
 		}
-		m.ManagementSecret = [32]byte(decoded)
-	} else {
-		m.ManagementSecret = sha256.Sum256([]byte(m.Config.Meowlnir.ManagementSecret))
+		return [32]byte(decoded)
 	}
+	return sha256.Sum256([]byte(secret))
+}
+
+func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
+	var err error
+	m.Config = loadConfig(configPath, noSaveConfig)
+
+	m.ManagementSecret = m.loadSecret(m.Config.Meowlnir.ManagementSecret)
+	m.AntispamSecret = m.loadSecret(m.Config.Meowlnir.AntispamSecret)
+
 	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
 
 	m.Log, err = m.Config.Logging.Compile()
