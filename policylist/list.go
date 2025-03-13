@@ -1,17 +1,16 @@
 package policylist
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/meowlnir/util"
 )
 
 type dplNode struct {
@@ -19,10 +18,6 @@ type dplNode struct {
 	prev *dplNode
 	next *dplNode
 }
-
-const hashSize = sha256.Size
-
-var sha256Base64Length = base64.StdEncoding.EncodedLen(hashSize)
 
 // List represents the list of rules for a single entity type.
 //
@@ -32,7 +27,7 @@ type List struct {
 	matchDuration prometheus.Observer
 	byStateKey    map[string]*dplNode
 	byEntity      map[string]*dplNode
-	byEntityHash  map[[hashSize]byte]*dplNode
+	byEntityHash  map[[util.HashSize]byte]*dplNode
 	dynamicHead   *dplNode
 	lock          sync.RWMutex
 }
@@ -42,7 +37,7 @@ func NewList(roomID id.RoomID, entityType string) *List {
 		matchDuration: matchDuration.WithLabelValues(roomID.String(), entityType),
 		byStateKey:    make(map[string]*dplNode),
 		byEntity:      make(map[string]*dplNode),
-		byEntityHash:  make(map[[hashSize]byte]*dplNode),
+		byEntityHash:  make(map[[util.HashSize]byte]*dplNode),
 	}
 }
 
@@ -147,10 +142,6 @@ var matchDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	},
 }, []string{"policy_list", "entity_type"})
 
-func SHA256String(entity string) [hashSize]byte {
-	return sha256.Sum256(unsafe.Slice(unsafe.StringData(entity), len(entity)))
-}
-
 func (l *List) Match(entity string) (output Match) {
 	if entity == "" {
 		return
@@ -161,7 +152,7 @@ func (l *List) Match(entity string) (output Match) {
 	if value, ok := l.byEntity[entity]; ok {
 		output = Match{value.Policy}
 	}
-	if value, ok := l.byEntityHash[SHA256String(entity)]; ok {
+	if value, ok := l.byEntityHash[util.SHA256String(entity)]; ok {
 		output = append(output, value.Policy)
 	}
 	for item := l.dynamicHead; item != nil; item = item.next {
@@ -170,5 +161,14 @@ func (l *List) Match(entity string) (output Match) {
 		}
 	}
 	l.matchDuration.Observe(float64(time.Since(start)))
+	return
+}
+
+func (l *List) MatchHash(hash [util.HashSize]byte) (output Match) {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	if value, ok := l.byEntityHash[hash]; ok {
+		output = Match{value.Policy}
+	}
 	return
 }

@@ -16,6 +16,7 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/policylist"
+	"go.mau.fi/meowlnir/util"
 )
 
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
@@ -176,17 +177,14 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!match":
 		targetUser := id.UserID(args[0])
-		if len(args[0]) == 44 {
-			userIDHash, err := base64.StdEncoding.DecodeString(args[0])
-			if err == nil && len(userIDHash) == 32 {
-				var ok bool
-				targetUser, ok = pe.getUserIDFromHash([32]byte(userIDHash))
-				if !ok {
-					pe.sendNotice(ctx, "No user found for hash `%s`", args[0])
-					return
-				}
-				pe.sendNotice(ctx, "Matched user `%s` for hash `%s`", targetUser, args[0])
+		userIDHash, ok := util.DecodeBase64Hash(args[0])
+		if ok {
+			targetUser, ok = pe.getUserIDFromHash(*userIDHash)
+			if !ok {
+				pe.sendNotice(ctx, "No user found for hash `%s`", args[0])
+				return
 			}
+			pe.sendNotice(ctx, "Matched user `%s` for hash `%s`", targetUser, args[0])
 		}
 		start := time.Now()
 		match := pe.Store.MatchUser(nil, targetUser)

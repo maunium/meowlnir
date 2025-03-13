@@ -4,13 +4,15 @@ import (
 	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/meowlnir/util"
 )
 
 // Policy represents a single moderation policy event with the relevant data parsed out.
 type Policy struct {
 	*event.ModPolicyContent
 	Pattern    glob.Glob
-	EntityHash *[hashSize]byte
+	EntityHash *[util.HashSize]byte
 
 	EntityType EntityType
 	RoomID     id.RoomID
