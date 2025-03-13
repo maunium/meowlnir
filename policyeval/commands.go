@@ -175,8 +175,21 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Msg("Sent ban policy from command")
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!match":
+		targetUser := id.UserID(args[0])
+		if len(args[0]) == 44 {
+			userIDHash, err := base64.StdEncoding.DecodeString(args[0])
+			if err == nil && len(userIDHash) == 32 {
+				var ok bool
+				targetUser, ok = pe.getUserIDFromHash([32]byte(userIDHash))
+				if !ok {
+					pe.sendNotice(ctx, "No user found for hash `%s`", args[0])
+					return
+				}
+				pe.sendNotice(ctx, "Matched user `%s` for hash `%s`", targetUser, args[0])
+			}
+		}
 		start := time.Now()
-		match := pe.Store.MatchUser(nil, id.UserID(args[0]))
+		match := pe.Store.MatchUser(nil, targetUser)
 		dur := time.Since(start)
 		if match != nil {
 			eventStrings := make([]string, len(match))
@@ -188,7 +201,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		} else {
 			pe.sendNotice(ctx, "No match in %s", dur.String())
 		}
-		rooms := pe.getRoomsUserIsIn(id.UserID(args[0]))
+		rooms := pe.getRoomsUserIsIn(targetUser)
 		if len(rooms) > 0 {
 			formattedRooms := make([]string, len(rooms))
 			pe.protectedRoomsLock.RLock()

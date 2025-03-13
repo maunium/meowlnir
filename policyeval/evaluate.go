@@ -21,12 +21,17 @@ func (pe *PolicyEvaluator) getAllUsers() []id.UserID {
 	return slices.Collect(maps.Keys(pe.protectedRoomMembers))
 }
 
+func (pe *PolicyEvaluator) getUserIDFromHash(hash [32]byte) (id.UserID, bool) {
+	pe.protectedRoomsLock.RLock()
+	defer pe.protectedRoomsLock.RUnlock()
+	userID, ok := pe.memberHashes[hash]
+	return userID, ok
+}
+
 func (pe *PolicyEvaluator) findMatchingUsers(pattern glob.Glob, hash *[32]byte) iter.Seq[id.UserID] {
 	return func(yield func(id.UserID) bool) {
 		if hash != nil {
-			pe.protectedRoomsLock.RLock()
-			defer pe.protectedRoomsLock.RUnlock()
-			userID, ok := pe.memberHashes[*hash]
+			userID, ok := pe.getUserIDFromHash(*hash)
 			if ok {
 				yield(userID)
 			}
