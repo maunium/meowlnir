@@ -83,7 +83,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		pattern := glob.Compile(args[0])
 		reason := strings.Join(args[1:], " ")
 		userCount := 0
-		for userID := range pe.findMatchingUsers(pattern) {
+		for userID := range pe.findMatchingUsers(pattern, nil) {
 			userCount++
 			successCount := 0
 			rooms := pe.getRoomsUserIsIn(userID)

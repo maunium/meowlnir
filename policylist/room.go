@@ -142,7 +142,7 @@ var HackyRuleFilterHashes [][hashSize]byte
 type hashGlob [hashSize]byte
 
 func (hg *hashGlob) Match(entity string) bool {
-	return sha256String(entity) == *hg
+	return SHA256String(entity) == *hg
 }
 
 func (r *Room) updatePolicyList(evt *event.Event, entityType EntityType, rules *List) (added, removed *Policy) {

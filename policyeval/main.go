@@ -44,6 +44,7 @@ type PolicyEvaluator struct {
 	wantToProtect        map[id.RoomID]struct{}
 	isJoining            map[id.RoomID]struct{}
 	protectedRoomMembers map[id.UserID][]id.RoomID
+	memberHashes         map[[32]byte]id.UserID
 	protectedRoomsLock   sync.RWMutex
 }
 
@@ -64,6 +65,7 @@ func NewPolicyEvaluator(
 		ManagementRoom:       managementRoom,
 		Admins:               exsync.NewSet[id.UserID](),
 		protectedRoomMembers: make(map[id.UserID][]id.RoomID),
+		memberHashes:         make(map[[32]byte]id.UserID),
 		watchedListsMap:      make(map[id.RoomID]*config.WatchedPolicyList),
 		protectedRooms:       make(map[id.RoomID]*protectedRoomMeta),
 		wantToProtect:        make(map[id.RoomID]struct{}),

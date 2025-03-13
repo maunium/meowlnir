@@ -147,7 +147,7 @@ var matchDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	},
 }, []string{"policy_list", "entity_type"})
 
-func sha256String(entity string) [hashSize]byte {
+func SHA256String(entity string) [hashSize]byte {
 	return sha256.Sum256(unsafe.Slice(unsafe.StringData(entity), len(entity)))
 }
 
@@ -161,7 +161,7 @@ func (l *List) Match(entity string) (output Match) {
 	if value, ok := l.byEntity[entity]; ok {
 		output = Match{value.Policy}
 	}
-	if value, ok := l.byEntityHash[sha256String(entity)]; ok {
+	if value, ok := l.byEntityHash[SHA256String(entity)]; ok {
 		output = append(output, value.Policy)
 	}
 	for item := l.dynamicHead; item != nil; item = item.next {

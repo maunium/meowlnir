@@ -14,6 +14,7 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/config"
+	"go.mau.fi/meowlnir/policylist"
 )
 
 func (pe *PolicyEvaluator) GetProtectedRooms() []id.RoomID {
@@ -222,6 +223,9 @@ func (pe *PolicyEvaluator) updateUser(userID id.UserID, roomID id.RoomID, member
 func (pe *PolicyEvaluator) unlockedUpdateUser(userID id.UserID, roomID id.RoomID, membership event.Membership) bool {
 	add := isInRoom(membership)
 	existingList, ok := pe.protectedRoomMembers[userID]
+	if !ok {
+		pe.memberHashes[policylist.SHA256String(string(userID))] = userID
+	}
 	if add {
 		if !slices.Contains(existingList, roomID) {
 			pe.protectedRoomMembers[userID] = append(existingList, roomID)
