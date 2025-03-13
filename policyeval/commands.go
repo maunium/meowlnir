@@ -19,7 +19,11 @@ import (
 )
 
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
-	if evt.Mautrix.WasEncrypted && evt.Mautrix.TrustState < id.TrustStateCrossSignedTOFU {
+	if !evt.Mautrix.WasEncrypted && pe.Bot.CryptoHelper != nil {
+		zerolog.Ctx(ctx).Warn().
+			Msg("Dropping unencrypted command event")
+		return
+	} else if evt.Mautrix.WasEncrypted && evt.Mautrix.TrustState < id.TrustStateCrossSignedTOFU {
 		zerolog.Ctx(ctx).Warn().
 			Stringer("trust_state", evt.Mautrix.TrustState).
 			Msg("Dropping encrypted event with insufficient trust state")
