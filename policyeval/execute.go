@@ -35,10 +35,6 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 		// because it would lead to unnecessarily scanning for events to redact.
 		// Left users do need to be scanned when a new rule is added though
 		// in case they spammed and left right before getting banned.
-		zerolog.Ctx(ctx).Trace().
-			Stringer("user_id", userID).
-			Any("matches", policy).
-			Msg("Not applying old policy to user who isn't in any rooms")
 		return
 	}
 	if recs.BanOrUnban != nil {
