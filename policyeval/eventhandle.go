@@ -78,7 +78,7 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 
 func addActionString(rec event.PolicyRecommendation) string {
 	switch rec {
-	case event.PolicyRecommendationBan:
+	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "banned"
 	case event.PolicyRecommendationUnban:
 		return "added a ban exclusion for"
@@ -89,7 +89,7 @@ func addActionString(rec event.PolicyRecommendation) string {
 
 func changeActionString(rec event.PolicyRecommendation) string {
 	switch rec {
-	case event.PolicyRecommendationBan:
+	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "ban"
 	case event.PolicyRecommendationUnban:
 		return "ban exclusion"
@@ -100,7 +100,7 @@ func changeActionString(rec event.PolicyRecommendation) string {
 
 func removeActionString(rec event.PolicyRecommendation) string {
 	switch rec {
-	case event.PolicyRecommendationBan:
+	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "unbanned"
 	case event.PolicyRecommendationUnban:
 		return "removed a ban exclusion for"
