@@ -175,6 +175,89 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent ban policy from command")
 		pe.sendSuccessReaction(ctx, evt.ID)
+	case "!remove-ban", "!remove-unban", "!remove-policy":
+		if len(args) < 2 {
+			pe.sendNotice(ctx, "Usage: `!remove-policy <list> <user ID | server name> <reason>`")
+			return
+		}
+		list := pe.FindListByShortcode(args[0])
+		if list == nil {
+			pe.sendNotice(ctx, `List %q not found`, args[0])
+			return
+		}
+		target := args[1]
+		var match policylist.Match
+		var entityType policylist.EntityType
+		if !strings.HasPrefix(target, "@") {
+			entityType = policylist.EntityTypeServer
+			match = pe.Store.MatchServer(pe.GetWatchedLists(), target)
+		} else {
+			entityType = policylist.EntityTypeUser
+			match = pe.Store.MatchUser(pe.GetWatchedLists(), id.UserID(target))
+		}
+		var existingStateKey string
+		if rec := match.Recommendations().BanOrUnban; rec != nil {
+			if rec.RoomID == list.RoomID {
+				existingStateKey = rec.StateKey
+			}
+		}
+		policy := &event.ModPolicyContent{}
+		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, policy)
+		if err != nil {
+			pe.sendNotice(ctx, `Failed to remove policy: %v`, err)
+			return
+		}
+		zerolog.Ctx(ctx).Info().
+			Stringer("policy_list", list.RoomID).
+			Any("policy", policy).
+			Stringer("policy_event_id", resp.EventID).
+			Msg("Removed policy from command")
+		pe.sendSuccessReaction(ctx, evt.ID)
+	case "!add-unban":
+		if len(args) < 2 {
+			pe.sendNotice(ctx, "Usage: `!add-unban <list shortcode> <user ID | server name> <reason>`")
+			return
+		}
+		list := pe.FindListByShortcode(args[0])
+		if list == nil {
+			pe.sendNotice(ctx, `List %q not found`, args[0])
+			return
+		}
+		target := args[1]
+		var match policylist.Match
+		var entityType policylist.EntityType
+		if !strings.HasPrefix(target, "@") {
+			entityType = policylist.EntityTypeServer
+			match = pe.Store.MatchServer(pe.GetWatchedLists(), target)
+		} else {
+			entityType = policylist.EntityTypeUser
+			match = pe.Store.MatchUser(pe.GetWatchedLists(), id.UserID(target))
+		}
+		var existingStateKey string
+		if rec := match.Recommendations().BanOrUnban; rec != nil {
+			if rec.Recommendation == event.PolicyRecommendationUnban {
+				pe.sendNotice(ctx, "`%s` already has an unban recommendation: %s", target, rec.Reason)
+				return
+			} else if rec.RoomID == list.RoomID {
+				existingStateKey = rec.StateKey
+			}
+		}
+		policy := &event.ModPolicyContent{
+			Entity:         target,
+			Reason:         strings.Join(args[2:], " "),
+			Recommendation: event.PolicyRecommendationUnban,
+		}
+		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, policy)
+		if err != nil {
+			pe.sendNotice(ctx, `Failed to send unban policy: %v`, err)
+			return
+		}
+		zerolog.Ctx(ctx).Info().
+			Stringer("policy_list", list.RoomID).
+			Any("policy", policy).
+			Stringer("policy_event_id", resp.EventID).
+			Msg("Sent unban policy from command")
+		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!match":
 		targetUser := id.UserID(args[0])
 		userIDHash, ok := util.DecodeBase64Hash(args[0])
