@@ -105,14 +105,19 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			return
 		}
 		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!ban", "!ban-user", "!ban-server":
+	case "!ban", "!ban-user", "!ban-server", "!takedown", "!takedown-user", "!takedown-server":
 		if len(args) < 2 {
-			if cmd == "!ban-server" {
-				pe.sendNotice(ctx, "Usage: `!ban-server <list shortcode> <server name> <reason>`")
+			if cmd == "!ban-server" || cmd == "!takedown-server" {
+				pe.sendNotice(ctx, "Usage: `%s [--hash] <list shortcode> <server name> [reason]`", cmd)
 			} else {
-				pe.sendNotice(ctx, "Usage: `!ban <list shortcode> <user ID> <reason>`")
+				pe.sendNotice(ctx, "Usage: `%s [--hash] <list shortcode> <user ID> [reason]`", cmd)
 			}
 			return
+		}
+		hash := false
+		if args[0] == "--hash" {
+			hash = true
+			args = args[1:]
 		}
 		list := pe.FindListByShortcode(args[0])
 		if list == nil {
@@ -143,7 +148,18 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Reason:         strings.Join(args[2:], " "),
 			Recommendation: event.PolicyRecommendationBan,
 		}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, policy)
+		if hash {
+			targetHash := sha256.Sum256([]byte(target))
+			policy.UnstableHashes = &event.PolicyHashes{
+				SHA256: base64.StdEncoding.EncodeToString(targetHash[:]),
+			}
+			policy.Entity = ""
+		}
+		if cmd == "!takedown" || cmd == "!takedown-user" {
+			policy.Recommendation = event.PolicyRecommendationUnstableTakedown
+			policy.Reason = ""
+		}
+		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, target, policy)
 		if err != nil {
 			pe.sendNotice(ctx, `Failed to send ban policy: %v`, err)
 			return
@@ -186,9 +202,9 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 	}
 }
 
-func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, stateKey string, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {
+func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, stateKey, rawEntity string, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {
 	if stateKey == "" {
-		stateKeyHash := sha256.Sum256(append([]byte(content.Entity), []byte(content.Recommendation)...))
+		stateKeyHash := sha256.Sum256(append([]byte(rawEntity), []byte(content.Recommendation)...))
 		stateKey = base64.StdEncoding.EncodeToString(stateKeyHash[:])
 	}
 	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), stateKey, content)
@@ -268,7 +284,7 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderClient *mautr
 			Reason:         strings.Join(args[1:], " "),
 			Recommendation: event.PolicyRecommendationBan,
 		}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, "", policy)
+		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, "", string(targetUserID), policy)
 		if err != nil {
 			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of [%s](%s) for %s ([%s](%s)): %v`,
 				sender, sender.URI().MatrixToURL(), targetUserID, targetUserID.URI().MatrixToURL(),
