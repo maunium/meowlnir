@@ -42,6 +42,19 @@ func (pe *PolicyEvaluator) HandleProtectedRoomMeta(ctx context.Context, evt *eve
 			meta.Name = evt.Content.AsRoomName().Name
 		}
 		pe.protectedRoomsLock.Unlock()
+	case event.StateServerACL:
+		pe.protectedRoomsLock.Lock()
+		meta, ok := pe.protectedRooms[evt.RoomID]
+		if ok {
+			meta.ACL, ok = evt.Content.Parsed.(*event.ServerACLEventContent)
+			if !ok {
+				zerolog.Ctx(ctx).Warn().
+					Stringer("room_id", evt.RoomID).
+					Msg("Failed to parse new server ACL in room")
+			}
+			// TODO notify management room about change?
+		}
+		pe.protectedRoomsLock.Unlock()
 	}
 }
 
@@ -126,13 +139,19 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 	if err != nil {
 		zerolog.Ctx(ctx).Warn().Err(err).Stringer("room_id", roomID).Msg("Failed to get room name")
 	}
-	pe.markAsProtectedRoom(roomID, name.Name, members.Chunk)
+	var acl event.ServerACLEventContent
+	err = pe.Bot.StateEvent(ctx, roomID, event.StateServerACL, "", &acl)
+	if err != nil {
+		zerolog.Ctx(ctx).Warn().Err(err).Stringer("room_id", roomID).Msg("Failed to get server ACL")
+	}
+	pe.markAsProtectedRoom(roomID, name.Name, &acl, members.Chunk)
 	if doReeval {
 		memberIDs := make([]id.UserID, len(members.Chunk))
 		for i, member := range members.Chunk {
 			memberIDs[i] = id.UserID(member.GetStateKey())
 		}
 		pe.EvaluateAllMembers(ctx, memberIDs)
+		pe.UpdateACL(ctx)
 	}
 	return members, ""
 }
@@ -182,6 +201,7 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 	wg.Wait()
 	if len(reevalMembers) > 0 {
 		pe.EvaluateAllMembers(ctx, slices.Collect(maps.Keys(reevalMembers)))
+		pe.UpdateACL(ctx)
 	}
 	return
 }
@@ -192,10 +212,10 @@ func (pe *PolicyEvaluator) markAsWantToProtect(roomID id.RoomID) {
 	pe.wantToProtect[roomID] = struct{}{}
 }
 
-func (pe *PolicyEvaluator) markAsProtectedRoom(roomID id.RoomID, name string, evts []*event.Event) {
+func (pe *PolicyEvaluator) markAsProtectedRoom(roomID id.RoomID, name string, acl *event.ServerACLEventContent, evts []*event.Event) {
 	pe.protectedRoomsLock.Lock()
 	defer pe.protectedRoomsLock.Unlock()
-	pe.protectedRooms[roomID] = &protectedRoomMeta{Name: name}
+	pe.protectedRooms[roomID] = &protectedRoomMeta{Name: name, ACL: acl}
 	delete(pe.wantToProtect, roomID)
 	for _, evt := range evts {
 		pe.unlockedUpdateUser(id.UserID(evt.GetStateKey()), evt.RoomID, evt.Content.AsMember().Membership)

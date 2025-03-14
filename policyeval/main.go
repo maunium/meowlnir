@@ -21,6 +21,7 @@ import (
 
 type protectedRoomMeta struct {
 	Name string
+	ACL  *event.ServerACLEventContent
 }
 
 type PolicyEvaluator struct {
@@ -38,6 +39,7 @@ type PolicyEvaluator struct {
 	watchedListsLock sync.RWMutex
 
 	configLock sync.Mutex
+	aclLock    sync.Mutex
 
 	claimProtected       func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator
 	protectedRooms       map[id.RoomID]*protectedRoomMeta
