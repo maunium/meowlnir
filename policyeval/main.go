@@ -34,9 +34,10 @@ type PolicyEvaluator struct {
 	ManagementRoom id.RoomID
 	Admins         *exsync.Set[id.UserID]
 
-	watchedListsMap  map[id.RoomID]*config.WatchedPolicyList
-	watchedListsList []id.RoomID
-	watchedListsLock sync.RWMutex
+	watchedListsMap     map[id.RoomID]*config.WatchedPolicyList
+	watchedListsList    []id.RoomID
+	watchedListsForACLs []id.RoomID
+	watchedListsLock    sync.RWMutex
 
 	configLock sync.Mutex
 	aclLock    sync.Mutex

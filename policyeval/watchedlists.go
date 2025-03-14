@@ -3,6 +3,7 @@ package policyeval
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -45,6 +46,12 @@ func (pe *PolicyEvaluator) GetWatchedLists() []id.RoomID {
 	return pe.watchedListsList
 }
 
+func (pe *PolicyEvaluator) GetWatchedListsForACLs() []id.RoomID {
+	pe.watchedListsLock.RLock()
+	defer pe.watchedListsLock.RUnlock()
+	return pe.watchedListsForACLs
+}
+
 func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Event, isInitial bool) (output, errors []string) {
 	content, ok := evt.Content.Parsed.(*config.WatchedListsEventContent)
 	if !ok {
@@ -70,6 +77,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	}
 	wg.Wait()
 	watchedList := make([]id.RoomID, 0, len(content.Lists))
+	aclWatchedList := make([]id.RoomID, 0, len(content.Lists))
 	watchedMap := make(map[id.RoomID]*config.WatchedPolicyList, len(content.Lists))
 	for _, listInfo := range content.Lists {
 		if _, alreadyWatched := watchedMap[listInfo.RoomID]; alreadyWatched {
@@ -78,13 +86,18 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 			watchedMap[listInfo.RoomID] = &listInfo
 			if !listInfo.DontApply {
 				watchedList = append(watchedList, listInfo.RoomID)
+				if !listInfo.DontApplyACL {
+					aclWatchedList = append(aclWatchedList, listInfo.RoomID)
+				}
 			}
 		}
 	}
 	pe.watchedListsLock.Lock()
 	oldWatchedList := pe.watchedListsList
+	oldACLWatchedList := pe.watchedListsForACLs
 	pe.watchedListsMap = watchedMap
 	pe.watchedListsList = watchedList
+	pe.watchedListsForACLs = aclWatchedList
 	pe.watchedListsLock.Unlock()
 	if !isInitial {
 		unsubscribed, subscribed := exslices.Diff(oldWatchedList, watchedList)
@@ -94,12 +107,26 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 		for _, roomID := range unsubscribed {
 			output = append(output, fmt.Sprintf("* Unsubscribed from [%s](%s)", roomID, roomID.URI().MatrixToURL()))
 		}
+		aclSubscribed, aclUnsubscribed := exslices.Diff(oldACLWatchedList, aclWatchedList)
+		for _, roomID := range aclSubscribed {
+			if !slices.Contains(subscribed, roomID) {
+				output = append(output, fmt.Sprintf("* Subscribed to server ACLs in %s [%s](%s)", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
+			}
+		}
+		for _, roomID := range aclUnsubscribed {
+			if !slices.Contains(unsubscribed, roomID) {
+				output = append(output, fmt.Sprintf("* Unsubscribed from server ACLs in %s [%s](%s)", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
+			}
+		}
 		go func(ctx context.Context) {
 			if len(unsubscribed) > 0 {
 				pe.ReevaluateAffectedByLists(ctx, unsubscribed)
 			}
 			if len(subscribed) > 0 || len(unsubscribed) > 0 {
 				pe.EvaluateAll(ctx)
+			}
+			if len(aclSubscribed) > 0 || len(aclUnsubscribed) > 0 {
+				pe.UpdateACL(ctx)
 			}
 		}(context.WithoutCancel(ctx))
 	}

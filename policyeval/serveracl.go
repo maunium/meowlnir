@@ -16,7 +16,7 @@ import (
 
 func (pe *PolicyEvaluator) CompileACL() (*event.ServerACLEventContent, time.Duration) {
 	start := time.Now()
-	rules := pe.Store.ListServerRules(pe.GetWatchedLists())
+	rules := pe.Store.ListServerRules(pe.GetWatchedListsForACLs())
 	acl := event.ServerACLEventContent{
 		Allow: []string{"*"},
 		Deny:  make([]string, 0, len(rules)),
