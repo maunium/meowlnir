@@ -2,7 +2,7 @@
 
 * Added support for [MSC4194] as an alternative to database access for redacting
   messages from a user efficiently.
-* Made encryption and database accessoptional to allow running with
+* Made encryption and database access optional to allow running with
   non-Synapse homeservers.
 * Added `!kick` command to kick users from all protected rooms.
 * Added support for blocking incoming invites on Synapse.
