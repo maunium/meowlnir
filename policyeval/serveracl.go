@@ -5,13 +5,15 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
 
-func (pe *PolicyEvaluator) CompileACL() *event.ServerACLEventContent {
+func (pe *PolicyEvaluator) CompileACL() (*event.ServerACLEventContent, time.Duration) {
+	start := time.Now()
 	rules := pe.Store.ListServerRules(pe.GetWatchedLists())
 	acl := event.ServerACLEventContent{
 		Allow: []string{"*"},
@@ -29,14 +31,14 @@ func (pe *PolicyEvaluator) CompileACL() *event.ServerACLEventContent {
 		}
 	}
 	slices.Sort(acl.Deny)
-	return &acl
+	return &acl, time.Since(start)
 }
 
 func (pe *PolicyEvaluator) UpdateACL(ctx context.Context) {
 	log := zerolog.Ctx(ctx)
 	pe.aclLock.Lock()
 	defer pe.aclLock.Unlock()
-	newACL := pe.CompileACL()
+	newACL, compileDur := pe.CompileACL()
 	pe.protectedRoomsLock.RLock()
 	changedRooms := make([]id.RoomID, 0, len(pe.protectedRooms))
 	for roomID, meta := range pe.protectedRooms {
@@ -46,12 +48,15 @@ func (pe *PolicyEvaluator) UpdateACL(ctx context.Context) {
 	}
 	pe.protectedRoomsLock.RUnlock()
 	if len(changedRooms) == 0 {
-		log.Info().Msg("No server ACL changes to send")
+		log.Info().
+			Dur("compile_duration", compileDur).
+			Msg("No server ACL changes to send")
 		return
 	}
 	log.Info().
 		Int("room_count", len(changedRooms)).
 		Any("new_acl", newACL).
+		Dur("compile_duration", compileDur).
 		Msg("Sending updated server ACL event")
 	var wg sync.WaitGroup
 	wg.Add(len(changedRooms))
