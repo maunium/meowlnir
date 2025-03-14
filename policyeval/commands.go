@@ -176,19 +176,47 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Msg("Sent ban policy from command")
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!match":
-		targetUser := id.UserID(args[0])
-		userIDHash, ok := util.DecodeBase64Hash(args[0])
+		target := args[0]
+		targetUser := id.UserID(target)
+		userIDHash, ok := util.DecodeBase64Hash(target)
 		if ok {
 			targetUser, ok = pe.getUserIDFromHash(*userIDHash)
 			if !ok {
-				pe.sendNotice(ctx, "No user found for hash `%s`", args[0])
+				pe.sendNotice(ctx, "No user found for hash `%s`", target)
 				return
 			}
-			pe.sendNotice(ctx, "Matched user `%s` for hash `%s`", targetUser, args[0])
+			pe.sendNotice(ctx, "Matched user `%s` for hash `%s`", targetUser, target)
 		}
-		start := time.Now()
-		match := pe.Store.MatchUser(nil, targetUser)
-		dur := time.Since(start)
+		var dur time.Duration
+		var match policylist.Match
+		if targetUser[0] == '@' {
+			start := time.Now()
+			match = pe.Store.MatchUser(nil, targetUser)
+			dur = time.Since(start)
+			rooms := pe.getRoomsUserIsIn(targetUser)
+			if len(rooms) > 0 {
+				formattedRooms := make([]string, len(rooms))
+				pe.protectedRoomsLock.RLock()
+				for i, roomID := range rooms {
+					name := roomID.String()
+					meta := pe.protectedRooms[roomID]
+					if meta != nil && meta.Name != "" {
+						name = meta.Name
+					}
+					formattedRooms[i] = fmt.Sprintf("* [%s](%s)", name, roomID.URI().MatrixToURL())
+				}
+				pe.protectedRoomsLock.RUnlock()
+				pe.sendNotice(ctx, "User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
+			}
+		} else if target[0] == '!' {
+			start := time.Now()
+			match = pe.Store.MatchRoom(nil, id.RoomID(target))
+			dur = time.Since(start)
+		} else {
+			start := time.Now()
+			match = pe.Store.MatchServer(nil, target)
+			dur = time.Since(start)
+		}
 		if match != nil {
 			eventStrings := make([]string, len(match))
 			for i, policy := range match {
@@ -198,21 +226,6 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "Matched in %s with recommendations %+v\n\n%s", dur, match.Recommendations(), strings.Join(eventStrings, "\n"))
 		} else {
 			pe.sendNotice(ctx, "No match in %s", dur.String())
-		}
-		rooms := pe.getRoomsUserIsIn(targetUser)
-		if len(rooms) > 0 {
-			formattedRooms := make([]string, len(rooms))
-			pe.protectedRoomsLock.RLock()
-			for i, roomID := range rooms {
-				name := roomID.String()
-				meta := pe.protectedRooms[roomID]
-				if meta != nil && meta.Name != "" {
-					name = meta.Name
-				}
-				formattedRooms[i] = fmt.Sprintf("* [%s](%s)", name, roomID.URI().MatrixToURL())
-			}
-			pe.protectedRoomsLock.RUnlock()
-			pe.sendNotice(ctx, "User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
 		}
 	}
 }
