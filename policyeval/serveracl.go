@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/event"
@@ -54,6 +55,7 @@ func (pe *PolicyEvaluator) UpdateACL(ctx context.Context) {
 		Msg("Sending updated server ACL event")
 	var wg sync.WaitGroup
 	wg.Add(len(changedRooms))
+	var successCount atomic.Int32
 	for _, roomID := range changedRooms {
 		go func(roomID id.RoomID) {
 			defer wg.Done()
@@ -61,16 +63,19 @@ func (pe *PolicyEvaluator) UpdateACL(ctx context.Context) {
 				log.Debug().
 					Stringer("room_id", roomID).
 					Msg("Dry run: would send server ACL to room")
+				successCount.Add(1)
 				return
 			}
 			resp, err := pe.Bot.SendStateEvent(ctx, roomID, event.StateServerACL, "", newACL)
 			if err != nil {
 				log.Err(err).Stringer("room_id", roomID).Msg("Failed to send server ACL to room")
+				pe.sendNotice(ctx, "Failed to send server ACL to room %s: %v", roomID, err)
 			} else {
 				log.Debug().
 					Stringer("room_id", roomID).
 					Stringer("event_id", resp.EventID).
 					Msg("Sent new server ACL to room")
+				successCount.Add(1)
 			}
 		}(roomID)
 	}
@@ -80,5 +85,9 @@ func (pe *PolicyEvaluator) UpdateACL(ctx context.Context) {
 		pe.protectedRooms[roomID].ACL = newACL
 	}
 	pe.protectedRoomsLock.Unlock()
-	log.Info().Int("room_count", len(changedRooms)).Msg("Finished sending server ACL updates")
+	log.Info().
+		Int("room_count", len(changedRooms)).
+		Int32("success_count", successCount.Load()).
+		Msg("Finished sending server ACL updates")
+	pe.sendNotice(ctx, "Successfully sent updated server ACL to %d/%d rooms", successCount.Load(), len(changedRooms))
 }
