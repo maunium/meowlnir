@@ -3,11 +3,13 @@ package policyeval
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/exslices"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
@@ -40,10 +42,10 @@ func (pe *PolicyEvaluator) UpdateACL(ctx context.Context) {
 	defer pe.aclLock.Unlock()
 	newACL, compileDur := pe.CompileACL()
 	pe.protectedRoomsLock.RLock()
-	changedRooms := make([]id.RoomID, 0, len(pe.protectedRooms))
+	changedRooms := make(map[id.RoomID][]string, len(pe.protectedRooms))
 	for roomID, meta := range pe.protectedRooms {
 		if meta.ACL == nil || !slices.Equal(meta.ACL.Deny, newACL.Deny) {
-			changedRooms = append(changedRooms, roomID)
+			changedRooms[roomID] = meta.ACL.Deny
 		}
 	}
 	pe.protectedRoomsLock.RUnlock()
@@ -61,32 +63,41 @@ func (pe *PolicyEvaluator) UpdateACL(ctx context.Context) {
 	var wg sync.WaitGroup
 	wg.Add(len(changedRooms))
 	var successCount atomic.Int32
-	for _, roomID := range changedRooms {
-		go func(roomID id.RoomID) {
+	for roomID, oldACLDeny := range changedRooms {
+		go func(roomID id.RoomID, oldACLDeny []string) {
 			defer wg.Done()
+			removed, added := exslices.SortedDiff(oldACLDeny, newACL.Deny, strings.Compare)
 			if pe.DryRun {
 				log.Debug().
 					Stringer("room_id", roomID).
+					Strs("deny_added", added).
+					Strs("deny_removed", removed).
 					Msg("Dry run: would send server ACL to room")
 				successCount.Add(1)
 				return
 			}
 			resp, err := pe.Bot.SendStateEvent(ctx, roomID, event.StateServerACL, "", newACL)
 			if err != nil {
-				log.Err(err).Stringer("room_id", roomID).Msg("Failed to send server ACL to room")
+				log.Err(err).
+					Strs("deny_added", added).
+					Strs("deny_removed", removed).
+					Stringer("room_id", roomID).
+					Msg("Failed to send server ACL to room")
 				pe.sendNotice(ctx, "Failed to send server ACL to room %s: %v", roomID, err)
 			} else {
 				log.Debug().
 					Stringer("room_id", roomID).
 					Stringer("event_id", resp.EventID).
+					Strs("deny_added", added).
+					Strs("deny_removed", removed).
 					Msg("Sent new server ACL to room")
 				successCount.Add(1)
 			}
-		}(roomID)
+		}(roomID, oldACLDeny)
 	}
 	wg.Wait()
 	pe.protectedRoomsLock.Lock()
-	for _, roomID := range changedRooms {
+	for roomID := range changedRooms {
 		pe.protectedRooms[roomID].ACL = newACL
 	}
 	pe.protectedRoomsLock.Unlock()
