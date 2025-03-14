@@ -32,7 +32,7 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 				evt.RoomID.EventURI(evt.ID).MatrixToURL(),
 				evt.RoomID, evt.RoomID.URI().MatrixToURL(),
 			),
-			&bot.SendNoticeOpts{Mentions: &event.Mentions{Room: true}},
+			&bot.SendNoticeOpts{Mentions: &event.Mentions{Room: true}, SendAsText: true},
 		)
 	}
 }
