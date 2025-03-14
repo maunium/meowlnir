@@ -20,8 +20,9 @@ import (
 )
 
 type protectedRoomMeta struct {
-	Name string
-	ACL  *event.ServerACLEventContent
+	Name     string
+	ACL      *event.ServerACLEventContent
+	ApplyACL bool
 }
 
 type PolicyEvaluator struct {
@@ -48,6 +49,7 @@ type PolicyEvaluator struct {
 	isJoining            map[id.RoomID]struct{}
 	protectedRoomMembers map[id.UserID][]id.RoomID
 	memberHashes         map[[32]byte]id.UserID
+	skipACLForRooms      []id.RoomID
 	protectedRoomsLock   sync.RWMutex
 }
 

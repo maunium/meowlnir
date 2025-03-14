@@ -27,6 +27,9 @@ type WatchedListsEventContent struct {
 
 type ProtectedRoomsEventContent struct {
 	Rooms []id.RoomID `json:"rooms"`
+
+	// TODO make this less hacky
+	SkipACL []id.RoomID `json:"skip_acl"`
 }
 
 func init() {

@@ -44,6 +44,9 @@ func (pe *PolicyEvaluator) UpdateACL(ctx context.Context) {
 	pe.protectedRoomsLock.RLock()
 	changedRooms := make(map[id.RoomID][]string, len(pe.protectedRooms))
 	for roomID, meta := range pe.protectedRooms {
+		if !meta.ApplyACL {
+			continue
+		}
 		if meta.ACL == nil || !slices.Equal(meta.ACL.Deny, newACL.Deny) {
 			changedRooms[roomID] = meta.ACL.Deny
 		}
