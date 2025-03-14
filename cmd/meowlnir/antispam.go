@@ -58,7 +58,7 @@ func (m *Meowlnir) PostUserMayInvite(w http.ResponseWriter, r *http.Request) {
 	var rec *policylist.Policy
 	defer func() {
 		if rec != nil {
-			mgmtRoom.Bot.SendNotice(
+			go mgmtRoom.Bot.SendNotice(
 				r.Context(), mgmtRoom.ManagementRoom,
 				"Blocked [%s](%s) from inviting [%s](%s) to [%s](%s) due to policy banning `%s` for `%s`",
 				req.Inviter, req.Inviter.URI().MatrixToURL(),
