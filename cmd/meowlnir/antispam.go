@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -59,7 +60,7 @@ func (m *Meowlnir) PostUserMayInvite(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if rec != nil {
 			go mgmtRoom.Bot.SendNotice(
-				r.Context(), mgmtRoom.ManagementRoom,
+				context.WithoutCancel(r.Context()), mgmtRoom.ManagementRoom,
 				"Blocked [%s](%s) from inviting [%s](%s) to [%s](%s) due to policy banning `%s` for `%s`",
 				req.Inviter, req.Inviter.URI().MatrixToURL(),
 				req.Invitee, req.Invitee.URI().MatrixToURL(),
