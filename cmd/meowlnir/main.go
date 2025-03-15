@@ -187,7 +187,9 @@ func (m *Meowlnir) claimProtectedRoom(roomID id.RoomID, eval *policyeval.PolicyE
 }
 
 func (m *Meowlnir) createPuppetClient(userID id.UserID) *mautrix.Client {
-	return exerrors.Must(m.AS.NewExternalMautrixClient(userID, m.Config.Antispam.AutoRejectInvitesToken, ""))
+	cli := exerrors.Must(m.AS.NewExternalMautrixClient(userID, m.Config.Antispam.AutoRejectInvitesToken, ""))
+	cli.SetAppServiceUserID = true
+	return cli
 }
 
 func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {

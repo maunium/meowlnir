@@ -160,6 +160,7 @@ func (pe *PolicyEvaluator) RejectPendingInvites(ctx context.Context, inviter id.
 		if err != nil {
 			log.Err(err).Msg("Failed to get joined rooms to ensure accepted invites aren't rejected")
 		}
+		successfullyRejected := 0
 		for _, roomID := range rooms {
 			if resp != nil && slices.Contains(resp.JoinedRooms, roomID) {
 				log.Debug().
@@ -171,6 +172,7 @@ func (pe *PolicyEvaluator) RejectPendingInvites(ctx context.Context, inviter id.
 					Stringer("user_id", userID).
 					Stringer("room_id", roomID).
 					Msg("Dry run, not actually rejecting invite")
+				successfullyRejected++
 			} else if _, err = client.LeaveRoom(ctx, roomID); err != nil {
 				log.Err(err).
 					Stringer("user_id", userID).
@@ -181,12 +183,13 @@ func (pe *PolicyEvaluator) RejectPendingInvites(ctx context.Context, inviter id.
 					Stringer("user_id", userID).
 					Stringer("room_id", roomID).
 					Msg("Rejected invite")
+				successfullyRejected++
 			}
 		}
 		pe.sendNotice(
 			ctx,
-			"Rejected %d invites to [%s](%s) from [%s](%s) due to policy banning `%s` for `%s`",
-			len(rooms),
+			"Rejected %d/%d invites to [%s](%s) from [%s](%s) due to policy banning `%s` for `%s`",
+			successfullyRejected, len(rooms),
 			userID, userID.URI().MatrixToURL(),
 			inviter, inviter.URI().MatrixToURL(),
 			rec.EntityOrHash(), rec.Reason,
