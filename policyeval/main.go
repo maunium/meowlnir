@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exsync"
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
@@ -51,6 +52,11 @@ type PolicyEvaluator struct {
 	memberHashes         map[[32]byte]id.UserID
 	skipACLForRooms      []id.RoomID
 	protectedRoomsLock   sync.RWMutex
+
+	pendingInvites     map[pendingInvite]struct{}
+	pendingInvitesLock sync.Mutex
+	AutoRejectInvites  bool
+	createPuppetClient func(userID id.UserID) *mautrix.Client
 }
 
 func NewPolicyEvaluator(
@@ -60,7 +66,8 @@ func NewPolicyEvaluator(
 	db *database.Database,
 	synapseDB *synapsedb.SynapseDB,
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
-	dryRun bool,
+	createPuppetClient func(userID id.UserID) *mautrix.Client,
+	autoRejectInvites, dryRun bool,
 ) *PolicyEvaluator {
 	pe := &PolicyEvaluator{
 		Bot:                  bot,
@@ -76,8 +83,10 @@ func NewPolicyEvaluator(
 		wantToProtect:        make(map[id.RoomID]struct{}),
 		isJoining:            make(map[id.RoomID]struct{}),
 		claimProtected:       claimProtected,
-
-		DryRun: dryRun,
+		pendingInvites:       make(map[pendingInvite]struct{}),
+		createPuppetClient:   createPuppetClient,
+		AutoRejectInvites:    autoRejectInvites,
+		DryRun:               dryRun,
 	}
 	return pe
 }

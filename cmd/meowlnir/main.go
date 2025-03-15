@@ -16,11 +16,13 @@ import (
 	up "go.mau.fi/util/configupgrade"
 	"go.mau.fi/util/dbutil"
 	_ "go.mau.fi/util/dbutil/litestream"
+	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/exslices"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/ptr"
 	"gopkg.in/yaml.v3"
 	flag "maunium.net/go/mauflag"
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	cryptoupgrade "maunium.net/go/mautrix/crypto/sql_store_upgrade"
 	"maunium.net/go/mautrix/id"
@@ -184,6 +186,10 @@ func (m *Meowlnir) claimProtectedRoom(roomID id.RoomID, eval *policyeval.PolicyE
 	return eval
 }
 
+func (m *Meowlnir) createPuppetClient(userID id.UserID) *mautrix.Client {
+	return exerrors.Must(m.AS.NewExternalMautrixClient(userID, m.Config.Antispam.AutoRejectInvitesToken, ""))
+}
+
 func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	intent := m.AS.Intent(id.NewUserID(db.Username, m.AS.HomeserverDomain))
 	wrapped := bot.NewBot(
@@ -203,7 +209,10 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	}
 	for _, roomID := range managementRooms {
 		m.EvaluatorByManagementRoom[roomID] = policyeval.NewPolicyEvaluator(
-			wrapped, m.PolicyStore, roomID, m.DB, m.SynapseDB, m.claimProtectedRoom, m.Config.Meowlnir.DryRun,
+			wrapped, m.PolicyStore,
+			roomID, m.DB, m.SynapseDB,
+			m.claimProtectedRoom, m.createPuppetClient,
+			m.Config.Antispam.AutoRejectInvitesToken != "", m.Config.Meowlnir.DryRun,
 		)
 	}
 	return wrapped
@@ -225,7 +234,10 @@ func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot
 		}
 	}
 	eval = policyeval.NewPolicyEvaluator(
-		bot, m.PolicyStore, roomID, m.DB, m.SynapseDB, m.claimProtectedRoom, m.Config.Meowlnir.DryRun,
+		bot, m.PolicyStore,
+		roomID, m.DB, m.SynapseDB,
+		m.claimProtectedRoom, m.createPuppetClient,
+		m.Config.Antispam.AutoRejectInvitesToken != "", m.Config.Meowlnir.DryRun,
 	)
 	m.EvaluatorByManagementRoom[roomID] = eval
 	go eval.Load(ctx)

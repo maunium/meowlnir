@@ -9,6 +9,8 @@
 * Added support for blocking incoming invites on Synapse.
   * Requires installing the [synapse-http-antispam] module to forward callbacks
     to Meowlnir.
+  * Pending invites can also be automatically rejected using a double puppeting
+    appservice if the ban comes in after the invite.
 * Added support for [MSC4204]: `m.takedown` moderation policy recommendation.
 * Added support for [MSC4205]: Hashed moderation policy entities.
 * Fixed events not being redacted if the user left before being banned.

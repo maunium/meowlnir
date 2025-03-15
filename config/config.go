@@ -33,7 +33,8 @@ type MeowlnirConfig struct {
 }
 
 type AntispamConfig struct {
-	Secret string `yaml:"secret"`
+	Secret                 string `yaml:"secret"`
+	AutoRejectInvitesToken string `yaml:"auto_reject_invites_token"`
 }
 
 type EncryptionConfig struct {

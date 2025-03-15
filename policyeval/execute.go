@@ -49,6 +49,9 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 			if recs.BanOrUnban.Reason == "spam" || recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown {
 				go pe.RedactUser(context.WithoutCancel(ctx), userID, recs.BanOrUnban.Reason, true)
 			}
+			if isNew {
+				go pe.RejectPendingInvites(context.WithoutCancel(ctx), userID, recs.BanOrUnban)
+			}
 		} else {
 			// TODO unban if banned in some rooms? or just require doing that manually
 			//takenActions, err := pe.DB.TakenAction.GetAllByTargetUser(ctx, userID, database.TakenActionTypeBanOrUnban)
