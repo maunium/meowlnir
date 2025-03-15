@@ -102,6 +102,9 @@ func (r *Room) Update(evt *event.Event) (added, removed *Policy) {
 			}
 		}
 	}
+	if added != removed && removed != nil {
+		removed.Sender = evt.Sender
+	}
 	return
 }
 
