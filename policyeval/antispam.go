@@ -82,6 +82,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		return ptr.Ptr(mautrix.MForbidden.WithMessage(fmt.Sprintf("Inviting from your server (%s) is not allowed due to %s", inviterServer, rec.Reason)))
 	}
 
+	rec = nil
 	log.Trace().Msg("Allowing invite")
 
 	if pe.AutoRejectInvites {
