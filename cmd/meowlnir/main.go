@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -33,6 +32,7 @@ import (
 	"go.mau.fi/meowlnir/policyeval"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/synapsedb"
+	"go.mau.fi/meowlnir/util"
 )
 
 var configPath = flag.MakeFull("c", "config", "Path to the config file", "config.yaml").String()
@@ -74,7 +74,7 @@ func (m *Meowlnir) loadSecret(secret string) [32]byte {
 		}
 		return [32]byte(decoded)
 	}
-	return sha256.Sum256([]byte(secret))
+	return util.SHA256String(secret)
 }
 
 func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
@@ -86,7 +86,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 
 	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
 	policylist.HackyRuleFilterHashes = exslices.CastFunc(policylist.HackyRuleFilter, func(s string) [32]byte {
-		return sha256.Sum256([]byte(s))
+		return util.SHA256String(s)
 	})
 
 	m.Log, err = m.Config.Logging.Compile()

@@ -154,7 +154,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Recommendation: event.PolicyRecommendationBan,
 		}
 		if hash {
-			targetHash := sha256.Sum256([]byte(target))
+			targetHash := util.SHA256String(target)
 			policy.UnstableHashes = &event.PolicyHashes{
 				SHA256: base64.StdEncoding.EncodeToString(targetHash[:]),
 			}

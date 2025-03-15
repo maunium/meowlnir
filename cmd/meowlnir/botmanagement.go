@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/json"
 	"maps"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/database"
+	"go.mau.fi/meowlnir/util"
 )
 
 type RespManagementRoom struct {
@@ -40,7 +40,7 @@ type RespGetBots struct {
 
 func (m *Meowlnir) ManagementAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHash := sha256.Sum256([]byte(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
+		authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 		if !hmac.Equal(authHash[:], m.ManagementSecret[:]) {
 			mautrix.MUnknownToken.WithMessage("Invalid management secret").Write(w)
 			return
@@ -51,7 +51,7 @@ func (m *Meowlnir) ManagementAuth(next http.Handler) http.Handler {
 
 func (m *Meowlnir) AntispamAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHash := sha256.Sum256([]byte(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
+		authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 		if !hmac.Equal(authHash[:], m.AntispamSecret[:]) {
 			mautrix.MUnknown.WithMessage("Invalid antispam secret").Write(w)
 			return
