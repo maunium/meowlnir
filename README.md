@@ -196,6 +196,8 @@ To use policy lists for blocking incoming invites, install the
 [synapse-http-antispam] module, then configure it with the ID of the management
 room you want to use plus the antispam API token from the Meowlnir config file:
 
+[synapse-http-antispam]: https://github.com/maunium/synapse-http-antispam
+
 ```yaml
 modules:
   - module: synapse_http_antispam.HTTPAntispam
