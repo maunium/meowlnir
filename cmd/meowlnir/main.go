@@ -82,7 +82,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	m.Config = loadConfig(configPath, noSaveConfig)
 
 	m.ManagementSecret = m.loadSecret(m.Config.Meowlnir.ManagementSecret)
-	m.AntispamSecret = m.loadSecret(m.Config.Meowlnir.AntispamSecret)
+	m.AntispamSecret = m.loadSecret(m.Config.Antispam.Secret)
 
 	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
 	policylist.HackyRuleFilterHashes = exslices.CastFunc(policylist.HackyRuleFilter, func(s string) [32]byte {

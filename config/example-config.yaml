@@ -22,8 +22,6 @@ meowlnir:
     # Management secret used for the management API. If set to generate, a random secret will be generated.
     # If prefixed with sha256:, the rest of the string will be hex-decoded and used as the hash of the secret.
     management_secret: generate
-    # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret.
-    antispam_secret: generate
     # If dry run is set to true, meowlnir won't take any actual actions,
     # but will do everything else as if it was going to take actions.
     dry_run: false
@@ -34,6 +32,16 @@ meowlnir:
     # This can be used as a hacky way to protect against policies which are too wide.
     hacky_rule_filter:
     - "@user:example.com"
+
+antispam:
+    # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.
+    secret: generate
+    # If set, Meowlnir will use this token to reject pending invites from users who get banned.
+    #
+    # This should be an appservice with access to all local users. If you have a double puppeting
+    # appservice set up for bridges, you can reuse that token. If not, just follow the same
+    # instructions: https://docs.mau.fi/bridges/general/double-puppeting.html
+    auto_reject_invites_token:
 
 # Encryption settings.
 encryption:

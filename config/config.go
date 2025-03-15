@@ -26,11 +26,14 @@ type MeowlnirConfig struct {
 	Port     uint16 `yaml:"port"`
 
 	ManagementSecret string `yaml:"management_secret"`
-	AntispamSecret   string `yaml:"antispam_secret"`
 	DryRun           bool   `yaml:"dry_run"`
 
 	ReportRoom      id.RoomID `yaml:"report_room"`
 	HackyRuleFilter []string  `yaml:"hacky_rule_filter"`
+}
+
+type AntispamConfig struct {
+	Secret string `yaml:"secret"`
 }
 
 type EncryptionConfig struct {
@@ -41,6 +44,7 @@ type EncryptionConfig struct {
 type Config struct {
 	Homeserver HomeserverConfig  `yaml:"homeserver"`
 	Meowlnir   MeowlnirConfig    `yaml:"meowlnir"`
+	Antispam   AntispamConfig    `yaml:"antispam"`
 	Encryption EncryptionConfig  `yaml:"encryption"`
 	Database   dbutil.Config     `yaml:"database"`
 	SynapseDB  dbutil.Config     `yaml:"synapse_db"`

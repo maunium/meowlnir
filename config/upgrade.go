@@ -31,10 +31,15 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Int, "meowlnir", "port")
 
 	generateOrCopy(helper, "meowlnir", "management_secret")
-	generateOrCopy(helper, "meowlnir", "antispam_secret")
 	helper.Copy(up.Bool, "meowlnir", "dry_run")
 	helper.Copy(up.Str|up.Null, "meowlnir", "report_room")
 	helper.Copy(up.List, "meowlnir", "hacky_rule_filter")
+
+	if secret, ok := helper.Get(up.Str, "meowlnir", "antispam_secret"); ok && secret != "generate" {
+		helper.Set(up.Str, secret, "antispam", "secret")
+	} else {
+		generateOrCopy(helper, "antispam", "secret")
+	}
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "pickle_key"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "encryption", "pickle_key")
