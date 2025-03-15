@@ -1,5 +1,6 @@
 # v0.3.0 (2025-03-16)
 
+* Added support for managing server ACLs.
 * Added support for [MSC4194] as an alternative to database access for redacting
   messages from a user efficiently.
 * Made encryption and database access optional to allow running with
