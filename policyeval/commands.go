@@ -177,7 +177,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!remove-ban", "!remove-unban", "!remove-policy":
 		if len(args) < 2 {
-			pe.sendNotice(ctx, "Usage: `!remove-policy <list> <user ID | server name> <reason>`")
+			pe.sendNotice(ctx, "Usage: `!remove-policy <list> <user ID | server name>`")
 			return
 		}
 		list := pe.FindListByShortcode(args[0])
@@ -202,7 +202,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			}
 		}
 		policy := &event.ModPolicyContent{}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, policy)
+		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, target, policy)
 		if err != nil {
 			pe.sendNotice(ctx, `Failed to remove policy: %v`, err)
 			return
@@ -247,7 +247,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Reason:         strings.Join(args[2:], " "),
 			Recommendation: event.PolicyRecommendationUnban,
 		}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, policy)
+		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, target, policy)
 		if err != nil {
 			pe.sendNotice(ctx, `Failed to send unban policy: %v`, err)
 			return
