@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exsync"
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
@@ -18,6 +19,12 @@ import (
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/synapsedb"
 )
+
+type protectedRoomMeta struct {
+	Name     string
+	ACL      *event.ServerACLEventContent
+	ApplyACL bool
+}
 
 type PolicyEvaluator struct {
 	Bot       *bot.Bot
@@ -29,17 +36,27 @@ type PolicyEvaluator struct {
 	ManagementRoom id.RoomID
 	Admins         *exsync.Set[id.UserID]
 
-	watchedListsMap  map[id.RoomID]*config.WatchedPolicyList
-	watchedListsList []id.RoomID
-	watchedListsLock sync.RWMutex
+	watchedListsMap     map[id.RoomID]*config.WatchedPolicyList
+	watchedListsList    []id.RoomID
+	watchedListsForACLs []id.RoomID
+	watchedListsLock    sync.RWMutex
 
 	configLock sync.Mutex
+	aclLock    sync.Mutex
 
 	claimProtected       func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator
-	protectedRooms       map[id.RoomID]struct{}
+	protectedRooms       map[id.RoomID]*protectedRoomMeta
 	wantToProtect        map[id.RoomID]struct{}
+	isJoining            map[id.RoomID]struct{}
 	protectedRoomMembers map[id.UserID][]id.RoomID
+	memberHashes         map[[32]byte]id.UserID
+	skipACLForRooms      []id.RoomID
 	protectedRoomsLock   sync.RWMutex
+
+	pendingInvites     map[pendingInvite]struct{}
+	pendingInvitesLock sync.Mutex
+	AutoRejectInvites  bool
+	createPuppetClient func(userID id.UserID) *mautrix.Client
 }
 
 func NewPolicyEvaluator(
@@ -49,7 +66,8 @@ func NewPolicyEvaluator(
 	db *database.Database,
 	synapseDB *synapsedb.SynapseDB,
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
-	dryRun bool,
+	createPuppetClient func(userID id.UserID) *mautrix.Client,
+	autoRejectInvites, dryRun bool,
 ) *PolicyEvaluator {
 	pe := &PolicyEvaluator{
 		Bot:                  bot,
@@ -59,12 +77,16 @@ func NewPolicyEvaluator(
 		ManagementRoom:       managementRoom,
 		Admins:               exsync.NewSet[id.UserID](),
 		protectedRoomMembers: make(map[id.UserID][]id.RoomID),
+		memberHashes:         make(map[[32]byte]id.UserID),
 		watchedListsMap:      make(map[id.RoomID]*config.WatchedPolicyList),
-		protectedRooms:       make(map[id.RoomID]struct{}),
+		protectedRooms:       make(map[id.RoomID]*protectedRoomMeta),
 		wantToProtect:        make(map[id.RoomID]struct{}),
+		isJoining:            make(map[id.RoomID]struct{}),
 		claimProtected:       claimProtected,
-
-		DryRun: dryRun,
+		pendingInvites:       make(map[pendingInvite]struct{}),
+		createPuppetClient:   createPuppetClient,
+		AutoRejectInvites:    autoRejectInvites,
+		DryRun:               dryRun,
 	}
 	return pe
 }

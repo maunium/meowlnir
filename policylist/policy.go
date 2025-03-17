@@ -4,12 +4,15 @@ import (
 	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/meowlnir/util"
 )
 
 // Policy represents a single moderation policy event with the relevant data parsed out.
 type Policy struct {
 	*event.ModPolicyContent
-	Pattern glob.Glob
+	Pattern    glob.Glob
+	EntityHash *[util.HashSize]byte
 
 	EntityType EntityType
 	RoomID     id.RoomID
@@ -32,7 +35,7 @@ type Recommendations struct {
 func (m Match) Recommendations() (output Recommendations) {
 	for _, policy := range m {
 		switch policy.Recommendation {
-		case event.PolicyRecommendationBan, event.PolicyRecommendationUnban:
+		case event.PolicyRecommendationBan, event.PolicyRecommendationUnban, event.PolicyRecommendationUnstableTakedown:
 			if output.BanOrUnban == nil {
 				output.BanOrUnban = policy
 			}

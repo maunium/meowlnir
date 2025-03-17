@@ -32,6 +32,11 @@ type MeowlnirConfig struct {
 	HackyRuleFilter []string  `yaml:"hacky_rule_filter"`
 }
 
+type AntispamConfig struct {
+	Secret                 string `yaml:"secret"`
+	AutoRejectInvitesToken string `yaml:"auto_reject_invites_token"`
+}
+
 type EncryptionConfig struct {
 	Enable    bool   `yaml:"enable"`
 	PickleKey string `yaml:"pickle_key"`
@@ -40,6 +45,7 @@ type EncryptionConfig struct {
 type Config struct {
 	Homeserver HomeserverConfig  `yaml:"homeserver"`
 	Meowlnir   MeowlnirConfig    `yaml:"meowlnir"`
+	Antispam   AntispamConfig    `yaml:"antispam"`
 	Encryption EncryptionConfig  `yaml:"encryption"`
 	Database   dbutil.Config     `yaml:"database"`
 	SynapseDB  dbutil.Config     `yaml:"synapse_db"`

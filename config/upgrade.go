@@ -35,6 +35,13 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str|up.Null, "meowlnir", "report_room")
 	helper.Copy(up.List, "meowlnir", "hacky_rule_filter")
 
+	if secret, ok := helper.Get(up.Str, "meowlnir", "antispam_secret"); ok && secret != "generate" {
+		helper.Set(up.Str, secret, "antispam", "secret")
+	} else {
+		generateOrCopy(helper, "antispam", "secret")
+	}
+	helper.Copy(up.Str|up.Null, "antispam", "auto_reject_invites_token")
+
 	if secret, ok := helper.Get(up.Str, "meowlnir", "pickle_key"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "encryption", "pickle_key")
 	} else {
@@ -64,6 +71,7 @@ var SpacedBlocks = [][]string{
 	{"meowlnir", "address"},
 	{"meowlnir", "management_secret"},
 	{"meowlnir", "report_room"},
+	{"antispam"},
 	{"encryption"},
 	{"database"},
 	{"synapse_db"},

@@ -21,6 +21,7 @@ type SendNoticeOpts struct {
 	DisallowMarkdown bool
 	AllowHTML        bool
 	Mentions         *event.Mentions
+	SendAsText       bool
 }
 
 func (bot *Bot) SendNoticeOpts(ctx context.Context, roomID id.RoomID, message string, opts *SendNoticeOpts) {
@@ -28,7 +29,9 @@ func (bot *Bot) SendNoticeOpts(ctx context.Context, roomID id.RoomID, message st
 		opts = &SendNoticeOpts{}
 	}
 	content := format.RenderMarkdown(message, !opts.DisallowMarkdown, opts.AllowHTML)
-	content.MsgType = event.MsgNotice
+	if !opts.SendAsText {
+		content.MsgType = event.MsgNotice
+	}
 	if opts.Mentions != nil {
 		content.Mentions = opts.Mentions
 	}

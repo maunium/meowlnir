@@ -43,6 +43,8 @@ func (m *Meowlnir) AddEventHandlers() {
 	m.EventProcessor.On(config.StateWatchedLists, m.HandleConfigChange)
 	m.EventProcessor.On(config.StateProtectedRooms, m.HandleConfigChange)
 	m.EventProcessor.On(event.StatePowerLevels, m.HandleConfigChange)
+	m.EventProcessor.On(event.StateRoomName, m.HandleConfigChange)
+	m.EventProcessor.On(event.StateServerACL, m.HandleConfigChange)
 	// General event handling
 	m.EventProcessor.On(event.StateMember, m.HandleMember)
 	m.EventProcessor.On(event.EventMessage, m.HandleMessage)
@@ -93,7 +95,7 @@ func (m *Meowlnir) HandleConfigChange(ctx context.Context, evt *event.Event) {
 	if isManagement {
 		managementRoom.HandleConfigChange(ctx, evt)
 	} else if isProtected {
-		protectedRoom.HandleProtectedRoomPowerLevels(ctx, evt)
+		protectedRoom.HandleProtectedRoomMeta(ctx, evt)
 	}
 }
 

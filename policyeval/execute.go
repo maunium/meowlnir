@@ -35,14 +35,10 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 		// because it would lead to unnecessarily scanning for events to redact.
 		// Left users do need to be scanned when a new rule is added though
 		// in case they spammed and left right before getting banned.
-		zerolog.Ctx(ctx).Trace().
-			Stringer("user_id", userID).
-			Any("matches", policy).
-			Msg("Not applying old policy to user who isn't in any rooms")
 		return
 	}
 	if recs.BanOrUnban != nil {
-		if recs.BanOrUnban.Recommendation == event.PolicyRecommendationBan {
+		if recs.BanOrUnban.Recommendation == event.PolicyRecommendationBan || recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown {
 			zerolog.Ctx(ctx).Info().
 				Stringer("user_id", userID).
 				Any("matches", policy).
@@ -50,8 +46,11 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 			for _, room := range rooms {
 				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
 			}
-			if recs.BanOrUnban.Reason == "spam" {
+			if recs.BanOrUnban.Reason == "spam" || recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown {
 				go pe.RedactUser(context.WithoutCancel(ctx), userID, recs.BanOrUnban.Reason, true)
+			}
+			if isNew {
+				go pe.RejectPendingInvites(context.WithoutCancel(ctx), userID, recs.BanOrUnban)
 			}
 		} else {
 			// TODO unban if banned in some rooms? or just require doing that manually
@@ -81,7 +80,7 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 		InRoomID:   roomID,
 		ActionType: database.TakenActionTypeBanOrUnban,
 		PolicyList: policy.RoomID,
-		RuleEntity: policy.Entity,
+		RuleEntity: policy.EntityOrHash(),
 		Action:     policy.Recommendation,
 		TakenAt:    time.Now(),
 	}

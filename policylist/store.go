@@ -39,6 +39,10 @@ func (s *Store) MatchServer(listIDs []id.RoomID, serverName string) Match {
 	return s.match(listIDs, serverName, (*Room).GetServerRules)
 }
 
+func (s *Store) ListServerRules(listIDs []id.RoomID) map[string]*Policy {
+	return s.compileList(listIDs, (*Room).GetServerRules)
+}
+
 // Update updates the store with the given policy event.
 //
 // The provided event will be ignored if it belongs to a room that is not tracked by this store,
@@ -99,6 +103,26 @@ func (s *Store) match(listIDs []id.RoomID, entity string, listGetter func(*Room)
 		}
 		rules := listGetter(list)
 		output = append(output, rules.Match(entity)...)
+	}
+	return
+}
+
+func (s *Store) compileList(listIDs []id.RoomID, listGetter func(*Room) *List) (output map[string]*Policy) {
+	output = make(map[string]*Policy)
+	// Iterate the list backwards so that entries in higher priority lists overwrite lower priority ones
+	for _, roomID := range slices.Backward(listIDs) {
+		s.roomsLock.RLock()
+		list, ok := s.rooms[roomID]
+		s.roomsLock.RUnlock()
+		if !ok {
+			continue
+		}
+		rules := listGetter(list)
+		rules.lock.RLock()
+		for _, policy := range rules.byEntity {
+			output[policy.Entity] = policy.Policy
+		}
+		rules.lock.RUnlock()
 	}
 	return
 }

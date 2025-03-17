@@ -51,7 +51,11 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 		pe.protectedRoomsLock.RLock()
 		_, isProtecting := pe.protectedRooms[evt.RoomID]
 		_, wantToProtect := pe.wantToProtect[evt.RoomID]
+		_, isJoining := pe.isJoining[evt.RoomID]
 		pe.protectedRoomsLock.RUnlock()
+		if isJoining {
+			return
+		}
 		if isProtecting && (content.Membership == event.MembershipLeave || content.Membership == event.MembershipBan) {
 			pe.sendNotice(ctx, "⚠️ Bot was removed from [%s](%s)", evt.RoomID, evt.RoomID.URI().MatrixToURL())
 		} else if wantToProtect && (content.Membership == event.MembershipJoin || content.Membership == event.MembershipInvite) {
@@ -74,7 +78,7 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 
 func addActionString(rec event.PolicyRecommendation) string {
 	switch rec {
-	case event.PolicyRecommendationBan:
+	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "banned"
 	case event.PolicyRecommendationUnban:
 		return "added a ban exclusion for"
@@ -85,7 +89,7 @@ func addActionString(rec event.PolicyRecommendation) string {
 
 func changeActionString(rec event.PolicyRecommendation) string {
 	switch rec {
-	case event.PolicyRecommendationBan:
+	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "ban"
 	case event.PolicyRecommendationUnban:
 		return "ban exclusion"
@@ -96,7 +100,7 @@ func changeActionString(rec event.PolicyRecommendation) string {
 
 func removeActionString(rec event.PolicyRecommendation) string {
 	switch rec {
-	case event.PolicyRecommendationBan:
+	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "unbanned"
 	case event.PolicyRecommendationUnban:
 		return "removed a ban exclusion for"
@@ -115,25 +119,25 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 		Any("added", added).
 		Any("removed", removed).
 		Msg("Policy list change")
-	removedAndAddedAreEquivalent := removed != nil && added != nil && removed.Entity == added.Entity && removed.Recommendation == added.Recommendation
+	removedAndAddedAreEquivalent := removed != nil && added != nil && removed.EntityOrHash() == added.EntityOrHash() && removed.Recommendation == added.Recommendation
 	if removedAndAddedAreEquivalent {
 		if removed.Reason == added.Reason {
 			pe.sendNotice(ctx,
 				"[%s] [%s](%s) re-%s `%s` for `%s`",
 				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
-				addActionString(added.Recommendation), added.Entity, added.Reason)
+				addActionString(added.Recommendation), added.EntityOrHash(), added.Reason)
 		} else {
 			pe.sendNotice(ctx,
 				"[%s] [%s](%s) changed the %s reason for `%s` from `%s` to `%s`",
 				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
-				changeActionString(added.Recommendation), added.Entity, removed.Reason, added.Reason)
+				changeActionString(added.Recommendation), added.EntityOrHash(), removed.Reason, added.Reason)
 		}
 	} else {
 		if removed != nil {
 			pe.sendNotice(ctx,
 				"[%s] [%s](%s) %s %ss matching `%s` for `%s`",
 				policyRoomMeta.Name, removed.Sender, removed.Sender.URI().MatrixToURL(),
-				removeActionString(removed.Recommendation), removed.EntityType, removed.Entity, removed.Reason,
+				removeActionString(removed.Recommendation), removed.EntityType, removed.EntityOrHash(), removed.Reason,
 			)
 			if !policyRoomMeta.DontApply {
 				pe.EvaluateRemovedRule(ctx, removed)
@@ -147,7 +151,7 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 			pe.sendNotice(ctx,
 				"[%s] [%s](%s) %s %ss matching `%s` for `%s`%s",
 				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
-				addActionString(added.Recommendation), added.EntityType, added.Entity, added.Reason,
+				addActionString(added.Recommendation), added.EntityType, added.EntityOrHash(), added.Reason,
 				suffix,
 			)
 			if !policyRoomMeta.DontApply {

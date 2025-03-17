@@ -1,9 +1,14 @@
 package policylist
 
 import (
+	"slices"
+	"sync"
+
 	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/meowlnir/util"
 )
 
 type typeStateKeyTuple struct {
@@ -17,6 +22,7 @@ type Room struct {
 	UserRules   *List
 	RoomRules   *List
 	ServerRules *List
+	mapLock     sync.RWMutex
 	byEventID   map[id.EventID]typeStateKeyTuple
 }
 
@@ -82,7 +88,9 @@ func (r *Room) Update(evt *event.Event) (added, removed *Policy) {
 		if redacts == "" {
 			redacts = evt.Content.AsRedaction().Redacts
 		}
+		r.mapLock.RLock()
 		target, ok := r.byEventID[redacts]
+		r.mapLock.RUnlock()
 		if ok {
 			switch target.Type {
 			case event.StatePolicyUser, event.StateLegacyPolicyUser, event.StateUnstablePolicyUser:
@@ -93,6 +101,9 @@ func (r *Room) Update(evt *event.Event) (added, removed *Policy) {
 				removed = r.ServerRules.Remove(target.Type, target.StateKey)
 			}
 		}
+	}
+	if added != removed && removed != nil {
+		removed.Sender = evt.Sender
 	}
 	return
 }
@@ -130,14 +141,27 @@ func (r *Room) massUpdatePolicyList(input map[string]*event.Event, entityType En
 }
 
 var HackyRuleFilter []string
+var HackyRuleFilterHashes [][util.HashSize]byte
+
+type hashGlob [util.HashSize]byte
+
+func (hg *hashGlob) Match(entity string) bool {
+	return util.SHA256String(entity) == *hg
+}
 
 func (r *Room) updatePolicyList(evt *event.Event, entityType EntityType, rules *List) (added, removed *Policy) {
 	content, ok := evt.Content.Parsed.(*event.ModPolicyContent)
 	if !ok || evt.StateKey == nil {
 		return
 	}
+	r.mapLock.Lock()
 	r.byEventID[evt.ID] = typeStateKeyTuple{Type: evt.Type, StateKey: *evt.StateKey}
-	if content.Entity == "" || content.Recommendation == "" {
+	r.mapLock.Unlock()
+	var entityHash *[util.HashSize]byte
+	if content.Entity == "" && content.UnstableHashes != nil && len(content.UnstableHashes.SHA256) == util.Base64SHA256Length {
+		entityHash, _ = util.DecodeBase64Hash(content.UnstableHashes.SHA256)
+	}
+	if (content.Entity == "" && entityHash == nil) || content.Recommendation == "" {
 		removed = rules.Remove(evt.Type, *evt.StateKey)
 		return
 	}
@@ -147,19 +171,26 @@ func (r *Room) updatePolicyList(evt *event.Event, entityType EntityType, rules *
 	added = &Policy{
 		ModPolicyContent: content,
 		Pattern:          glob.Compile(content.Entity),
-
-		EntityType: entityType,
-		RoomID:     evt.RoomID,
-		StateKey:   *evt.StateKey,
-		Sender:     evt.Sender,
-		Type:       evt.Type,
-		Timestamp:  evt.Timestamp,
-		ID:         evt.ID,
+		EntityHash:       entityHash,
+		EntityType:       entityType,
+		RoomID:           evt.RoomID,
+		StateKey:         *evt.StateKey,
+		Sender:           evt.Sender,
+		Type:             evt.Type,
+		Timestamp:        evt.Timestamp,
+		ID:               evt.ID,
+	}
+	if entityHash != nil {
+		added.Pattern = (*hashGlob)(entityHash)
 	}
 	if added.Recommendation == event.PolicyRecommendationBan {
-		for _, entry := range HackyRuleFilter {
-			if added.Pattern.Match(entry) {
-				added.Ignored = true
+		if added.EntityHash != nil {
+			added.Ignored = slices.Contains(HackyRuleFilterHashes, *added.EntityHash)
+		} else {
+			for _, entry := range HackyRuleFilter {
+				if added.Pattern.Match(entry) {
+					added.Ignored = true
+				}
 			}
 		}
 	}

@@ -33,6 +33,16 @@ meowlnir:
     hacky_rule_filter:
     - "@user:example.com"
 
+antispam:
+    # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.
+    secret: generate
+    # If set, Meowlnir will use this token to reject pending invites from users who get banned.
+    #
+    # This should be an appservice with access to all local users. If you have a double puppeting
+    # appservice set up for bridges, you can reuse that token. If not, just follow the same
+    # instructions: https://docs.mau.fi/bridges/general/double-puppeting.html
+    auto_reject_invites_token:
+
 # Encryption settings.
 encryption:
     # Should encryption be enabled? This requires MSC3202, MSC4190 and MSC4203 to be implemented on the server.

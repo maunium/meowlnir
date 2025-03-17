@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -17,10 +16,13 @@ import (
 	up "go.mau.fi/util/configupgrade"
 	"go.mau.fi/util/dbutil"
 	_ "go.mau.fi/util/dbutil/litestream"
+	"go.mau.fi/util/exerrors"
+	"go.mau.fi/util/exslices"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/ptr"
 	"gopkg.in/yaml.v3"
 	flag "maunium.net/go/mauflag"
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	cryptoupgrade "maunium.net/go/mautrix/crypto/sql_store_upgrade"
 	"maunium.net/go/mautrix/id"
@@ -32,6 +34,7 @@ import (
 	"go.mau.fi/meowlnir/policyeval"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/synapsedb"
+	"go.mau.fi/meowlnir/util"
 )
 
 var configPath = flag.MakeFull("c", "config", "Path to the config file", "config.yaml").String()
@@ -50,6 +53,7 @@ type Meowlnir struct {
 	EventProcessor *appservice.EventProcessor
 
 	ManagementSecret [32]byte
+	AntispamSecret   [32]byte
 
 	PolicyStore               *policylist.Store
 	MapLock                   sync.RWMutex
@@ -58,12 +62,11 @@ type Meowlnir struct {
 	EvaluatorByManagementRoom map[id.RoomID]*policyeval.PolicyEvaluator
 }
 
-func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
-	var err error
-	m.Config = loadConfig(configPath, noSaveConfig)
-	if strings.HasPrefix(m.Config.Meowlnir.ManagementSecret, "sha256:") {
+func (m *Meowlnir) loadSecret(secret string) [32]byte {
+	if strings.HasPrefix(secret, "sha256:") {
 		var decoded []byte
-		decoded, err = hex.DecodeString(strings.TrimPrefix(m.Config.Meowlnir.ManagementSecret, "sha256:"))
+		var err error
+		decoded, err = hex.DecodeString(strings.TrimPrefix(secret, "sha256:"))
 		if err != nil {
 			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to decode management secret hash")
 			os.Exit(10)
@@ -71,11 +74,22 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 			m.Log.WithLevel(zerolog.FatalLevel).Msg("Management secret hash is not 32 bytes long")
 			os.Exit(10)
 		}
-		m.ManagementSecret = [32]byte(decoded)
-	} else {
-		m.ManagementSecret = sha256.Sum256([]byte(m.Config.Meowlnir.ManagementSecret))
+		return [32]byte(decoded)
 	}
+	return util.SHA256String(secret)
+}
+
+func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
+	var err error
+	m.Config = loadConfig(configPath, noSaveConfig)
+
+	m.ManagementSecret = m.loadSecret(m.Config.Meowlnir.ManagementSecret)
+	m.AntispamSecret = m.loadSecret(m.Config.Antispam.Secret)
+
 	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
+	policylist.HackyRuleFilterHashes = exslices.CastFunc(policylist.HackyRuleFilter, func(s string) [32]byte {
+		return util.SHA256String(s)
+	})
 
 	m.Log, err = m.Config.Logging.Compile()
 	if err != nil {
@@ -172,6 +186,12 @@ func (m *Meowlnir) claimProtectedRoom(roomID id.RoomID, eval *policyeval.PolicyE
 	return eval
 }
 
+func (m *Meowlnir) createPuppetClient(userID id.UserID) *mautrix.Client {
+	cli := exerrors.Must(m.AS.NewExternalMautrixClient(userID, m.Config.Antispam.AutoRejectInvitesToken, ""))
+	cli.SetAppServiceUserID = true
+	return cli
+}
+
 func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	intent := m.AS.Intent(id.NewUserID(db.Username, m.AS.HomeserverDomain))
 	wrapped := bot.NewBot(
@@ -191,7 +211,10 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	}
 	for _, roomID := range managementRooms {
 		m.EvaluatorByManagementRoom[roomID] = policyeval.NewPolicyEvaluator(
-			wrapped, m.PolicyStore, roomID, m.DB, m.SynapseDB, m.claimProtectedRoom, m.Config.Meowlnir.DryRun,
+			wrapped, m.PolicyStore,
+			roomID, m.DB, m.SynapseDB,
+			m.claimProtectedRoom, m.createPuppetClient,
+			m.Config.Antispam.AutoRejectInvitesToken != "", m.Config.Meowlnir.DryRun,
 		)
 	}
 	return wrapped
@@ -213,7 +236,10 @@ func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot
 		}
 	}
 	eval = policyeval.NewPolicyEvaluator(
-		bot, m.PolicyStore, roomID, m.DB, m.SynapseDB, m.claimProtectedRoom, m.Config.Meowlnir.DryRun,
+		bot, m.PolicyStore,
+		roomID, m.DB, m.SynapseDB,
+		m.claimProtectedRoom, m.createPuppetClient,
+		m.Config.Antispam.AutoRejectInvitesToken != "", m.Config.Meowlnir.DryRun,
 	)
 	m.EvaluatorByManagementRoom[roomID] = eval
 	go eval.Load(ctx)

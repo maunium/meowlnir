@@ -2,10 +2,12 @@ package policyeval
 
 import (
 	"context"
+	"iter"
 	"maps"
 	"slices"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
@@ -13,11 +15,53 @@ import (
 	"go.mau.fi/meowlnir/policylist"
 )
 
-func (pe *PolicyEvaluator) EvaluateAll(ctx context.Context) {
+func (pe *PolicyEvaluator) getAllUsers() []id.UserID {
 	pe.protectedRoomsLock.RLock()
-	users := slices.Collect(maps.Keys(pe.protectedRoomMembers))
-	pe.protectedRoomsLock.RUnlock()
-	pe.EvaluateAllMembers(ctx, users)
+	defer pe.protectedRoomsLock.RUnlock()
+	return slices.Collect(maps.Keys(pe.protectedRoomMembers))
+}
+
+func (pe *PolicyEvaluator) getUserIDFromHash(hash [32]byte) (id.UserID, bool) {
+	pe.protectedRoomsLock.RLock()
+	defer pe.protectedRoomsLock.RUnlock()
+	userID, ok := pe.memberHashes[hash]
+	return userID, ok
+}
+
+func (pe *PolicyEvaluator) findMatchingUsers(pattern glob.Glob, hash *[32]byte) iter.Seq[id.UserID] {
+	return func(yield func(id.UserID) bool) {
+		if hash != nil {
+			userID, ok := pe.getUserIDFromHash(*hash)
+			if ok {
+				yield(userID)
+			}
+			return
+		}
+		exact, ok := pattern.(glob.ExactGlob)
+		if ok {
+			userID := id.UserID(exact)
+			pe.protectedRoomsLock.RLock()
+			defer pe.protectedRoomsLock.RUnlock()
+			_, found := pe.protectedRoomMembers[userID]
+			if found {
+				yield(userID)
+			}
+			return
+		}
+		users := pe.getAllUsers()
+		for _, userID := range users {
+			if pattern.Match(string(userID)) {
+				if !yield(userID) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func (pe *PolicyEvaluator) EvaluateAll(ctx context.Context) {
+	pe.EvaluateAllMembers(ctx, pe.getAllUsers())
+	pe.UpdateACL(ctx)
 }
 
 func (pe *PolicyEvaluator) EvaluateAllMembers(ctx context.Context, members []id.UserID) {
@@ -35,39 +79,43 @@ func (pe *PolicyEvaluator) EvaluateUser(ctx context.Context, userID id.UserID, i
 }
 
 func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *policylist.Policy) {
-	if policy.Recommendation == event.PolicyRecommendationUnban {
-		// When an unban rule is removed, evaluate all joined users against the removed rule
-		// to see if they should be re-evaluated against all rules (and possibly banned)
-		pe.protectedRoomsLock.RLock()
-		users := slices.Collect(maps.Keys(pe.protectedRoomMembers))
-		pe.protectedRoomsLock.RUnlock()
-		for _, userID := range users {
-			if policy.Pattern.Match(string(userID)) {
+	switch policy.EntityType {
+	case policylist.EntityTypeUser:
+		if policy.Recommendation == event.PolicyRecommendationUnban {
+			// When an unban rule is removed, evaluate all joined users against the removed rule
+			// to see if they should be re-evaluated against all rules (and possibly banned)
+			for userID := range pe.findMatchingUsers(policy.Pattern, policy.EntityHash) {
 				pe.EvaluateUser(ctx, userID, false)
 			}
+		} else {
+			// For ban rules, find users who were banned by the rule and re-evaluate them.
+			reevalTargets, err := pe.DB.TakenAction.GetAllByRuleEntity(ctx, policy.RoomID, policy.EntityOrHash())
+			if err != nil {
+				zerolog.Ctx(ctx).Err(err).Str("policy_entity", policy.EntityOrHash()).
+					Msg("Failed to get actions taken for removed policy")
+				pe.sendNotice(ctx, "Database error in EvaluateRemovedRule (GetAllByRuleEntity): %v", err)
+				return
+			}
+			pe.ReevaluateActions(ctx, reevalTargets)
 		}
-	} else {
-		// For ban rules, find users who were banned by the rule and re-evaluate them.
-		reevalTargets, err := pe.DB.TakenAction.GetAllByRuleEntity(ctx, policy.RoomID, policy.Entity)
-		if err != nil {
-			zerolog.Ctx(ctx).Err(err).Str("policy_entity", policy.Entity).
-				Msg("Failed to get actions taken for removed policy")
-			pe.sendNotice(ctx, "Database error in EvaluateRemovedRule (GetAllByRuleEntity): %v", err)
-			return
-		}
-		pe.ReevaluateActions(ctx, reevalTargets)
+	case policylist.EntityTypeServer:
+		pe.UpdateACL(ctx)
+	case policylist.EntityTypeRoom:
+		// Ignored for now
 	}
 }
 
 func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policylist.Policy) {
-	pe.protectedRoomsLock.RLock()
-	users := slices.Collect(maps.Keys(pe.protectedRoomMembers))
-	pe.protectedRoomsLock.RUnlock()
-	for _, userID := range users {
-		if policy.Pattern.Match(string(userID)) {
+	switch policy.EntityType {
+	case policylist.EntityTypeUser:
+		for userID := range pe.findMatchingUsers(policy.Pattern, policy.EntityHash) {
 			// Do a full evaluation to ensure new policies don't bypass existing higher priority policies
 			pe.EvaluateUser(ctx, userID, true)
 		}
+	case policylist.EntityTypeServer:
+		pe.UpdateACL(ctx)
+	case policylist.EntityTypeRoom:
+		// Ignored for now, could hook up to room deletion later
 	}
 }
 

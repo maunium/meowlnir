@@ -13,11 +13,12 @@ var (
 )
 
 type WatchedPolicyList struct {
-	RoomID    id.RoomID `json:"room_id"`
-	Name      string    `json:"name"`
-	Shortcode string    `json:"shortcode"`
-	DontApply bool      `json:"dont_apply"`
-	AutoUnban bool      `json:"auto_unban"`
+	RoomID       id.RoomID `json:"room_id"`
+	Name         string    `json:"name"`
+	Shortcode    string    `json:"shortcode"`
+	DontApply    bool      `json:"dont_apply"`
+	DontApplyACL bool      `json:"dont_apply_acl"`
+	AutoUnban    bool      `json:"auto_unban"`
 }
 
 type WatchedListsEventContent struct {
@@ -26,6 +27,9 @@ type WatchedListsEventContent struct {
 
 type ProtectedRoomsEventContent struct {
 	Rooms []id.RoomID `json:"rooms"`
+
+	// TODO make this less hacky
+	SkipACL []id.RoomID `json:"skip_acl"`
 }
 
 func init() {

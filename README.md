@@ -88,10 +88,10 @@ create bots.
 
 Currently existing endpoints:
 
-* `GET /_matrix/meowlnir/v1/bots` - List all bots
-* `PUT /_matrix/meowlnir/v1/bot/{localpart}` - Create a bot
-* `POST /_matrix/meowlnir/v1/bot/{localpart}/verify` - Cross-sign a bot's device
-* `PUT /_matrix/meowlnir/v1/management_room/{roomID}` - Define a room as a management room
+* `GET /_meowlnir/v1/bots` - List all bots
+* `PUT /_meowlnir/v1/bot/{localpart}` - Create a bot
+* `POST /_meowlnir/v1/bot/{localpart}/verify` - Cross-sign a bot's device
+* `PUT /_meowlnir/v1/management_room/{roomID}` - Define a room as a management room
 
 There will be a CLI and/or web UI later, but for now, you can use curl:
 
@@ -103,7 +103,7 @@ First, create a bot. This example copies matrix.org's admin bot (`abuse` as the
 username, `Administrator` as the displayname, and the same avatar):
 
 ```shell
-curl -H "$AUTH" https://meowlnir.example.com/_matrix/meowlnir/v1/bot/abuse -XPUT -d '{"displayname": "Administrator", "avatar_url": "mxc://matrix.org/NZGChxcCXbBvgkCNZTLXlpux"}'
+curl -H "$AUTH" https://meowlnir.example.com/_meowlnir/v1/bot/abuse -XPUT -d '{"displayname": "Administrator", "avatar_url": "mxc://matrix.org/NZGChxcCXbBvgkCNZTLXlpux"}'
 ```
 
 Assuming you didn't have an @abuse user before or if it didn't have encryption,
@@ -111,21 +111,21 @@ you can have Meowlnir generate cross-signing keys to verify itself. This
 command will return the recovery key. Make sure to save it!
 
 ```shell
-curl -H "$AUTH" https://meowlnir.example.com/_matrix/meowlnir/v1/bot/abuse/verify -d '{"generate": true}'
+curl -H "$AUTH" https://meowlnir.example.com/_meowlnir/v1/bot/abuse/verify -d '{"generate": true}'
 ```
 
 Alternatively, if the user already has cross-signing set up, you can provide
 the recovery key for verification:
 
 ```shell
-curl -H "$AUTH" https://meowlnir.example.com/_matrix/meowlnir/v1/bot/abuse/verify -d '{"recovery_key": "EsT* ****..."}'
+curl -H "$AUTH" https://meowlnir.example.com/_meowlnir/v1/bot/abuse/verify -d '{"recovery_key": "EsT* ****..."}'
 ```
 
 Finally, you need to define a management room. Create the room normally, get
 the room ID and run:
 
 ```shell
-curl -H "$AUTH" -X PUT 'https://meowlnir.example.com/_matrix/meowlnir/v1/management_room/!randomroomid:example.com' -d '{"bot_username": "abuse"}'
+curl -H "$AUTH" -X PUT 'https://meowlnir.example.com/_meowlnir/v1/management_room/!randomroomid:example.com' -d '{"bot_username": "abuse"}'
 ```
 
 After defining the room, you can invite the bot, and it should accept the invite
@@ -190,3 +190,32 @@ The event content is simply a `rooms` key which is a list of room IDs.
 
 After adding rooms to this list, you can invite the bot to the room, or use the
 `!join` command.
+
+#### Blocking invites
+To use policy lists for blocking incoming invites, install the
+[synapse-http-antispam] module, then configure it with the ID of the management
+room you want to use plus the antispam API token from the Meowlnir config file:
+
+[synapse-http-antispam]: https://github.com/maunium/synapse-http-antispam
+
+```yaml
+modules:
+  - module: synapse_http_antispam.HTTPAntispam
+    config:
+      base_url: http://localhost:29339/_meowlnir/antispam/<management room ID>
+      authorization: <value of meowlnir.antispam_secret>
+      enabled_callbacks:
+      - user_may_invite
+      - user_may_join_room
+      fail_open:
+        user_may_join_room: true
+```
+
+The `user_may_invite` callback is used to block invites from users who are
+banned on any of the policy lists that the management room is subscribed to.
+
+The `user_may_join_room` callback is used to track whether non-blocked invites
+have been accepted. If `auto_reject_invites_token` is set in the config,
+Meowlnir will automatically reject pending invites to rooms from banned users.
+Even if this callback is not enabled, Meowlnir will still check whether the
+invites are pending to avoid rejecting already-accepted invites.
