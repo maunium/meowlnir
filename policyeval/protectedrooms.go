@@ -99,10 +99,20 @@ func (pe *PolicyEvaluator) lockJoin(roomID id.RoomID) func() {
 }
 
 func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *mautrix.RespJoinedRooms, roomID id.RoomID, doReeval bool) (*mautrix.RespMembers, string) {
-	if claimer := pe.claimProtected(roomID, pe, true); claimer != pe {
+	if roomID == pe.ManagementRoom {
+		return nil, "* The management room can't be a protected room"
+	} else if claimer := pe.claimProtected(roomID, pe, true); claimer != pe {
 		if claimer != nil && claimer.Bot.UserID == pe.Bot.UserID {
 			return nil, fmt.Sprintf("* Room [%s](%s) is already protected by [%s](%s)", roomID, roomID.URI().MatrixToURL(), claimer.ManagementRoom, claimer.ManagementRoom.URI().MatrixToURL())
 		} else {
+			if claimer != nil {
+				zerolog.Ctx(ctx).Debug().
+					Stringer("claimer_user_id", claimer.Bot.UserID).
+					Stringer("claimer_room_id", claimer.ManagementRoom).
+					Msg("Failed to protect room that's already claimed by another bot")
+			} else {
+				zerolog.Ctx(ctx).Warn().Msg("Failed to protect room, but no existing claimer found, likely a management room")
+			}
 			return nil, fmt.Sprintf("* Room [%s](%s) is already protected by another bot", roomID, roomID.URI().MatrixToURL())
 		}
 	}
@@ -197,7 +207,7 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 			if errMsg != "" {
 				errors = append(errors, errMsg)
 			}
-			if !isInitial {
+			if !isInitial && members != nil {
 				for _, member := range members.Chunk {
 					reevalMembers[id.UserID(member.GetStateKey())] = struct{}{}
 				}
