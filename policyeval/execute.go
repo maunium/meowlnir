@@ -60,9 +60,6 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 			//	pe.sendNotice(ctx, "Database error in ApplyPolicy (GetAllByTargetUser): %v", err)
 			//	return
 			//}
-			for _, room := range rooms {
-				pe.ApplyUnban(ctx, userID, room, recs.BanOrUnban)
-			}
 		}
 	}
 }
@@ -110,20 +107,10 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 	}
 }
 
-func (pe *PolicyEvaluator) ApplyUnban(ctx context.Context, userID id.UserID, roomID id.RoomID, policy *policylist.Policy) {
-	ta := &database.TakenAction{
-		TargetUser: userID,
-		InRoomID:   roomID,
-		ActionType: database.TakenActionTypeBanOrUnban,
-		PolicyList: policy.RoomID,
-		RuleEntity: policy.Entity,
-		Action:     policy.Recommendation,
-		TakenAt:    time.Now(),
-	}
+func (pe *PolicyEvaluator) ApplyUnban(ctx context.Context, userID id.UserID, roomID id.RoomID, ta *database.TakenAction) {
 	var err error
 	if !pe.DryRun {
 		_, err = pe.Bot.UnbanUser(ctx, roomID, &mautrix.ReqUnbanUser{
-			Reason: filterReason(policy.Reason),
 			UserID: userID,
 		})
 	}
@@ -132,17 +119,18 @@ func (pe *PolicyEvaluator) ApplyUnban(ctx context.Context, userID id.UserID, roo
 		if errors.As(err, &respErr) {
 			err = respErr
 		}
-		zerolog.Ctx(ctx).Err(err).Any("attempted_action", ta).Msg("Failed to unban user")
-		pe.sendNotice(ctx, "Failed to unban [%s](%s) in [%s](%s) for %s: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
+		zerolog.Ctx(ctx).Err(err).Msg("Failed to unban user")
+		pe.sendNotice(ctx, "Failed to unban [%s](%s) in [%s](%s): %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), err)
 		return
-	}
-	err = pe.DB.TakenAction.Put(ctx, ta)
-	if err != nil {
-		zerolog.Ctx(ctx).Err(err).Any("taken_action", ta).Msg("Failed to save taken action")
-		pe.sendNotice(ctx, "Unbanned [%s](%s) in [%s](%s) for %s, but failed to save to database: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
 	} else {
-		zerolog.Ctx(ctx).Info().Any("taken_action", ta).Msg("Took action")
-		pe.sendNotice(ctx, "Unbanned [%s](%s) in [%s](%s) for %s", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason)
+		zerolog.Ctx(ctx).Info().Msg("Took action")
+		err = pe.DB.TakenAction.Delete(ctx, userID, roomID, ta.ActionType)
+		if err != nil {
+			zerolog.Ctx(ctx).Err(err).Msg("Failed to delete taken action")
+			pe.sendNotice(ctx, "Unbanned [%s](%s) in [%s](%s), but failed to delete from database: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), err)
+			return
+		}
+		pe.sendNotice(ctx, "Unbanned [%s](%s) in [%s](%s)", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL())
 	}
 }
 
