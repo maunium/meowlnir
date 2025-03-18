@@ -200,6 +200,14 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			if rec.RoomID == list.RoomID {
 				existingStateKey = rec.StateKey
 			}
+			// TODO: handle wildcards and multiple matches, etc
+			if cmd == "!remove-unban" && rec.Recommendation != event.PolicyRecommendationUnban {
+				pe.sendNotice(ctx, "`%s` does not have an unban recommendation", target)
+				return
+			} else if cmd == "!remove-ban" && rec.Recommendation != event.PolicyRecommendationBan {
+				pe.sendNotice(ctx, "`%s` does not have a ban recommendation", target)
+				return
+			}
 		}
 		policy := &event.ModPolicyContent{}
 		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, target, policy)
