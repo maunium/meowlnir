@@ -82,6 +82,17 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		return ptr.Ptr(mautrix.MForbidden.WithMessage(fmt.Sprintf("Inviting from your server (%s) is not allowed due to %s", inviterServer, rec.Reason)))
 	}
 
+	// Parsing room IDs is generally not allowed, but in this case,
+	// if a room was created on a banned server, there's no reason to allow invites to it.
+	_, _, roomServer := id.ParseCommonIdentifier(roomID)
+	if rec = pe.Store.MatchServer(lists, roomServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+		log.Debug().
+			Str("policy_entity", rec.EntityOrHash()).
+			Str("policy_reason", rec.Reason).
+			Msg("Blocking invite to room on banned server")
+		return ptr.Ptr(mautrix.MForbidden.WithMessage(fmt.Sprintf("Inviting to this room is not allowed due to %s", rec.Reason)))
+	}
+
 	rec = nil
 	log.Trace().Msg("Allowing invite")
 
