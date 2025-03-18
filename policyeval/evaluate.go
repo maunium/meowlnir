@@ -150,8 +150,8 @@ func (pe *PolicyEvaluator) ReevaluateActions(ctx context.Context, actions []*dat
 			if pe.Bot.StateStore.IsMembership(ctx, action.InRoomID, action.TargetUser, event.MembershipBan) {
 				zerolog.Ctx(ctx).
 					Info().
-					Str("user_id", string(action.TargetUser)).
-					Str("room_id", string(action.InRoomID)).
+					Stringer("user_id", action.TargetUser).
+					Stringer("room_id", action.InRoomID).
 					Msg("Unbanning user due to rule removal")
 				pe.ApplyUnban(ctx, action.TargetUser, action.InRoomID, action)
 			}
