@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -85,27 +86,43 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "Usage: `!kick <user ID> [reason]`")
 			return
 		}
+		ignoreUserLimit := args[0] == "--force"
+		if ignoreUserLimit {
+			args = args[1:]
+		}
 		pattern := glob.Compile(args[0])
 		reason := strings.Join(args[1:], " ")
-		userCount := 0
-		for userID := range pe.findMatchingUsers(pattern, nil) {
-			userCount++
+		users := slices.Collect(pe.findMatchingUsers(pattern, nil))
+		if len(users) > 10 && !ignoreUserLimit {
+			// TODO replace the force flag with a reaction confirmation
+			pe.sendNotice(ctx, "%d users matching `%s` found, use `--force` to kick all of them.", len(users), args[0])
+			return
+		}
+		for _, userID := range users {
 			successCount := 0
 			rooms := pe.getRoomsUserIsIn(userID)
-			for _, room := range rooms {
-				_, err := pe.Bot.KickUser(ctx, room, &mautrix.ReqKickUser{
-					Reason: reason,
-					UserID: userID,
-				})
+			if len(rooms) == 0 {
+				continue
+			}
+			roomStrings := make([]string, len(rooms))
+			for i, room := range rooms {
+				roomStrings[i] = fmt.Sprintf("[%s](%s)", room, room.URI().MatrixToURL())
+				var err error
+				if !pe.DryRun {
+					_, err = pe.Bot.KickUser(ctx, room, &mautrix.ReqKickUser{
+						Reason: reason,
+						UserID: userID,
+					})
+				}
 				if err != nil {
 					pe.sendNotice(ctx, "Failed to kick `%s` from `%s`: %v", userID, room, err)
 				} else {
 					successCount++
 				}
 			}
-			pe.sendNotice(ctx, "Kicked `%s` from %d rooms", userID, successCount)
+			pe.sendNotice(ctx, "Kicked `%s` from %d rooms: %s", userID, successCount, strings.Join(roomStrings, ", "))
 		}
-		if userCount == 0 {
+		if len(users) == 0 {
 			pe.sendNotice(ctx, "No users matching `%s` found in any rooms", args[0])
 			return
 		}
