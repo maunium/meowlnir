@@ -123,7 +123,6 @@ func (pe *PolicyEvaluator) ApplyUnban(ctx context.Context, userID id.UserID, roo
 		pe.sendNotice(ctx, "Failed to unban [%s](%s) in [%s](%s): %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), err)
 		return
 	} else {
-		zerolog.Ctx(ctx).Info().Msg("Took action")
 		err = pe.DB.TakenAction.Delete(ctx, userID, roomID, ta.ActionType)
 		if err != nil {
 			zerolog.Ctx(ctx).Err(err).Msg("Failed to delete taken action")

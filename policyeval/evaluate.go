@@ -140,12 +140,19 @@ func (pe *PolicyEvaluator) ReevaluateAffectedByLists(ctx context.Context, policy
 
 func (pe *PolicyEvaluator) ReevaluateActions(ctx context.Context, actions []*database.TakenAction) {
 	for _, action := range actions {
-		if action.TargetUser == "" {
-			zerolog.Ctx(ctx).Warn().Any("action", action).Msg("Action has no target user")
-			continue
-		}
+		zerolog.Ctx(ctx).Debug().Interface("action", action).Msg("Reevaluating action")
 		// unban users that were previously banned by this rule
 		if action.ActionType == database.TakenActionTypeBanOrUnban && action.Action == event.PolicyRecommendationBan {
+			// Check that auto_unban is true
+			plist := pe.GetWatchedListMeta(action.PolicyList)
+			if !plist.AutoUnban {
+				continue
+			}
+			// Ensure that no other ban rule is still in effect
+			match := pe.Store.MatchUser(pe.GetWatchedLists(), action.TargetUser)
+			if match != nil {
+				continue
+			}
 			// ensure that the user is actually banned in the room
 			if pe.Bot.StateStore.IsMembership(ctx, action.InRoomID, action.TargetUser, event.MembershipBan) {
 				zerolog.Ctx(ctx).
