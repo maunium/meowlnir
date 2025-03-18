@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -127,18 +128,13 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			return
 		}
 		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!ban", "!ban-user", "!ban-server", "!takedown", "!takedown-user", "!takedown-server":
+	case "!ban", "!takedown":
 		if len(args) < 2 {
-			if cmd == "!ban-server" || cmd == "!takedown-server" {
-				pe.sendNotice(ctx, "Usage: `%s [--hash] <list shortcode> <server name> [reason]`", cmd)
-			} else {
-				pe.sendNotice(ctx, "Usage: `%s [--hash] <list shortcode> <user ID> [reason]`", cmd)
-			}
+			pe.sendNotice(ctx, "Usage: `%s [--hash] <list shortcode> <entity> [reason]`", cmd)
 			return
 		}
-		hash := false
-		if args[0] == "--hash" {
-			hash = true
+		hash := args[0] == "--hash"
+		if hash {
 			args = args[1:]
 		}
 		list := pe.FindListByShortcode(args[0])
@@ -147,22 +143,20 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			return
 		}
 		target := args[1]
-		var match policylist.Match
-		var entityType policylist.EntityType
-		if cmd == "!ban-server" {
-			entityType = policylist.EntityTypeServer
-			match = pe.Store.MatchServer(pe.GetWatchedLists(), target)
-		} else {
-			entityType = policylist.EntityTypeUser
-			match = pe.Store.MatchUser(pe.GetWatchedLists(), id.UserID(target))
+		entityType, ok := validateEntity(target)
+		if !ok {
+			pe.sendNotice(ctx, "Invalid entity `%s`", target)
+			return
+		}
+		match := pe.Store.MatchExact(pe.GetWatchedLists(), entityType, target)
+		if rec := match.Recommendations().BanOrUnban; rec != nil && rec.Recommendation == event.PolicyRecommendationUnban {
+			pe.sendNotice(ctx, "`%s` has an unban recommendation: %s", target, rec.Reason)
+			return
 		}
 		var existingStateKey string
-		if rec := match.Recommendations().BanOrUnban; rec != nil {
-			if rec.Recommendation == event.PolicyRecommendationUnban {
-				pe.sendNotice(ctx, "`%s` has an unban recommendation: %s", target, rec.Reason)
-				return
-			} else if rec.RoomID == list.RoomID && rec.Entity == target {
-				existingStateKey = rec.StateKey
+		for _, policy := range match {
+			if policy.RoomID == list.RoomID && policy.Entity == target {
+				existingStateKey = policy.StateKey
 			}
 		}
 		policy := &event.ModPolicyContent{
@@ -202,11 +196,13 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				pe.sendNotice(ctx, "No user found for hash `%s`", target)
 				return
 			}
+			target = targetUser.String()
 			pe.sendNotice(ctx, "Matched user `%s` for hash `%s`", targetUser, target)
 		}
+		entityType, _ := validateEntity(target)
 		var dur time.Duration
 		var match policylist.Match
-		if targetUser[0] == '@' {
+		if entityType == policylist.EntityTypeUser {
 			start := time.Now()
 			match = pe.Store.MatchUser(nil, targetUser)
 			dur = time.Since(start)
@@ -225,14 +221,17 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				pe.protectedRoomsLock.RUnlock()
 				pe.sendNotice(ctx, "User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
 			}
-		} else if target[0] == '!' {
+		} else if entityType == policylist.EntityTypeRoom {
 			start := time.Now()
 			match = pe.Store.MatchRoom(nil, id.RoomID(target))
 			dur = time.Since(start)
-		} else {
+		} else if entityType == policylist.EntityTypeServer {
 			start := time.Now()
 			match = pe.Store.MatchServer(nil, target)
 			dur = time.Since(start)
+		} else {
+			pe.sendNotice(ctx, "Invalid entity `%s`", target)
+			return
 		}
 		if match != nil {
 			eventStrings := make([]string, len(match))
@@ -249,6 +248,22 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "No match in %s", dur.String())
 		}
 	}
+}
+
+var homeserverPatternRegex = regexp.MustCompile(`^[a-zA-Z0-9.*?-]+\.[a-zA-Z0-9*?-]+$`)
+
+func validateEntity(entity string) (policylist.EntityType, bool) {
+	if len(entity) == 0 {
+		return "", false
+	}
+	if entity[0] == '@' {
+		return policylist.EntityTypeUser, true
+	} else if entity[0] == '!' {
+		return policylist.EntityTypeRoom, true
+	} else if homeserverPatternRegex.MatchString(entity) {
+		return policylist.EntityTypeServer, true
+	}
+	return "", false
 }
 
 func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, stateKey, rawEntity string, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {

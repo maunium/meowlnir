@@ -107,6 +107,33 @@ func (s *Store) match(listIDs []id.RoomID, entity string, listGetter func(*Room)
 	return
 }
 
+func (s *Store) MatchExact(listIDs []id.RoomID, entityType EntityType, entity string) (output Match) {
+	if listIDs == nil {
+		s.roomsLock.Lock()
+		listIDs = slices.Collect(maps.Keys(s.rooms))
+		s.roomsLock.Unlock()
+	}
+	for _, roomID := range listIDs {
+		s.roomsLock.RLock()
+		list, ok := s.rooms[roomID]
+		s.roomsLock.RUnlock()
+		if !ok {
+			continue
+		}
+		var rules *List
+		switch entityType {
+		case EntityTypeUser:
+			rules = list.GetUserRules()
+		case EntityTypeRoom:
+			rules = list.GetRoomRules()
+		case EntityTypeServer:
+			rules = list.GetServerRules()
+		}
+		output = append(output, rules.MatchExact(entity)...)
+	}
+	return
+}
+
 func (s *Store) compileList(listIDs []id.RoomID, listGetter func(*Room) *List) (output map[string]*Policy) {
 	output = make(map[string]*Policy)
 	// Iterate the list backwards so that entries in higher priority lists overwrite lower priority ones
