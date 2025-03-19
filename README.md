@@ -203,7 +203,7 @@ modules:
   - module: synapse_http_antispam.HTTPAntispam
     config:
       base_url: http://localhost:29339/_meowlnir/antispam/<management room ID>
-      authorization: <value of meowlnir.antispam_secret>
+      authorization: <value of antispam.secret>
       enabled_callbacks:
       - user_may_invite
       - user_may_join_room
