@@ -122,7 +122,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 				output = append(output, fmt.Sprintf("* Unsubscribed from [%s](%s) (policies weren't being applied)", roomID, roomID.URI().MatrixToURL()))
 			}
 		}
-		aclSubscribed, aclUnsubscribed := exslices.Diff(oldACLWatchedList, aclWatchedList)
+		aclUnsubscribed, aclSubscribed := exslices.Diff(oldACLWatchedList, aclWatchedList)
 		for _, roomID := range aclSubscribed {
 			if !slices.Contains(subscribed, roomID) {
 				output = append(output, fmt.Sprintf("* Subscribed to server ACLs in %s [%s](%s)", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
