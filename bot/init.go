@@ -55,8 +55,14 @@ func NewBot(
 		// NewCryptoHelper only returns errors on invalid parameters
 		helper = exerrors.Must(cryptohelper.NewCryptoHelper(client, cryptoStore.PickleKey, cryptoStore))
 		helper.DBAccountID = cryptoStore.AccountID
-		helper.MSC4190 = true
-		helper.LoginAs = &mautrix.ReqLogin{InitialDeviceDisplayName: "Meowlnir"}
+		helper.LoginAs = &mautrix.ReqLogin{
+			Type: mautrix.AuthTypeAppservice,
+			Identifier: mautrix.UserIdentifier{
+				Type: mautrix.IdentifierTypeUser,
+				User: bot.Username,
+			},
+			InitialDeviceDisplayName: "Meowlnir",
+		}
 		client.Crypto = helper
 	}
 	return &Bot{
