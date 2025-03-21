@@ -2,6 +2,7 @@ package policylist
 
 import (
 	"maps"
+	"regexp"
 	"slices"
 	"sync"
 
@@ -34,8 +35,31 @@ func (s *Store) MatchRoom(listIDs []id.RoomID, roomID id.RoomID) Match {
 	return s.match(listIDs, string(roomID), (*Room).GetRoomRules)
 }
 
+var portRegex = regexp.MustCompile(`:\d+$`)
+var ipRegex = regexp.MustCompile(`^(?:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})|(?:\[[0-9a-fA-F:.]+\])$`)
+var fakeBanForIPLiterals = &Policy{
+	ModPolicyContent: &event.ModPolicyContent{
+		Recommendation: event.PolicyRecommendationBan,
+		Entity:         "IP literal",
+		Reason:         "IP literals are not allowed",
+	},
+	EntityType: EntityTypeServer,
+}
+
+func CleanupServerNameForMatch(serverName string) string {
+	return portRegex.ReplaceAllString(serverName, "")
+}
+
+func IsIPLiteral(serverName string) bool {
+	return ipRegex.MatchString(serverName)
+}
+
 // MatchServer finds all matching policies for the given server name in the given policy rooms.
 func (s *Store) MatchServer(listIDs []id.RoomID, serverName string) Match {
+	serverName = CleanupServerNameForMatch(serverName)
+	if IsIPLiteral(serverName) {
+		return Match{fakeBanForIPLiterals}
+	}
 	return s.match(listIDs, serverName, (*Room).GetServerRules)
 }
 
