@@ -296,6 +296,9 @@ func (m *Meowlnir) Run(ctx context.Context) {
 	m.MapLock.Unlock()
 	wg.Wait()
 
+	m.Log.Info().Msg("Startup complete")
+	m.AS.Ready = true
+
 	<-ctx.Done()
 	err = m.DB.Close()
 	if err != nil {
