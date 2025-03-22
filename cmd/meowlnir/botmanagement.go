@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"encoding/json"
 	"maps"
@@ -265,7 +266,7 @@ func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
 		mautrix.MUnknown.WithMessage("Failed to save management room to database").Write(w)
 		return
 	}
-	didUpdate := m.loadManagementRoom(r.Context(), roomID, bot)
+	didUpdate := m.loadManagementRoom(context.WithoutCancel(r.Context()), roomID, bot)
 	if didUpdate {
 		exhttp.WriteEmptyJSONResponse(w, http.StatusCreated)
 	}

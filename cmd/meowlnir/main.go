@@ -68,10 +68,10 @@ func (m *Meowlnir) loadSecret(secret string) [32]byte {
 		var err error
 		decoded, err = hex.DecodeString(strings.TrimPrefix(secret, "sha256:"))
 		if err != nil {
-			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to decode management secret hash")
+			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to decode secret hash")
 			os.Exit(10)
 		} else if len(decoded) != 32 {
-			m.Log.WithLevel(zerolog.FatalLevel).Msg("Management secret hash is not 32 bytes long")
+			m.Log.WithLevel(zerolog.FatalLevel).Msg("Secret hash is not 32 bytes long")
 			os.Exit(10)
 		}
 		return [32]byte(decoded)
@@ -82,9 +82,6 @@ func (m *Meowlnir) loadSecret(secret string) [32]byte {
 func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	var err error
 	m.Config = loadConfig(configPath, noSaveConfig)
-
-	m.ManagementSecret = m.loadSecret(m.Config.Meowlnir.ManagementSecret)
-	m.AntispamSecret = m.loadSecret(m.Config.Antispam.Secret)
 
 	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
 	policylist.HackyRuleFilterHashes = exslices.CastFunc(policylist.HackyRuleFilter, func(s string) [32]byte {
@@ -103,6 +100,10 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		Time("built_at", ParsedBuildTime).
 		Str("go_version", runtime.Version()).
 		Msg("Initializing Meowlnir")
+
+	m.ManagementSecret = m.loadSecret(m.Config.Meowlnir.ManagementSecret)
+	m.AntispamSecret = m.loadSecret(m.Config.Antispam.Secret)
+
 	var mainDB, synapseDB *dbutil.Database
 	mainDB, err = dbutil.NewFromConfig("meowlnir", m.Config.Database, dbutil.ZeroLogger(m.Log.With().Str("db_section", "main").Logger()))
 	if err != nil {
@@ -295,6 +296,9 @@ func (m *Meowlnir) Run(ctx context.Context) {
 	}
 	m.MapLock.Unlock()
 	wg.Wait()
+
+	m.Log.Info().Msg("Startup complete")
+	m.AS.Ready = true
 
 	<-ctx.Done()
 	err = m.DB.Close()

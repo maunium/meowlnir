@@ -174,7 +174,7 @@ func (pe *PolicyEvaluator) handlePowerLevels(evt *event.Event) string {
 	adminLevel := content.GetEventLevel(config.StateWatchedLists)
 	admins := exsync.NewSet[id.UserID]()
 	for user, level := range content.Users {
-		if level > adminLevel {
+		if level >= adminLevel {
 			admins.Add(user)
 		}
 	}

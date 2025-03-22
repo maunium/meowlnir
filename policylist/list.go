@@ -164,6 +164,21 @@ func (l *List) Match(entity string) (output Match) {
 	return
 }
 
+func (l *List) MatchExact(entity string) (output Match) {
+	if entity == "" {
+		return
+	}
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	if value, ok := l.byEntity[entity]; ok {
+		output = Match{value.Policy}
+	}
+	if value, ok := l.byEntityHash[util.SHA256String(entity)]; ok {
+		output = append(output, value.Policy)
+	}
+	return
+}
+
 func (l *List) MatchHash(hash [util.HashSize]byte) (output Match) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()

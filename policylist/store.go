@@ -2,6 +2,7 @@ package policylist
 
 import (
 	"maps"
+	"regexp"
 	"slices"
 	"sync"
 
@@ -34,8 +35,31 @@ func (s *Store) MatchRoom(listIDs []id.RoomID, roomID id.RoomID) Match {
 	return s.match(listIDs, string(roomID), (*Room).GetRoomRules)
 }
 
+var portRegex = regexp.MustCompile(`:\d+$`)
+var ipRegex = regexp.MustCompile(`^(?:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})|(?:\[[0-9a-fA-F:.]+\])$`)
+var fakeBanForIPLiterals = &Policy{
+	ModPolicyContent: &event.ModPolicyContent{
+		Recommendation: event.PolicyRecommendationBan,
+		Entity:         "IP literal",
+		Reason:         "IP literals are not allowed",
+	},
+	EntityType: EntityTypeServer,
+}
+
+func CleanupServerNameForMatch(serverName string) string {
+	return portRegex.ReplaceAllString(serverName, "")
+}
+
+func IsIPLiteral(serverName string) bool {
+	return ipRegex.MatchString(serverName)
+}
+
 // MatchServer finds all matching policies for the given server name in the given policy rooms.
 func (s *Store) MatchServer(listIDs []id.RoomID, serverName string) Match {
+	serverName = CleanupServerNameForMatch(serverName)
+	if IsIPLiteral(serverName) {
+		return Match{fakeBanForIPLiterals}
+	}
 	return s.match(listIDs, serverName, (*Room).GetServerRules)
 }
 
@@ -103,6 +127,33 @@ func (s *Store) match(listIDs []id.RoomID, entity string, listGetter func(*Room)
 		}
 		rules := listGetter(list)
 		output = append(output, rules.Match(entity)...)
+	}
+	return
+}
+
+func (s *Store) MatchExact(listIDs []id.RoomID, entityType EntityType, entity string) (output Match) {
+	if listIDs == nil {
+		s.roomsLock.Lock()
+		listIDs = slices.Collect(maps.Keys(s.rooms))
+		s.roomsLock.Unlock()
+	}
+	for _, roomID := range listIDs {
+		s.roomsLock.RLock()
+		list, ok := s.rooms[roomID]
+		s.roomsLock.RUnlock()
+		if !ok {
+			continue
+		}
+		var rules *List
+		switch entityType {
+		case EntityTypeUser:
+			rules = list.GetUserRules()
+		case EntityTypeRoom:
+			rules = list.GetRoomRules()
+		case EntityTypeServer:
+			rules = list.GetServerRules()
+		}
+		output = append(output, rules.MatchExact(entity)...)
 	}
 	return
 }

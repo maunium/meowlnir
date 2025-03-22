@@ -3,10 +3,12 @@ package policyeval
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
 
+	"github.com/rs/zerolog"
 	"go.mau.fi/util/exslices"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -66,6 +68,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 			if !pe.Store.Contains(listInfo.RoomID) {
 				state, err := pe.Bot.State(ctx, listInfo.RoomID)
 				if err != nil {
+					zerolog.Ctx(ctx).Err(err).Stringer("room_id", listInfo.RoomID).Msg("Failed to load state of watched list")
 					outLock.Lock()
 					errors = append(errors, fmt.Sprintf("* Failed to get room state for [%s](%s): %v", listInfo.Name, listInfo.RoomID.URI().MatrixToURL(), err))
 					outLock.Unlock()
@@ -95,19 +98,31 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	pe.watchedListsLock.Lock()
 	oldWatchedList := pe.watchedListsList
 	oldACLWatchedList := pe.watchedListsForACLs
+	oldFullWatchedList := slices.Collect(maps.Keys(pe.watchedListsMap))
 	pe.watchedListsMap = watchedMap
 	pe.watchedListsList = watchedList
 	pe.watchedListsForACLs = aclWatchedList
 	pe.watchedListsLock.Unlock()
 	if !isInitial {
 		unsubscribed, subscribed := exslices.Diff(oldWatchedList, watchedList)
+		noApplyUnsubscribed, noApplySubscribed := exslices.Diff(oldFullWatchedList, slices.Collect(maps.Keys(pe.watchedListsMap)))
 		for _, roomID := range subscribed {
 			output = append(output, fmt.Sprintf("* Subscribed to %s [%s](%s)", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
+		}
+		for _, roomID := range noApplySubscribed {
+			if !slices.Contains(subscribed, roomID) {
+				output = append(output, fmt.Sprintf("* Subscribed to %s [%s](%s) without applying policies", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
+			}
 		}
 		for _, roomID := range unsubscribed {
 			output = append(output, fmt.Sprintf("* Unsubscribed from [%s](%s)", roomID, roomID.URI().MatrixToURL()))
 		}
-		aclSubscribed, aclUnsubscribed := exslices.Diff(oldACLWatchedList, aclWatchedList)
+		for _, roomID := range noApplyUnsubscribed {
+			if !slices.Contains(unsubscribed, roomID) {
+				output = append(output, fmt.Sprintf("* Unsubscribed from [%s](%s) (policies weren't being applied)", roomID, roomID.URI().MatrixToURL()))
+			}
+		}
+		aclUnsubscribed, aclSubscribed := exslices.Diff(oldACLWatchedList, aclWatchedList)
 		for _, roomID := range aclSubscribed {
 			if !slices.Contains(subscribed, roomID) {
 				output = append(output, fmt.Sprintf("* Subscribed to server ACLs in %s [%s](%s)", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
