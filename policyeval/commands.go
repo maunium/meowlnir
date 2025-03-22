@@ -188,7 +188,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!remove-ban", "!remove-unban", "!remove-policy":
 		if len(args) < 2 {
-			pe.sendNotice(ctx, "Usage: `!remove-policy <list> <user ID | server name>`")
+			pe.sendNotice(ctx, "Usage: `!remove-policy <list> <entity>`")
 			return
 		}
 		list := pe.FindListByShortcode(args[0])
@@ -203,11 +203,13 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			return
 		}
 		var existingStateKey string
-		match := pe.Store.MatchExact(pe.GetWatchedLists(), entityType, target)
+		match := pe.Store.MatchExact([]id.RoomID{list.RoomID}, entityType, target)
+		if len(match) == 0 {
+			pe.sendNotice(ctx, "No rule banning `%s` found in [%s](%s)", target, list.Name, list.RoomID.URI().MatrixToURL())
+			return
+		}
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
-			if rec.RoomID == list.RoomID {
-				existingStateKey = rec.StateKey
-			}
+			existingStateKey = rec.StateKey
 			// TODO: handle wildcards and multiple matches, etc
 			if cmd == "!remove-unban" && rec.Recommendation != event.PolicyRecommendationUnban {
 				pe.sendNotice(ctx, "`%s` does not have an unban recommendation", target)
@@ -231,7 +233,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!add-unban":
 		if len(args) < 2 {
-			pe.sendNotice(ctx, "Usage: `!add-unban <list shortcode> <user ID | server name> <reason>`")
+			pe.sendNotice(ctx, "Usage: `!add-unban <list shortcode> <entity> <reason>`")
 			return
 		}
 		list := pe.FindListByShortcode(args[0])
