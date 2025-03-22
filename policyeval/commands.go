@@ -197,16 +197,13 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			return
 		}
 		target := args[1]
-		var match policylist.Match
-		var entityType policylist.EntityType
-		if !strings.HasPrefix(target, "@") {
-			entityType = policylist.EntityTypeServer
-			match = pe.Store.MatchServer(pe.GetWatchedLists(), target)
-		} else {
-			entityType = policylist.EntityTypeUser
-			match = pe.Store.MatchUser(pe.GetWatchedLists(), id.UserID(target))
+		entityType, ok := validateEntity(target)
+		if !ok {
+			pe.sendNotice(ctx, "Invalid entity `%s`", target)
+			return
 		}
 		var existingStateKey string
+		match := pe.Store.MatchExact(pe.GetWatchedLists(), entityType, target)
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			if rec.RoomID == list.RoomID {
 				existingStateKey = rec.StateKey
