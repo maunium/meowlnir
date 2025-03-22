@@ -107,6 +107,31 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 	}
 }
 
+func (pe *PolicyEvaluator) UndoBan(ctx context.Context, userID id.UserID, roomID id.RoomID) bool {
+	if !pe.DryRun && pe.Bot.StateStore.IsMembership(ctx, roomID, userID, event.MembershipBan) {
+		return true
+	}
+
+	var err error
+	if !pe.DryRun {
+		_, err = pe.Bot.UnbanUser(ctx, roomID, &mautrix.ReqUnbanUser{
+			UserID: userID,
+		})
+	}
+	if err != nil {
+		var respErr mautrix.HTTPError
+		if errors.As(err, &respErr) {
+			err = respErr
+		}
+		zerolog.Ctx(ctx).Err(err).Msg("Failed to unban user")
+		pe.sendNotice(ctx, "Failed to unban [%s](%s) in [%s](%s): %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), err)
+		return false
+	}
+	zerolog.Ctx(ctx).Debug().Msg("Unbanned user")
+	pe.sendNotice(ctx, "Unbanned [%s](%s) in [%s](%s)", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL())
+	return true
+}
+
 func pluralize(value int, unit string) string {
 	if value == 1 {
 		return "1 " + unit

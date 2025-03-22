@@ -23,10 +23,15 @@ const (
 		ON CONFLICT (target_user, in_room_id, action_type) DO UPDATE
 			SET policy_list=excluded.policy_list, rule_entity=excluded.rule_entity, action=excluded.action, taken_at=excluded.taken_at
 	`
+	deleteTakenActionQuery = `DELETE FROM taken_action WHERE target_user=$1 AND in_room_id=$2 AND action_type=$3`
 )
 
 type TakenActionQuery struct {
 	*dbutil.QueryHelper[*TakenAction]
+}
+
+func (taq *TakenActionQuery) Delete(ctx context.Context, targetUser id.UserID, inRoomID id.RoomID, actionType TakenActionType) error {
+	return taq.Exec(ctx, deleteTakenActionQuery, targetUser, inRoomID, actionType)
 }
 
 func (taq *TakenActionQuery) Put(ctx context.Context, ta *TakenAction) error {

@@ -139,5 +139,38 @@ func (pe *PolicyEvaluator) ReevaluateAffectedByLists(ctx context.Context, policy
 }
 
 func (pe *PolicyEvaluator) ReevaluateActions(ctx context.Context, actions []*database.TakenAction) {
+	for _, action := range actions {
+		if action.ActionType == database.TakenActionTypeBanOrUnban && action.Action == event.PolicyRecommendationBan {
+			pe.ReevaluateBan(ctx, action)
+		}
+	}
+}
 
+func (pe *PolicyEvaluator) ReevaluateBan(ctx context.Context, action *database.TakenAction) {
+	log := zerolog.Ctx(ctx).With().Any("action", action).Logger()
+	ctx = log.WithContext(ctx)
+	plist := pe.GetWatchedListMeta(action.PolicyList)
+	// TODO should there be some way to configure the behavior when unsubscribing from a policy list?
+	if plist != nil && !plist.AutoUnban {
+		log.Debug().Msg("Policy list does not have auto-unban enabled, skipping")
+		return
+	}
+	match := pe.Store.MatchUser(pe.GetWatchedLists(), action.TargetUser)
+	if rec := match.Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+		action.PolicyList = rec.RoomID
+		action.RuleEntity = rec.EntityOrHash()
+		err := pe.DB.TakenAction.Put(ctx, action)
+		if err != nil {
+			log.Err(err).Msg("Failed to update taken action source")
+		}
+		return
+	}
+	ok := pe.UndoBan(ctx, action.TargetUser, action.InRoomID)
+	if !ok {
+		return
+	}
+	err := pe.DB.TakenAction.Delete(ctx, action.TargetUser, action.InRoomID, action.ActionType)
+	if err != nil {
+		log.Err(err).Msg("Failed to delete taken action after unbanning")
+	}
 }
