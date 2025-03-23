@@ -170,20 +170,37 @@ Outer:
 }
 
 func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.UserID, reason string, allowReredact bool) {
+	start := time.Now()
 	events, maxTS, err := pe.SynapseDB.GetEventsToRedact(ctx, userID, pe.GetProtectedRooms())
+	dur := time.Since(start)
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).
 			Stringer("user_id", userID).
+			Dur("query_duration", dur).
 			Msg("Failed to get events to redact")
 		pe.sendNotice(ctx,
 			"Failed to get events to redact for [%s](%s): %v",
 			userID, userID.URI().MatrixToURL(), err)
 		return
 	} else if len(events) == 0 {
+		zerolog.Ctx(ctx).Debug().
+			Stringer("user_id", userID).
+			Str("reason", reason).
+			Bool("allow_redact", allowReredact).
+			Dur("query_duration", dur).
+			Msg("No events found to redact")
 		return
 	}
 	reason = filterReason(reason)
 	needsReredact := allowReredact && time.Since(maxTS) < 5*time.Minute
+	zerolog.Ctx(ctx).Debug().
+		Stringer("user_id", userID).
+		Int("event_count", len(events)).
+		Time("max_ts", maxTS).
+		Bool("needs_redact", needsReredact).
+		Str("reason", reason).
+		Dur("query_duration", dur).
+		Msg("Got events to redact")
 	var errorMessages []string
 	var redactedCount int
 	for roomID, roomEvents := range events {
@@ -198,6 +215,9 @@ func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.User
 	pe.sendRedactResult(ctx, redactedCount, len(events), userID, errorMessages)
 	if needsReredact {
 		time.Sleep(15 * time.Second)
+		zerolog.Ctx(ctx).Debug().
+			Stringer("user_id", userID).
+			Msg("Re-redacting user to ensure soft-failed events get redacted")
 		pe.RedactUser(ctx, userID, reason, false)
 	}
 }
