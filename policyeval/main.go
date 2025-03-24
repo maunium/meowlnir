@@ -65,6 +65,7 @@ type PolicyEvaluator struct {
 	FilterLocalInvites bool
 	createPuppetClient func(userID id.UserID) *mautrix.Client
 	autoRedactPatterns []glob.Glob
+	quarantineMedia    func(ctx context.Context, mxc id.ContentURI)
 }
 
 func NewPolicyEvaluator(
@@ -75,6 +76,7 @@ func NewPolicyEvaluator(
 	synapseDB *synapsedb.SynapseDB,
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
 	createPuppetClient func(userID id.UserID) *mautrix.Client,
+	quarantineMedia func(ctx context.Context, mxc id.ContentURI),
 	autoRejectInvites, filterLocalInvites, dryRun bool,
 	hackyAutoRedactPatterns []glob.Glob,
 ) *PolicyEvaluator {
@@ -99,6 +101,7 @@ func NewPolicyEvaluator(
 		FilterLocalInvites:   filterLocalInvites,
 		DryRun:               dryRun,
 		autoRedactPatterns:   hackyAutoRedactPatterns,
+		quarantineMedia:      quarantineMedia,
 	}
 	pe.commandProcessor.LogArgs = true
 	pe.commandProcessor.Meta = pe

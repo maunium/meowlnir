@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -62,6 +63,8 @@ type Meowlnir struct {
 	EvaluatorByProtectedRoom  map[id.RoomID]*policyeval.PolicyEvaluator
 	EvaluatorByManagementRoom map[id.RoomID]*policyeval.PolicyEvaluator
 	HackyAutoRedactPatterns   []glob.Glob
+
+	mediaClient *mautrix.Client
 }
 
 func (m *Meowlnir) loadSecret(secret string) [32]byte {
@@ -171,6 +174,10 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	}
 	m.HackyAutoRedactPatterns = compiledGlobs
 
+	if m.Config.Meowlnir.MediaRepoToken != "" {
+		m.mediaClient = exerrors.Must(m.AS.NewExternalMautrixClient("", m.Config.Meowlnir.MediaRepoToken, ""))
+	}
+
 	m.Log.Info().Msg("Initialization complete")
 }
 
@@ -200,6 +207,25 @@ func (m *Meowlnir) createPuppetClient(userID id.UserID) *mautrix.Client {
 	cli := exerrors.Must(m.AS.NewExternalMautrixClient(userID, m.Config.Antispam.AutoRejectInvitesToken, ""))
 	cli.SetAppServiceUserID = true
 	return cli
+}
+
+func (m *Meowlnir) quarantineMedia(ctx context.Context, mxc id.ContentURI) {
+	if m.mediaClient == nil {
+		return
+	}
+	url := m.mediaClient.BuildURL(mautrix.BaseURLPath{
+		"_matrix", "media", "v3", "admin", "quarantine", mxc.Homeserver, mxc.FileID,
+	})
+	_, err := m.mediaClient.MakeRequest(ctx, http.MethodPost, url, nil, nil)
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).Stringer("mxc", mxc).Msg("Failed to quarantine media, trying again...")
+		_, err = m.mediaClient.MakeRequest(ctx, http.MethodPost, url, nil, nil)
+	}
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).Stringer("mxc", mxc).Msg("Failed to quarantine media")
+	} else {
+		zerolog.Ctx(ctx).Debug().Stringer("mxc", mxc).Msg("Quarantined media")
+	}
 }
 
 func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
@@ -233,6 +259,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 		m.SynapseDB,
 		m.claimProtectedRoom,
 		m.createPuppetClient,
+		m.quarantineMedia,
 		m.Config.Antispam.AutoRejectInvitesToken != "",
 		m.Config.Antispam.FilterLocalInvites,
 		m.Config.Meowlnir.DryRun,

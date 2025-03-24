@@ -42,6 +42,8 @@ meowlnir:
     hacky_redact_patterns:
     - "spam"
 
+    media_repo_token: ""
+
 antispam:
     # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.
     secret: generate
