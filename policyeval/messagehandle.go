@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rs/zerolog"
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 
 	"go.mau.fi/meowlnir/bot"
@@ -19,6 +21,22 @@ func (pe *PolicyEvaluator) isMention(content *event.MessageEventContent) bool {
 }
 
 func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) {
+	msgtype := evt.Content.Raw["msgtype"]
+	if msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio" {
+		_, err := pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{
+			Reason: "media is not currently allowed here",
+		})
+		if err != nil {
+			zerolog.Ctx(ctx).Err(err).Msg("Failed to redact media message")
+		} else {
+			zerolog.Ctx(ctx).Debug().Stringer("event_id", evt.ID).Msg("Redacted media message")
+			pe.sendNotice(
+				ctx,
+				"Redacted media message from [%s](%s) in [%s](%s)",
+				evt.Sender, evt.Sender.URI().MatrixToURL(), evt.RoomID, evt.RoomID.URI().MatrixToURL(),
+			)
+		}
+	}
 	content, ok := evt.Content.Parsed.(*event.MessageEventContent)
 	if !ok {
 		return
