@@ -10,7 +10,7 @@ are built in [mau.dev CI] the same way as all mautrix bridges. `build.sh` also
 works the same way as in bridges.
 
 [`dock.mau.dev/maunium/meowlnir`]: https://mau.dev/maunium/meowlnir/container_registry
-[mau.dev CI]: https://mau.dev/maunium/meowlnir/-/pipelines
+[mau.dev CI]: https://mau.dev/maunium/meowlnir/-/pipelines?ref=main
 
 ### Configuration
 The example config can be found in [./config/example-config.yaml]. Meowlnir
