@@ -220,7 +220,7 @@ Meowlnir will automatically reject pending invites to rooms from banned users.
 Even if this callback is not enabled, Meowlnir will still check whether the
 invites are pending to avoid rejecting already-accepted invites.
 
-#### Running on a non-Synapse server
+### Running on a non-Synapse server
 While Meowlnir is designed to be used with Synapse, it can be used with other
 server implementations as well.
 
@@ -231,7 +231,11 @@ encryption entirely.
 The Synapse database connection can be skipped by leaving `type` and `uri`
 blank in the config. However, redacting messages from banned users will only
 work if you either provide a Synapse database or implement [MSC4194] on the
-server. You can technically point it at another server's database; it doesn't
-have to be the database of the server the bot is connected to.
+server.
+
+You can technically point it at another server's database too; it doesn't have
+to be the database of the server the bot is connected to. If doing that, ensure
+that the Synapse is in all the protected rooms so that it receives all events
+that may need to be redacted in the future.
 
 [MSC4194]: https://github.com/matrix-org/matrix-spec-proposals/pull/4194
