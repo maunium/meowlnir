@@ -74,10 +74,36 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		}
 	case "!redact":
 		if len(args) < 1 {
-			pe.sendNotice(ctx, "Usage: `!redact <user ID> [reason]`")
+			pe.sendNotice(ctx, "Usage: `!redact <event link or user ID> [reason]`")
 			return
 		}
-		pe.RedactUser(ctx, id.UserID(args[0]), strings.Join(args[1:], " "), false)
+		var target *id.MatrixURI
+		var err error
+		if args[0][0] == '@' {
+			target = &id.MatrixURI{
+				Sigil1: '@',
+				MXID1:  args[0],
+			}
+		} else {
+			target, err = id.ParseMatrixURIOrMatrixToURL(args[0])
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to parse `%s`: %v", args[0], err)
+				return
+			}
+		}
+		reason := strings.Join(args[1:], " ")
+		if target.Sigil1 == '@' {
+			pe.RedactUser(ctx, target.UserID(), reason, false)
+		} else if target.Sigil1 == '!' && target.Sigil2 == '$' {
+			_, err = pe.Bot.RedactEvent(ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: reason})
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to redact event `%s`: %v", target.EventID(), err)
+				return
+			}
+		} else {
+			pe.sendNotice(ctx, "Invalid target `%s` (must be a user ID or event link)", args[0])
+			return
+		}
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!kick":
 		if len(args) < 1 {
@@ -357,7 +383,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "Available commands:\n"+
 				"* `!join <rooms...>` - Join a room\n"+
 				"* `!leave <rooms...>` - Leave a room\n"+
-				"* `!redact <user ID> [reason]` - Redact all messages from a user\n"+
+				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n"+
 				"* `!kick <user ID> [reason]` - Kick a user from all rooms\n"+
 				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n"+
 				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n"+
