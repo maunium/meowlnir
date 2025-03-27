@@ -105,6 +105,28 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			return
 		}
 		pe.sendSuccessReaction(ctx, evt.ID)
+	case "!redact-recent":
+		if len(args) < 2 {
+			pe.sendNotice(ctx, "Usage: `!redact-recent <room ID> <since duration> [reason]`")
+			return
+		}
+		room := pe.resolveRoom(ctx, args[0])
+		if room == "" {
+			return
+		}
+		since, err := time.ParseDuration(args[1])
+		if err != nil {
+			pe.sendNotice(ctx, "Invalid duration `%s`: %v", args[1], err)
+			return
+		}
+		reason := strings.Join(args[2:], " ")
+		redactedCount, err := pe.redactRecentMessages(ctx, room, since, reason)
+		if err != nil {
+			pe.sendNotice(ctx, "Failed to redact recent messages: %v", err)
+			return
+		}
+		pe.sendNotice(ctx, "Redacted %d messages", redactedCount)
+		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!kick":
 		if len(args) < 1 {
 			pe.sendNotice(ctx, "Usage: `!kick <user ID> [reason]`")
@@ -384,6 +406,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				"* `!join <rooms...>` - Join a room\n"+
 				"* `!leave <rooms...>` - Leave a room\n"+
 				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n"+
+				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n"+
 				"* `!kick <user ID> [reason]` - Kick a user from all rooms\n"+
 				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n"+
 				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n"+
