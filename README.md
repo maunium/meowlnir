@@ -111,14 +111,14 @@ you can have Meowlnir generate cross-signing keys to verify itself. This
 command will return the recovery key. Make sure to save it!
 
 ```shell
-curl -H "$AUTH" https://meowlnir.example.com/_meowlnir/v1/bot/abuse/verify -d '{"generate": true}'
+curl -H "$AUTH" -X POST https://meowlnir.example.com/_meowlnir/v1/bot/abuse/verify -d '{"generate": true}'
 ```
 
 Alternatively, if the user already has cross-signing set up, you can provide
 the recovery key for verification:
 
 ```shell
-curl -H "$AUTH" https://meowlnir.example.com/_meowlnir/v1/bot/abuse/verify -d '{"recovery_key": "EsT* ****..."}'
+curl -H "$AUTH" -X POST https://meowlnir.example.com/_meowlnir/v1/bot/abuse/verify -d '{"recovery_key": "EsT* ****..."}'
 ```
 
 Finally, you need to define a management room. Create the room normally, get
