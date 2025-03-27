@@ -337,6 +337,31 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		} else {
 			pe.sendNotice(ctx, "No match in %s", dur.String())
 		}
+	case "!send-as-bot":
+		if len(args) < 2 {
+			pe.sendNotice(ctx, "Usage: `!send-as-bot <room ID> <message>`")
+			return
+		}
+		var target id.RoomID
+		if strings.HasPrefix(args[0], "#") {
+			rawTarget, err := pe.Bot.ResolveAlias(ctx, id.RoomAlias(args[0]))
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to resolve alias %q: %v", args[0], err)
+				return
+			}
+			target = rawTarget.RoomID
+		} else {
+			target = id.RoomID(args[0])
+		}
+		resp, err := pe.Bot.SendMessageEvent(ctx, target, event.EventMessage, &event.MessageEventContent{
+			MsgType: event.MsgText,
+			Body:    strings.Join(args[1:], " "),
+		})
+		if err != nil {
+			pe.sendNotice(ctx, "Failed to send message to [%s](%s): %v", target, target.URI().MatrixToURL(), err)
+		} else {
+			pe.sendNotice(ctx, "Sent message to [%s](%s): [%s](%s)", target, target.URI().MatrixToURL(), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
+		}
 	}
 }
 
