@@ -57,7 +57,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!knock":
 		if len(args) == 0 {
-			pe.sendNotice(ctx, "Usage: `!knock <room ID>...`")
+			pe.sendNotice(ctx, "Usage: `!knock <rooms...>`")
 			return
 		}
 		for _, arg := range args {
@@ -418,6 +418,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		if len(args) == 0 {
 			pe.sendNotice(ctx, "Available commands:\n"+
 				"* `!join <rooms...>` - Join a room\n"+
+				"* `!knock <rooms...>` - Ask to join a room\n"+
 				"* `!leave <rooms...>` - Leave a room\n"+
 				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n"+
 				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n"+
