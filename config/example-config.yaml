@@ -33,6 +33,8 @@ meowlnir:
     hacky_rule_filter:
     - "@user:example.com"
 
+    media_repo_token: ""
+
 antispam:
     # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.
     secret: generate

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -60,6 +61,8 @@ type Meowlnir struct {
 	Bots                      map[id.UserID]*bot.Bot
 	EvaluatorByProtectedRoom  map[id.RoomID]*policyeval.PolicyEvaluator
 	EvaluatorByManagementRoom map[id.RoomID]*policyeval.PolicyEvaluator
+
+	mediaClient *mautrix.Client
 }
 
 func (m *Meowlnir) loadSecret(secret string) [32]byte {
@@ -162,6 +165,10 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	m.EvaluatorByProtectedRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
 	m.EvaluatorByManagementRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
 
+	if m.Config.Meowlnir.MediaRepoToken != "" {
+		m.mediaClient = exerrors.Must(m.AS.NewExternalMautrixClient("", m.Config.Meowlnir.MediaRepoToken, ""))
+	}
+
 	m.Log.Info().Msg("Initialization complete")
 }
 
@@ -193,6 +200,21 @@ func (m *Meowlnir) createPuppetClient(userID id.UserID) *mautrix.Client {
 	return cli
 }
 
+func (m *Meowlnir) quarantineMedia(ctx context.Context, mxc id.ContentURI) {
+	if m.mediaClient == nil {
+		return
+	}
+	url := m.mediaClient.BuildURL(mautrix.BaseURLPath{
+		"_matrix", "media", "v3", "admin", "quarantine", mxc.Homeserver, mxc.FileID,
+	})
+	_, err := m.mediaClient.MakeRequest(ctx, http.MethodPost, url, nil, nil)
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).Stringer("mxc", mxc).Msg("Failed to quarantine media")
+	} else {
+		zerolog.Ctx(ctx).Debug().Stringer("mxc", mxc).Msg("Quarantined media")
+	}
+}
+
 func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	intent := m.AS.Intent(id.NewUserID(db.Username, m.AS.HomeserverDomain))
 	wrapped := bot.NewBot(
@@ -214,7 +236,7 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 		m.EvaluatorByManagementRoom[roomID] = policyeval.NewPolicyEvaluator(
 			wrapped, m.PolicyStore,
 			roomID, m.DB, m.SynapseDB,
-			m.claimProtectedRoom, m.createPuppetClient,
+			m.claimProtectedRoom, m.createPuppetClient, m.quarantineMedia,
 			m.Config.Antispam.AutoRejectInvitesToken != "", m.Config.Meowlnir.DryRun,
 		)
 	}
@@ -239,7 +261,7 @@ func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot
 	eval = policyeval.NewPolicyEvaluator(
 		bot, m.PolicyStore,
 		roomID, m.DB, m.SynapseDB,
-		m.claimProtectedRoom, m.createPuppetClient,
+		m.claimProtectedRoom, m.createPuppetClient, m.quarantineMedia,
 		m.Config.Antispam.AutoRejectInvitesToken != "", m.Config.Meowlnir.DryRun,
 	)
 	m.EvaluatorByManagementRoom[roomID] = eval

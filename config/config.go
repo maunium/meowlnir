@@ -30,6 +30,8 @@ type MeowlnirConfig struct {
 
 	ReportRoom      id.RoomID `yaml:"report_room"`
 	HackyRuleFilter []string  `yaml:"hacky_rule_filter"`
+
+	MediaRepoToken string `yaml:"media_repo_token"`
 }
 
 type AntispamConfig struct {

@@ -34,6 +34,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Bool, "meowlnir", "dry_run")
 	helper.Copy(up.Str|up.Null, "meowlnir", "report_room")
 	helper.Copy(up.List, "meowlnir", "hacky_rule_filter")
+	helper.Copy(up.Str|up.Null, "meowlnir", "media_repo_token")
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "antispam_secret"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "antispam", "secret")

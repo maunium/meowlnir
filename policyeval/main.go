@@ -57,6 +57,7 @@ type PolicyEvaluator struct {
 	pendingInvitesLock sync.Mutex
 	AutoRejectInvites  bool
 	createPuppetClient func(userID id.UserID) *mautrix.Client
+	quarantineMedia    func(ctx context.Context, mxc id.ContentURI)
 }
 
 func NewPolicyEvaluator(
@@ -67,6 +68,7 @@ func NewPolicyEvaluator(
 	synapseDB *synapsedb.SynapseDB,
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
 	createPuppetClient func(userID id.UserID) *mautrix.Client,
+	quarantineMedia func(ctx context.Context, mxc id.ContentURI),
 	autoRejectInvites, dryRun bool,
 ) *PolicyEvaluator {
 	pe := &PolicyEvaluator{
@@ -87,6 +89,7 @@ func NewPolicyEvaluator(
 		createPuppetClient:   createPuppetClient,
 		AutoRejectInvites:    autoRejectInvites,
 		DryRun:               dryRun,
+		quarantineMedia:      quarantineMedia,
 	}
 	return pe
 }

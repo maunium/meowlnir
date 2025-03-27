@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/bot"
 )
@@ -20,9 +21,28 @@ func (pe *PolicyEvaluator) isMention(content *event.MessageEventContent) bool {
 		strings.Contains(content.FormattedBody, pe.Bot.UserID.String())
 }
 
+func (pe *PolicyEvaluator) parseAndQuarantineMedia(ctx context.Context, url any) {
+	urlStr, ok := url.(string)
+	if !ok {
+		return
+	}
+	parsedURL, _ := id.ParseContentURI(urlStr)
+	if parsedURL.IsEmpty() {
+		return
+	}
+	pe.quarantineMedia(ctx, parsedURL)
+}
+
 func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) {
 	msgtype := evt.Content.Raw["msgtype"]
 	if msgtype == "m.image" || msgtype == "m.video" || msgtype == "m.audio" {
+		go func() {
+			pe.parseAndQuarantineMedia(ctx, evt.Content.Raw["url"])
+			info, ok := evt.Content.Raw["info"].(map[string]any)
+			if ok {
+				pe.parseAndQuarantineMedia(ctx, info["thumbnail_url"])
+			}
+		}()
 		_, err := pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{
 			Reason: "media is not currently allowed here",
 		})
