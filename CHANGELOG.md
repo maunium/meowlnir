@@ -3,6 +3,11 @@
 * Added support for automatic unbans (thanks to [@nexy7574] in [#2]).
 * Merged separate user and server ban commands into one with validation to
   prevent banning invalid entities.
+* Added `!send-as-bot` command to send a message to a room as the
+  moderation bot.
+* Added support for redacting individual events with `!redact` command.
+* Added `!redact-recent` command to redact all recent messages in a room.
+* Added `!help` command to view available commands.
 * Fixed server ban evaluation to ignore port numbers as per
   [the spec](https://spec.matrix.org/v1.13/client-server-api/#mroomserver_acl).
 

@@ -272,3 +272,53 @@ func (pe *PolicyEvaluator) redactEventsInRoom(ctx context.Context, userID id.Use
 	}
 	return
 }
+
+func (pe *PolicyEvaluator) redactRecentMessages(ctx context.Context, roomID id.RoomID, maxAge time.Duration, reason string) (int, error) {
+	var pls event.PowerLevelsEventContent
+	err := pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &pls)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get power levels: %w", err)
+	}
+	minTS := time.Now().Add(-maxAge).UnixMilli()
+	var sinceToken string
+	var redactedCount int
+	for {
+		events, err := pe.Bot.Messages(ctx, roomID, sinceToken, "", mautrix.DirectionBackward, nil, 50)
+		if err != nil {
+			zerolog.Ctx(ctx).Err(err).
+				Stringer("room_id", roomID).
+				Str("since_token", sinceToken).
+				Msg("Failed to get recent messages")
+			return redactedCount, fmt.Errorf("failed to get messages: %w", err)
+		}
+		for _, evt := range events.Chunk {
+			if evt.Timestamp < minTS {
+				return redactedCount, nil
+			} else if evt.StateKey != nil ||
+				evt.Type == event.EventRedaction ||
+				pls.GetUserLevel(evt.Sender) > pls.Redact() ||
+				evt.Unsigned.RedactedBecause != nil {
+				continue
+			}
+			resp, err := pe.Bot.RedactEvent(ctx, roomID, evt.ID, mautrix.ReqRedact{Reason: reason})
+			if err != nil {
+				zerolog.Ctx(ctx).Err(err).
+					Stringer("room_id", roomID).
+					Stringer("event_id", evt.ID).
+					Msg("Failed to redact event")
+			} else {
+				zerolog.Ctx(ctx).Debug().
+					Stringer("room_id", roomID).
+					Stringer("event_id", evt.ID).
+					Stringer("redaction_id", resp.EventID).
+					Msg("Successfully redacted event")
+				redactedCount++
+			}
+		}
+		sinceToken = events.End
+		if sinceToken == "" {
+			break
+		}
+	}
+	return redactedCount, nil
+}

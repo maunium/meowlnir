@@ -32,7 +32,11 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Msg("Dropping encrypted event with insufficient trust state")
 		return
 	}
-	fields := strings.Fields(evt.Content.AsMessage().Body)
+	msg := evt.Content.AsMessage()
+	fields := strings.Fields(msg.Body)
+	if len(fields) == 0 || len(fields[0]) < 2 || fields[0][0] != '!' {
+		return
+	}
 	cmd := strings.ToLower(fields[0])
 	args := fields[1:]
 	zerolog.Ctx(ctx).Info().Str("command", cmd).Msg("Handling command")
@@ -70,18 +74,11 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "Usage: `!leave <room ID>...`")
 			return
 		}
-		var target id.RoomID
-		if strings.HasPrefix(args[0], "#") {
-			rawTarget, err := pe.Bot.ResolveAlias(ctx, id.RoomAlias(args[0]))
-			if err != nil {
-				pe.sendNotice(ctx, "Failed to resolve alias %q: %v", args[0], err)
-				return
-			}
-			target = rawTarget.RoomID
-		} else {
-			target = id.RoomID(args[0])
-		}
 		for _, arg := range args {
+			target := pe.resolveRoom(ctx, arg)
+			if target == "" {
+				continue
+			}
 			_, err := pe.Bot.LeaveRoom(ctx, target, nil)
 			if err != nil {
 				pe.sendNotice(ctx, "Failed to leave room %q: %v", arg, err)
@@ -91,10 +88,58 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		}
 	case "!redact":
 		if len(args) < 1 {
-			pe.sendNotice(ctx, "Usage: `!redact <user ID> [reason]`")
+			pe.sendNotice(ctx, "Usage: `!redact <event link or user ID> [reason]`")
 			return
 		}
-		pe.RedactUser(ctx, id.UserID(args[0]), strings.Join(args[1:], " "), false)
+		var target *id.MatrixURI
+		var err error
+		if args[0][0] == '@' {
+			target = &id.MatrixURI{
+				Sigil1: '@',
+				MXID1:  args[0],
+			}
+		} else {
+			target, err = id.ParseMatrixURIOrMatrixToURL(args[0])
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to parse `%s`: %v", args[0], err)
+				return
+			}
+		}
+		reason := strings.Join(args[1:], " ")
+		if target.Sigil1 == '@' {
+			pe.RedactUser(ctx, target.UserID(), reason, false)
+		} else if target.Sigil1 == '!' && target.Sigil2 == '$' {
+			_, err = pe.Bot.RedactEvent(ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: reason})
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to redact event `%s`: %v", target.EventID(), err)
+				return
+			}
+		} else {
+			pe.sendNotice(ctx, "Invalid target `%s` (must be a user ID or event link)", args[0])
+			return
+		}
+		pe.sendSuccessReaction(ctx, evt.ID)
+	case "!redact-recent":
+		if len(args) < 2 {
+			pe.sendNotice(ctx, "Usage: `!redact-recent <room ID> <since duration> [reason]`")
+			return
+		}
+		room := pe.resolveRoom(ctx, args[0])
+		if room == "" {
+			return
+		}
+		since, err := time.ParseDuration(args[1])
+		if err != nil {
+			pe.sendNotice(ctx, "Invalid duration `%s`: %v", args[1], err)
+			return
+		}
+		reason := strings.Join(args[2:], " ")
+		redactedCount, err := pe.redactRecentMessages(ctx, room, since, reason)
+		if err != nil {
+			pe.sendNotice(ctx, "Failed to redact recent messages: %v", err)
+			return
+		}
+		pe.sendNotice(ctx, "Redacted %d messages", redactedCount)
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!kick":
 		if len(args) < 1 {
@@ -351,7 +396,65 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		} else {
 			pe.sendNotice(ctx, "No match in %s", dur.String())
 		}
+	case "!send-as-bot":
+		if len(args) < 2 {
+			pe.sendNotice(ctx, "Usage: `!send-as-bot <room ID> <message>`")
+			return
+		}
+		target := pe.resolveRoom(ctx, args[0])
+		if target == "" {
+			return
+		}
+		resp, err := pe.Bot.SendMessageEvent(ctx, target, event.EventMessage, &event.MessageEventContent{
+			MsgType: event.MsgText,
+			Body:    strings.Join(args[1:], " "),
+		})
+		if err != nil {
+			pe.sendNotice(ctx, "Failed to send message to [%s](%s): %v", target, target.URI().MatrixToURL(), err)
+		} else {
+			pe.sendNotice(ctx, "Sent message to [%s](%s): [%s](%s)", target, target.URI().MatrixToURL(), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
+		}
+	case "!help", "!meowlnir":
+		if len(args) == 0 {
+			pe.sendNotice(ctx, "Available commands:\n"+
+				"* `!join <rooms...>` - Join a room\n"+
+				"* `!leave <rooms...>` - Leave a room\n"+
+				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n"+
+				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n"+
+				"* `!kick <user ID> [reason]` - Kick a user from all rooms\n"+
+				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n"+
+				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n"+
+				"* `!remove-ban <list shortcode> <entity>` - Remove a ban policy\n"+
+				"* `!add-unban <list shortcode> <entity> [reason]` - Add a ban exclusion policy\n"+
+				"* `!match <entity>` - Match an entity against all lists\n"+
+				"* `!send-as-bot <room> <message>` - Send a message as the bot\n"+
+				// "* `!help <command>` - Show detailed help for a command\n" +
+				"* `!help` - Show this help message\n"+
+				"\n"+
+				"All fields that want a room will accept both room IDs and aliases.\n",
+			)
+		} else {
+			switch strings.ToLower(strings.TrimLeft(args[0], "!")) {
+			case "join":
+				// TODO
+			}
+		}
 	}
+}
+
+func (pe *PolicyEvaluator) resolveRoom(ctx context.Context, room string) id.RoomID {
+	if strings.HasPrefix(room, "#") {
+		resp, err := pe.Bot.ResolveAlias(ctx, id.RoomAlias(room))
+		if err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).
+				Str("room_input", room).
+				Msg("Failed to resolve alias")
+			pe.sendNotice(ctx, "Failed to resolve alias `%s`: %v", room, err)
+			return ""
+		}
+		return resp.RoomID
+	}
+	return id.RoomID(room)
 }
 
 var homeserverPatternRegex = regexp.MustCompile(`^[a-zA-Z0-9.*?-]+\.[a-zA-Z0-9*?-]+$`)
