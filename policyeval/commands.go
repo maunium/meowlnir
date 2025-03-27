@@ -55,6 +55,20 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			}
 		}
 		pe.sendSuccessReaction(ctx, evt.ID)
+	case "!knock":
+		if len(args) == 0 {
+			pe.sendNotice(ctx, "Usage: `!knock <rooms...>`")
+			return
+		}
+		for _, arg := range args {
+			_, err := pe.Bot.KnockRoom(ctx, arg, nil)
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to knock on room %q: %v", arg, err)
+			} else {
+				pe.sendNotice(ctx, "Requested to join room %q", arg)
+			}
+		}
+		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!leave":
 		if len(args) == 0 {
 			pe.sendNotice(ctx, "Usage: `!leave <room ID>...`")
@@ -404,6 +418,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		if len(args) == 0 {
 			pe.sendNotice(ctx, "Available commands:\n"+
 				"* `!join <rooms...>` - Join a room\n"+
+				"* `!knock <rooms...>` - Ask to join a room\n"+
 				"* `!leave <rooms...>` - Leave a room\n"+
 				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n"+
 				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n"+
