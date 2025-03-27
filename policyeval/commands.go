@@ -80,7 +80,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			if target == "" {
 				continue
 			}
-			_, err := pe.Bot.LeaveRoom(ctx, target, nil)
+			_, err := pe.Bot.LeaveRoom(ctx, target)
 			if err != nil {
 				pe.sendNotice(ctx, "Failed to leave room %q: %v", arg, err)
 			} else {
