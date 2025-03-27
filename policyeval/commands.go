@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +87,63 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				pe.sendNotice(ctx, "Left room %q", arg)
 			}
 		}
+	case "!powerlevel", "!pl":
+		if len(args) < 1 {
+			pe.sendNotice(ctx, "Usage: `!powerlevel <room> <key> <level>`")
+			return
+		}
+		room := pe.resolveRoom(ctx, args[0])
+		if room == "" {
+			return
+		}
+		key := args[1]
+		level, err := strconv.Atoi(args[2])
+		if err != nil {
+			pe.sendNotice(ctx, "Invalid power level `%s`: %v", args[2], err)
+			return
+		}
+		var pls event.PowerLevelsEventContent
+		err = pe.Bot.Client.StateEvent(ctx, room, event.StatePowerLevels, "", &pls)
+		if err != nil {
+			pe.sendNotice(ctx, "Failed to get power levels in `%s`: %v", room, err)
+			return
+		}
+		switch strings.ToLower(key) {
+		case "invite":
+			pls.InvitePtr = &level
+		case "kick":
+			pls.KickPtr = &level
+		case "ban":
+			pls.BanPtr = &level
+		case "redact":
+			pls.RedactPtr = &level
+		case "users_default", "users":
+			pls.UsersDefault = level
+		case "state_default", "state":
+			pls.StateDefaultPtr = &level
+		case "events_default", "events":
+			pls.EventsDefault = level
+		case "room", "notifications.room":
+			pls.Notifications.RoomPtr = &level
+		default:
+			if strings.HasPrefix(key, "@") {
+				pls.SetUserLevel(id.UserID(key), level)
+			} else if strings.ContainsRune(key, '.') {
+				if pls.Events == nil {
+					pls.Events = make(map[string]int)
+				}
+				pls.Events[key] = level
+			} else {
+				pe.sendNotice(ctx, "Invalid power level key `%s`", key)
+				return
+			}
+		}
+		_, err = pe.Bot.Client.SendStateEvent(ctx, room, event.StatePowerLevels, "", &pls)
+		if err != nil {
+			pe.sendNotice(ctx, "Failed to set power levels in `%s`: %v", room, err)
+			return
+		}
+		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!redact":
 		if len(args) < 1 {
 			pe.sendNotice(ctx, "Usage: `!redact <event link or user ID> [reason]`")
@@ -420,6 +478,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				"* `!join <rooms...>` - Join a room\n"+
 				"* `!knock <rooms...>` - Ask to join a room\n"+
 				"* `!leave <rooms...>` - Leave a room\n"+
+				"* `!powerlevel <room> <key> <level>` - Set a power level\n"+
 				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n"+
 				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n"+
 				"* `!kick <user ID> [reason]` - Kick a user from all rooms\n"+

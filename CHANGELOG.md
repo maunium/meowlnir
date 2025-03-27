@@ -7,6 +7,7 @@
   moderation bot.
 * Added support for redacting individual events with `!redact` command.
 * Added `!redact-recent` command to redact all recent messages in a room.
+* Added `!powerlevel` command to change a power level in a room.
 * Added `!help` command to view available commands.
 * Fixed server ban evaluation to ignore port numbers as per
   [the spec](https://spec.matrix.org/v1.13/client-server-api/#mroomserver_acl).
