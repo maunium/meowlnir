@@ -32,7 +32,11 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Msg("Dropping encrypted event with insufficient trust state")
 		return
 	}
-	fields := strings.Fields(evt.Content.AsMessage().Body)
+	msg := evt.Content.AsMessage()
+	fields := strings.Fields(msg.Body)
+	if len(fields) == 0 || len(fields[0]) < 2 || fields[0][0] != '!' {
+		return
+	}
 	cmd := strings.ToLower(fields[0])
 	args := fields[1:]
 	zerolog.Ctx(ctx).Info().Str("command", cmd).Msg("Handling command")
@@ -361,6 +365,30 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "Failed to send message to [%s](%s): %v", target, target.URI().MatrixToURL(), err)
 		} else {
 			pe.sendNotice(ctx, "Sent message to [%s](%s): [%s](%s)", target, target.URI().MatrixToURL(), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
+		}
+	case "!help", "!meowlnir":
+		if len(args) == 0 {
+			pe.sendNotice(ctx, "Available commands:\n"+
+				"* `!join <rooms...>` - Join a room\n"+
+				"* `!leave <rooms...>` - Leave a room\n"+
+				"* `!redact <user ID> [reason]` - Redact all messages from a user\n"+
+				"* `!kick <user ID> [reason]` - Kick a user from all rooms\n"+
+				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n"+
+				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n"+
+				"* `!remove-ban <list shortcode> <entity>` - Remove a ban policy\n"+
+				"* `!add-unban <list shortcode> <entity> [reason]` - Add a ban exclusion policy\n"+
+				"* `!match <entity>` - Match an entity against all lists\n"+
+				"* `!send-as-bot <room> <message>` - Send a message as the bot\n"+
+				// "* `!help <command>` - Show detailed help for a command\n" +
+				"* `!help` - Show this help message\n"+
+				"\n"+
+				"All fields that want a room will accept both room IDs and aliases.\n",
+			)
+		} else {
+			switch strings.ToLower(strings.TrimLeft(args[0], "!")) {
+			case "join":
+				// TODO
+			}
 		}
 	}
 }
