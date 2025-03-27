@@ -68,7 +68,7 @@ func (pe *PolicyEvaluator) handleProtectedRoomPowerLevels(ctx context.Context, e
 	meta, isProtecting := pe.protectedRooms[evt.RoomID]
 	_, wantToProtect := pe.wantToProtect[evt.RoomID]
 	pe.protectedRoomsLock.RUnlock()
-	if meta.ApplyACL {
+	if meta != nil && meta.ApplyACL {
 		minLevel = max(minLevel, powerLevels.GetEventLevel(event.StateServerACL))
 	}
 	if isProtecting && ownLevel < minLevel {
