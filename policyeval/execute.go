@@ -296,7 +296,7 @@ func (pe *PolicyEvaluator) redactRecentMessages(ctx context.Context, roomID id.R
 				return redactedCount, nil
 			} else if evt.StateKey != nil ||
 				evt.Type == event.EventRedaction ||
-				pls.GetUserLevel(evt.Sender) > pls.Redact() ||
+				pls.GetUserLevel(evt.Sender) >= pls.Redact() ||
 				evt.Unsigned.RedactedBecause != nil {
 				continue
 			}
