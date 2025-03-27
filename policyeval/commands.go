@@ -60,18 +60,11 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "Usage: `!leave <room ID>...`")
 			return
 		}
-		var target id.RoomID
-		if strings.HasPrefix(args[0], "#") {
-			rawTarget, err := pe.Bot.ResolveAlias(ctx, id.RoomAlias(args[0]))
-			if err != nil {
-				pe.sendNotice(ctx, "Failed to resolve alias %q: %v", args[0], err)
-				return
-			}
-			target = rawTarget.RoomID
-		} else {
-			target = id.RoomID(args[0])
-		}
 		for _, arg := range args {
+			target := pe.resolveRoom(ctx, arg)
+			if target == "" {
+				continue
+			}
 			_, err := pe.Bot.LeaveRoom(ctx, target, nil)
 			if err != nil {
 				pe.sendNotice(ctx, "Failed to leave room %q: %v", arg, err)
@@ -346,16 +339,9 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "Usage: `!send-as-bot <room ID> <message>`")
 			return
 		}
-		var target id.RoomID
-		if strings.HasPrefix(args[0], "#") {
-			rawTarget, err := pe.Bot.ResolveAlias(ctx, id.RoomAlias(args[0]))
-			if err != nil {
-				pe.sendNotice(ctx, "Failed to resolve alias %q: %v", args[0], err)
-				return
-			}
-			target = rawTarget.RoomID
-		} else {
-			target = id.RoomID(args[0])
+		target := pe.resolveRoom(ctx, args[0])
+		if target == "" {
+			return
 		}
 		resp, err := pe.Bot.SendMessageEvent(ctx, target, event.EventMessage, &event.MessageEventContent{
 			MsgType: event.MsgText,
@@ -391,6 +377,21 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			}
 		}
 	}
+}
+
+func (pe *PolicyEvaluator) resolveRoom(ctx context.Context, room string) id.RoomID {
+	if strings.HasPrefix(room, "#") {
+		resp, err := pe.Bot.ResolveAlias(ctx, id.RoomAlias(room))
+		if err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).
+				Str("room_input", room).
+				Msg("Failed to resolve alias")
+			pe.sendNotice(ctx, "Failed to resolve alias `%s`: %v", room, err)
+			return ""
+		}
+		return resp.RoomID
+	}
+	return id.RoomID(room)
 }
 
 var homeserverPatternRegex = regexp.MustCompile(`^[a-zA-Z0-9.*?-]+\.[a-zA-Z0-9*?-]+$`)
