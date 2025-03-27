@@ -209,6 +209,10 @@ func (m *Meowlnir) quarantineMedia(ctx context.Context, mxc id.ContentURI) {
 	})
 	_, err := m.mediaClient.MakeRequest(ctx, http.MethodPost, url, nil, nil)
 	if err != nil {
+		zerolog.Ctx(ctx).Err(err).Stringer("mxc", mxc).Msg("Failed to quarantine media, trying again...")
+		_, err = m.mediaClient.MakeRequest(ctx, http.MethodPost, url, nil, nil)
+	}
+	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Stringer("mxc", mxc).Msg("Failed to quarantine media")
 	} else {
 		zerolog.Ctx(ctx).Debug().Stringer("mxc", mxc).Msg("Quarantined media")
