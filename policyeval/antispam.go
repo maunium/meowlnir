@@ -26,7 +26,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 	inviterServer := inviter.Homeserver()
 	ourServer := pe.Bot.UserID.Homeserver()
 	// We only care about federated invites.
-	if inviterServer == ourServer {
+	if inviterServer == ourServer && !pe.FilterLocalInvites {
 		return nil
 	}
 

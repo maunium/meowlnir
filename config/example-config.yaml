@@ -36,6 +36,8 @@ meowlnir:
 antispam:
     # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.
     secret: generate
+    # If true, Meowlnir will check local invites for spam too instead of only federated ones.
+    filter_local_invites: false
     # If set, Meowlnir will use this token to reject pending invites from users who get banned.
     #
     # This should be an appservice with access to all local users. If you have a double puppeting

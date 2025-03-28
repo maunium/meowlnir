@@ -34,6 +34,7 @@ type MeowlnirConfig struct {
 
 type AntispamConfig struct {
 	Secret                 string `yaml:"secret"`
+	FilterLocalInvites     bool   `yaml:"filter_local_invites"`
 	AutoRejectInvitesToken string `yaml:"auto_reject_invites_token"`
 }
 

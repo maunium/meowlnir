@@ -211,14 +211,23 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 		os.Exit(15)
 	}
 	for _, roomID := range managementRooms {
-		m.EvaluatorByManagementRoom[roomID] = policyeval.NewPolicyEvaluator(
-			wrapped, m.PolicyStore,
-			roomID, m.DB, m.SynapseDB,
-			m.claimProtectedRoom, m.createPuppetClient,
-			m.Config.Antispam.AutoRejectInvitesToken != "", m.Config.Meowlnir.DryRun,
-		)
+		m.EvaluatorByManagementRoom[roomID] = m.newPolicyEvaluator(wrapped, roomID)
 	}
 	return wrapped
+}
+
+func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeval.PolicyEvaluator {
+	return policyeval.NewPolicyEvaluator(
+		bot, m.PolicyStore,
+		roomID,
+		m.DB,
+		m.SynapseDB,
+		m.claimProtectedRoom,
+		m.createPuppetClient,
+		m.Config.Antispam.AutoRejectInvitesToken != "",
+		m.Config.Antispam.FilterLocalInvites,
+		m.Config.Meowlnir.DryRun,
+	)
 }
 
 func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot *bot.Bot) bool {
@@ -236,12 +245,7 @@ func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot
 			}
 		}
 	}
-	eval = policyeval.NewPolicyEvaluator(
-		bot, m.PolicyStore,
-		roomID, m.DB, m.SynapseDB,
-		m.claimProtectedRoom, m.createPuppetClient,
-		m.Config.Antispam.AutoRejectInvitesToken != "", m.Config.Meowlnir.DryRun,
-	)
+	eval = m.newPolicyEvaluator(bot, roomID)
 	m.EvaluatorByManagementRoom[roomID] = eval
 	go eval.Load(ctx)
 	return true
