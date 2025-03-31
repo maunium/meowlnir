@@ -149,14 +149,15 @@ func (l *List) Match(entity string) (output Match) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 	start := time.Now()
-	if value, ok := l.byEntity[entity]; ok {
-		output = Match{value.Policy}
+	exactMatch, ok := l.byEntity[entity]
+	if ok {
+		output = Match{exactMatch.Policy}
 	}
 	if value, ok := l.byEntityHash[util.SHA256String(entity)]; ok {
 		output = append(output, value.Policy)
 	}
 	for item := l.dynamicHead; item != nil; item = item.next {
-		if !item.Ignored && item.Pattern.Match(entity) {
+		if !item.Ignored && item.Pattern.Match(entity) && item != exactMatch {
 			output = append(output, item.Policy)
 		}
 	}
