@@ -447,12 +447,34 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				if meta := pe.GetWatchedListMeta(policy.RoomID); meta != nil {
 					policyRoomName = meta.Name
 				}
-				eventStrings[i] = fmt.Sprintf("* [%s] [%s](%s) set recommendation `%s` for `%s` at %s for %s",
+				eventStrings[i] = fmt.Sprintf("* [%s] [%s](%s) set recommendation `%s` for `%s` at %s for `%s`",
 					policyRoomName, policy.Sender, policy.Sender.URI().MatrixToURL(), policy.Recommendation, policy.EntityOrHash(), time.UnixMilli(policy.Timestamp), policy.Reason)
 			}
-			pe.sendNotice(ctx, "Matched in %s with recommendations %+v\n\n%s", dur, match.Recommendations(), strings.Join(eventStrings, "\n"))
+			pe.sendNotice(ctx, "Matched in %s with recommendation %s\n\n%s", dur, match.Recommendations(), strings.Join(eventStrings, "\n"))
 		} else {
-			pe.sendNotice(ctx, "No match in %s", dur.String())
+			pe.sendNotice(ctx, "No match in %s", dur)
+		}
+	case "!search":
+		target := args[0]
+		start := time.Now()
+		match := pe.Store.Search(nil, target)
+		dur := time.Since(start)
+		if len(match) > 25 {
+			pe.sendNotice(ctx, "Too many results (%d) in %s, please narrow your search", len(match), dur)
+			return
+		} else if len(match) > 0 {
+			eventStrings := make([]string, len(match))
+			for i, policy := range match {
+				policyRoomName := policy.RoomID.String()
+				if meta := pe.GetWatchedListMeta(policy.RoomID); meta != nil {
+					policyRoomName = meta.Name
+				}
+				eventStrings[i] = fmt.Sprintf("* [%s] [%s](%s) set recommendation `%s` for %ss matching `%s` at %s for `%s`",
+					policyRoomName, policy.Sender, policy.Sender.URI().MatrixToURL(), policy.Recommendation, policy.EntityType, policy.EntityOrHash(), time.UnixMilli(policy.Timestamp), policy.Reason)
+			}
+			pe.sendNotice(ctx, "Found %d results in %s:\n\n%s", len(match), dur, strings.Join(eventStrings, "\n"))
+		} else {
+			pe.sendNotice(ctx, "No results in %s", dur)
 		}
 	case "!send-as-bot":
 		if len(args) < 2 {
@@ -487,6 +509,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				"* `!remove-ban <list shortcode> <entity>` - Remove a ban policy\n"+
 				"* `!add-unban <list shortcode> <entity> [reason]` - Add a ban exclusion policy\n"+
 				"* `!match <entity>` - Match an entity against all lists\n"+
+				"* `!search <pattern>` - Search for rules by a pattern in all lists\n"+
 				"* `!send-as-bot <room> <message>` - Send a message as the bot\n"+
 				// "* `!help <command>` - Show detailed help for a command\n" +
 				"* `!help` - Show this help message\n"+

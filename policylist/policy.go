@@ -31,6 +31,13 @@ type Recommendations struct {
 	BanOrUnban *Policy
 }
 
+func (r *Recommendations) String() string {
+	if r.BanOrUnban != nil {
+		return string(r.BanOrUnban.Recommendation)
+	}
+	return ""
+}
+
 // Recommendations aggregates the recommendations in the match.
 func (m Match) Recommendations() (output Recommendations) {
 	for _, policy := range m {

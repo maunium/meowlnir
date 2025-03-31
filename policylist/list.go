@@ -188,3 +188,14 @@ func (l *List) MatchHash(hash [util.HashSize]byte) (output Match) {
 	}
 	return
 }
+
+func (l *List) Search(patternString string, pattern glob.Glob) (output Match) {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	for _, item := range l.byStateKey {
+		if !item.Ignored && (pattern.Match(item.EntityOrHash()) || item.Pattern.Match(patternString)) {
+			output = append(output, item.Policy)
+		}
+	}
+	return
+}

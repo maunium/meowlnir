@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sync"
 
+	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
@@ -154,6 +155,27 @@ func (s *Store) MatchExact(listIDs []id.RoomID, entityType EntityType, entity st
 			rules = list.GetServerRules()
 		}
 		output = append(output, rules.MatchExact(entity)...)
+	}
+	return
+}
+
+func (s *Store) Search(listIDs []id.RoomID, entity string) (output Match) {
+	if listIDs == nil {
+		s.roomsLock.Lock()
+		listIDs = slices.Collect(maps.Keys(s.rooms))
+		s.roomsLock.Unlock()
+	}
+	entityGlob := glob.Compile(entity)
+	for _, roomID := range listIDs {
+		s.roomsLock.RLock()
+		list, ok := s.rooms[roomID]
+		s.roomsLock.RUnlock()
+		if !ok {
+			continue
+		}
+		output = append(output, list.GetUserRules().Search(entity, entityGlob)...)
+		output = append(output, list.GetRoomRules().Search(entity, entityGlob)...)
+		output = append(output, list.GetServerRules().Search(entity, entityGlob)...)
 	}
 	return
 }
