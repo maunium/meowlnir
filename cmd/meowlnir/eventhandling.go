@@ -88,6 +88,10 @@ func (m *Meowlnir) UpdatePolicyList(ctx context.Context, evt *event.Event) {
 }
 
 func (m *Meowlnir) HandleConfigChange(ctx context.Context, evt *event.Event) {
+	// All room config events should have an empty state key
+	if evt.StateKey == nil || *evt.StateKey != "" {
+		return
+	}
 	m.MapLock.RLock()
 	managementRoom, isManagement := m.EvaluatorByManagementRoom[evt.RoomID]
 	protectedRoom, isProtected := m.EvaluatorByProtectedRoom[evt.RoomID]
