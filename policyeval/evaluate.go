@@ -28,12 +28,21 @@ func (pe *PolicyEvaluator) getUserIDFromHash(hash [32]byte) (id.UserID, bool) {
 	return userID, ok
 }
 
-func (pe *PolicyEvaluator) findMatchingUsers(pattern glob.Glob, hash *[32]byte) iter.Seq[id.UserID] {
+func (pe *PolicyEvaluator) findMatchingUsers(pattern glob.Glob, hash *[32]byte, onlyJoined bool) iter.Seq[id.UserID] {
 	return func(yield func(id.UserID) bool) {
 		if hash != nil {
 			userID, ok := pe.getUserIDFromHash(*hash)
 			if ok {
-				yield(userID)
+				if onlyJoined {
+					pe.protectedRoomsLock.RLock()
+					rooms, found := pe.protectedRoomMembers[userID]
+					pe.protectedRoomsLock.RUnlock()
+					if found && len(rooms) > 0 {
+						yield(userID)
+					}
+				} else {
+					yield(userID)
+				}
 			}
 			return
 		}
@@ -41,18 +50,30 @@ func (pe *PolicyEvaluator) findMatchingUsers(pattern glob.Glob, hash *[32]byte) 
 		if ok {
 			userID := id.UserID(exact)
 			pe.protectedRoomsLock.RLock()
-			defer pe.protectedRoomsLock.RUnlock()
-			_, found := pe.protectedRoomMembers[userID]
-			if found {
+			rooms, found := pe.protectedRoomMembers[userID]
+			pe.protectedRoomsLock.RUnlock()
+			if found && (!onlyJoined || len(rooms) > 0) {
 				yield(userID)
 			}
 			return
 		}
-		users := pe.getAllUsers()
-		for _, userID := range users {
-			if pattern.Match(string(userID)) {
-				if !yield(userID) {
-					return
+		if onlyJoined {
+			pe.protectedRoomsLock.RLock()
+			defer pe.protectedRoomsLock.RUnlock()
+			for userID, rooms := range pe.protectedRoomMembers {
+				if len(rooms) > 0 && pattern.Match(string(userID)) {
+					if !yield(userID) {
+						return
+					}
+				}
+			}
+		} else {
+			users := pe.getAllUsers()
+			for _, userID := range users {
+				if pattern.Match(string(userID)) {
+					if !yield(userID) {
+						return
+					}
 				}
 			}
 		}
@@ -84,7 +105,7 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 		if policy.Recommendation == event.PolicyRecommendationUnban {
 			// When an unban rule is removed, evaluate all joined users against the removed rule
 			// to see if they should be re-evaluated against all rules (and possibly banned)
-			for userID := range pe.findMatchingUsers(policy.Pattern, policy.EntityHash) {
+			for userID := range pe.findMatchingUsers(policy.Pattern, policy.EntityHash, false) {
 				pe.EvaluateUser(ctx, userID, false)
 			}
 		} else {
@@ -108,7 +129,7 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policylist.Policy) {
 	switch policy.EntityType {
 	case policylist.EntityTypeUser:
-		for userID := range pe.findMatchingUsers(policy.Pattern, policy.EntityHash) {
+		for userID := range pe.findMatchingUsers(policy.Pattern, policy.EntityHash, false) {
 			// Do a full evaluation to ensure new policies don't bypass existing higher priority policies
 			pe.EvaluateUser(ctx, userID, true)
 		}

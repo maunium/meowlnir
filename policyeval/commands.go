@@ -210,7 +210,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		}
 		pattern := glob.Compile(args[0])
 		reason := strings.Join(args[1:], " ")
-		users := slices.Collect(pe.findMatchingUsers(pattern, nil))
+		users := slices.Collect(pe.findMatchingUsers(pattern, nil, true))
 		if len(users) > 10 && !ignoreUserLimit {
 			// TODO replace the force flag with a reaction confirmation
 			pe.sendNotice(ctx, "%d users matching `%s` found, use `--force` to kick all of them.", len(users), args[0])
@@ -461,7 +461,6 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		dur := time.Since(start)
 		if len(match) > 25 {
 			pe.sendNotice(ctx, "Too many results (%d) in %s, please narrow your search", len(match), dur)
-			return
 		} else if len(match) > 0 {
 			eventStrings := make([]string, len(match))
 			for i, policy := range match {
@@ -477,7 +476,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "No results in %s", dur)
 		}
 		if strings.HasPrefix(target, "@") {
-			users := slices.Collect(pe.findMatchingUsers(glob.Compile(target), nil))
+			users := slices.Collect(pe.findMatchingUsers(glob.Compile(target), nil, true))
 			if len(users) > 25 {
 				pe.sendNotice(ctx, "Found %d users matching `%s` in protected rooms (too many to list)", len(users), target)
 			} else if len(users) > 0 {
