@@ -476,6 +476,25 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		} else {
 			pe.sendNotice(ctx, "No results in %s", dur)
 		}
+		if strings.HasPrefix(target, "@") {
+			users := slices.Collect(pe.findMatchingUsers(glob.Compile(target), nil))
+			if len(users) > 25 {
+				pe.sendNotice(ctx, "Found %d users matching `%s` in protected rooms (too many to list)", len(users), target)
+			} else if len(users) > 0 {
+				userStrings := make([]string, len(users))
+				for i, user := range users {
+					userStrings[i] = fmt.Sprintf("* [%s](%s)", user, user.URI().MatrixToURL())
+				}
+				pe.sendNotice(
+					ctx, "Found %d users matching `%s` in protected rooms:\n\n%s",
+					len(users),
+					target,
+					strings.Join(userStrings, "\n"),
+				)
+			} else {
+				pe.sendNotice(ctx, "No users matching `%s` found in protected rooms", target)
+			}
+		}
 	case "!send-as-bot":
 		if len(args) < 2 {
 			pe.sendNotice(ctx, "Usage: `!send-as-bot <room ID> <message>`")
