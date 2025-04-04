@@ -89,12 +89,18 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		}
 	case "!powerlevel", "!pl":
 		if len(args) < 1 {
-			pe.sendNotice(ctx, "Usage: `!powerlevel <room> <key> <level>`")
+			pe.sendNotice(ctx, "Usage: `!powerlevel <room|all> <key> <level>`")
 			return
 		}
-		room := pe.resolveRoom(ctx, args[0])
-		if room == "" {
-			return
+		var rooms []id.RoomID
+		if args[0] == "all" {
+			rooms = pe.GetProtectedRooms()
+		} else {
+			room := pe.resolveRoom(ctx, args[0])
+			if room == "" {
+				return
+			}
+			rooms = []id.RoomID{room}
 		}
 		key := args[1]
 		level, err := strconv.Atoi(args[2])
@@ -102,46 +108,68 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			pe.sendNotice(ctx, "Invalid power level `%s`: %v", args[2], err)
 			return
 		}
-		var pls event.PowerLevelsEventContent
-		err = pe.Bot.Client.StateEvent(ctx, room, event.StatePowerLevels, "", &pls)
-		if err != nil {
-			pe.sendNotice(ctx, "Failed to get power levels in `%s`: %v", room, err)
-			return
-		}
-		switch strings.ToLower(key) {
-		case "invite":
-			pls.InvitePtr = &level
-		case "kick":
-			pls.KickPtr = &level
-		case "ban":
-			pls.BanPtr = &level
-		case "redact":
-			pls.RedactPtr = &level
-		case "users_default", "users":
-			pls.UsersDefault = level
-		case "state_default", "state":
-			pls.StateDefaultPtr = &level
-		case "events_default", "events":
-			pls.EventsDefault = level
-		case "room", "notifications.room":
-			pls.Notifications.RoomPtr = &level
-		default:
-			if strings.HasPrefix(key, "@") {
-				pls.SetUserLevel(id.UserID(key), level)
-			} else if strings.ContainsRune(key, '.') {
-				if pls.Events == nil {
-					pls.Events = make(map[string]int)
-				}
-				pls.Events[key] = level
-			} else {
-				pe.sendNotice(ctx, "Invalid power level key `%s`", key)
+		for _, room := range rooms {
+			var pls event.PowerLevelsEventContent
+			err = pe.Bot.Client.StateEvent(ctx, room, event.StatePowerLevels, "", &pls)
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to get power levels in `%s`: %v", room, err)
 				return
 			}
-		}
-		_, err = pe.Bot.Client.SendStateEvent(ctx, room, event.StatePowerLevels, "", &pls)
-		if err != nil {
-			pe.sendNotice(ctx, "Failed to set power levels in `%s`: %v", room, err)
-			return
+			const MagicUnsetValue = -6051711834969758
+			var oldLevel int
+			switch strings.ToLower(key) {
+			case "invite":
+				oldLevel = pls.Invite()
+				pls.InvitePtr = &level
+			case "kick":
+				oldLevel = pls.Kick()
+				pls.KickPtr = &level
+			case "ban":
+				oldLevel = pls.Ban()
+				pls.BanPtr = &level
+			case "redact":
+				oldLevel = pls.Redact()
+				pls.RedactPtr = &level
+			case "users_default", "users":
+				oldLevel = pls.UsersDefault
+				pls.UsersDefault = level
+			case "state_default", "state":
+				oldLevel = pls.StateDefault()
+				pls.StateDefaultPtr = &level
+			case "events_default", "events":
+				oldLevel = pls.EventsDefault
+				pls.EventsDefault = level
+			case "room", "notifications.room":
+				oldLevel = pls.Notifications.Room()
+				pls.Notifications.RoomPtr = &level
+			default:
+				if strings.HasPrefix(key, "@") {
+					oldLevel = pls.GetUserLevel(id.UserID(key))
+					pls.SetUserLevel(id.UserID(key), level)
+				} else if strings.ContainsRune(key, '.') {
+					if pls.Events == nil {
+						pls.Events = make(map[string]int)
+					}
+					var ok bool
+					oldLevel, ok = pls.Events[key]
+					if !ok {
+						oldLevel = MagicUnsetValue
+					}
+					pls.Events[key] = level
+				} else {
+					pe.sendNotice(ctx, "Invalid power level key `%s`", key)
+					return
+				}
+			}
+			if oldLevel == level && oldLevel != MagicUnsetValue {
+				pe.sendNotice(ctx, "Power level for `%s` in `%s` is already set to `%d`", key, room, level)
+				continue
+			}
+			_, err = pe.Bot.Client.SendStateEvent(ctx, room, event.StatePowerLevels, "", &pls)
+			if err != nil {
+				pe.sendNotice(ctx, "Failed to set power levels in `%s`: %v", room, err)
+				continue
+			}
 		}
 		pe.sendSuccessReaction(ctx, evt.ID)
 	case "!redact":
@@ -518,7 +546,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				"* `!join <rooms...>` - Join a room\n"+
 				"* `!knock <rooms...>` - Ask to join a room\n"+
 				"* `!leave <rooms...>` - Leave a room\n"+
-				"* `!powerlevel <room> <key> <level>` - Set a power level\n"+
+				"* `!powerlevel <room|all> <key> <level>` - Set a power level\n"+
 				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n"+
 				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n"+
 				"* `!kick <user ID> [reason]` - Kick a user from all rooms\n"+
