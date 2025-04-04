@@ -94,7 +94,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 	}
 
 	rec = nil
-	log.Trace().Msg("Allowing invite")
+	log.Debug().Msg("Allowing invite")
 
 	if pe.AutoRejectInvites {
 		pe.pendingInvitesLock.Lock()
