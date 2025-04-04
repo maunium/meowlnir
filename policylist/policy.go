@@ -31,7 +31,7 @@ type Recommendations struct {
 	BanOrUnban *Policy
 }
 
-func (r *Recommendations) String() string {
+func (r Recommendations) String() string {
 	if r.BanOrUnban != nil {
 		return string(r.BanOrUnban.Recommendation)
 	}
