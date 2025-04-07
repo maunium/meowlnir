@@ -115,7 +115,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 				pe.sendNotice(ctx, "Failed to get power levels in `%s`: %v", room, err)
 				return
 			}
-			const MagicUnsetValue = -6051711834969758
+			const MagicUnsetValue = -1644163703
 			var oldLevel int
 			switch strings.ToLower(key) {
 			case "invite":
