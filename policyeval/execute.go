@@ -238,9 +238,20 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 	} else if pe.Bot.Client.SpecVersions.Supports(mautrix.FeatureUserRedaction) {
 		pe.redactUserMSC4194(ctx, userID, reason)
 	} else {
-		zerolog.Ctx(ctx).Debug().
+		zerolog.Ctx(ctx).Warn().
 			Stringer("user_id", userID).
-			Msg("Not redacting messages: server doesn't support redacting all messages")
+			Msg("Falling back to history iteration based event discovery for redaction. This is slow.")
+		for _, roomID := range pe.GetProtectedRooms() {
+			redactedCount, err := pe.redactRecentMessages(ctx, roomID, userID, 24*time.Hour, reason)
+			if err != nil {
+				zerolog.Ctx(ctx).Err(err).
+					Stringer("user_id", userID).
+					Stringer("room_id", roomID).
+					Msg("Failed to redact recent messages")
+				continue
+			}
+			pe.sendNotice(ctx, "Redacted %d events from [%s](%s) in [%s](%s)", redactedCount, userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL())
+		}
 	}
 }
 
@@ -273,7 +284,7 @@ func (pe *PolicyEvaluator) redactEventsInRoom(ctx context.Context, userID id.Use
 	return
 }
 
-func (pe *PolicyEvaluator) redactRecentMessages(ctx context.Context, roomID id.RoomID, maxAge time.Duration, reason string) (int, error) {
+func (pe *PolicyEvaluator) redactRecentMessages(ctx context.Context, roomID id.RoomID, sender id.UserID, maxAge time.Duration, reason string) (int, error) {
 	var pls event.PowerLevelsEventContent
 	err := pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &pls)
 	if err != nil {
@@ -298,6 +309,9 @@ func (pe *PolicyEvaluator) redactRecentMessages(ctx context.Context, roomID id.R
 				evt.Type == event.EventRedaction ||
 				pls.GetUserLevel(evt.Sender) >= pls.Redact() ||
 				evt.Unsigned.RedactedBecause != nil {
+				continue
+			}
+			if sender != "" && evt.Sender != sender {
 				continue
 			}
 			resp, err := pe.Bot.RedactEvent(ctx, roomID, evt.ID, mautrix.ReqRedact{Reason: reason})
