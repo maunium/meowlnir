@@ -108,7 +108,8 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 }
 
 func (pe *PolicyEvaluator) UndoBan(ctx context.Context, userID id.UserID, roomID id.RoomID) bool {
-	if !pe.DryRun && pe.Bot.StateStore.IsMembership(ctx, roomID, userID, event.MembershipBan) {
+	if !pe.DryRun && !pe.Bot.StateStore.IsMembership(ctx, roomID, userID, event.MembershipBan) {
+		zerolog.Ctx(ctx).Trace().Msg("User is not banned in room, skipping unban")
 		return true
 	}
 

@@ -115,9 +115,12 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 				zerolog.Ctx(ctx).Err(err).Str("policy_entity", policy.EntityOrHash()).
 					Msg("Failed to get actions taken for removed policy")
 				pe.sendNotice(ctx, "Database error in EvaluateRemovedRule (GetAllByRuleEntity): %v", err)
-				return
+			} else if len(reevalTargets) > 0 {
+				zerolog.Ctx(ctx).Debug().
+					Int("reeval_targets", len(reevalTargets)).
+					Msg("Reevaluating actions as a result of removed policy")
+				pe.ReevaluateActions(ctx, reevalTargets)
 			}
-			pe.ReevaluateActions(ctx, reevalTargets)
 		}
 	case policylist.EntityTypeServer:
 		pe.UpdateACL(ctx)
@@ -183,9 +186,15 @@ func (pe *PolicyEvaluator) ReevaluateBan(ctx context.Context, action *database.T
 		err := pe.DB.TakenAction.Put(ctx, action)
 		if err != nil {
 			log.Err(err).Msg("Failed to update taken action source")
+		} else {
+			log.Trace().
+				Stringer("new_room_id", rec.RoomID).
+				Str("new_entity", rec.EntityOrHash()).
+				Msg("Updated taken action source to new policy")
 		}
 		return
 	}
+	log.Debug().Msg("Unbanning user")
 	ok := pe.UndoBan(ctx, action.TargetUser, action.InRoomID)
 	if !ok {
 		return
@@ -193,5 +202,7 @@ func (pe *PolicyEvaluator) ReevaluateBan(ctx context.Context, action *database.T
 	err := pe.DB.TakenAction.Delete(ctx, action.TargetUser, action.InRoomID, action.ActionType)
 	if err != nil {
 		log.Err(err).Msg("Failed to delete taken action after unbanning")
+	} else {
+		log.Trace().Msg("Deleted taken action after unbanning")
 	}
 }
