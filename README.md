@@ -207,7 +207,7 @@ modules:
       enabled_callbacks:
       - user_may_invite
       - user_may_join_room
-      fail_open:
+      async:
         user_may_join_room: true
 ```
 
