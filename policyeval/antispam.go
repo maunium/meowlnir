@@ -115,6 +115,36 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 	return nil
 }
 
+func (pe *PolicyEvaluator) HandleAcceptMakeJoin(ctx context.Context, roomID id.RoomID, userID id.UserID) *mautrix.RespError {
+	lists := pe.GetWatchedLists()
+	rec := pe.Store.MatchUser(lists, userID).Recommendations().BanOrUnban
+	if rec == nil {
+		rec = pe.Store.MatchServer(lists, userID.Homeserver()).Recommendations().BanOrUnban
+	}
+	if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+		zerolog.Ctx(ctx).Debug().
+			Stringer("user_id", userID).
+			Stringer("room_id", roomID).
+			Str("policy_entity", rec.EntityOrHash()).
+			Str("policy_reason", rec.Reason).
+			Msg("Blocking restricted join from banned user")
+		go pe.sendNotice(
+			context.WithoutCancel(ctx),
+			"Blocked [%s](%s) from joining [%s](%s) due to policy banning `%s` for `%s`",
+			userID, userID.URI().MatrixToURL(),
+			roomID, roomID.URI().MatrixToURL(),
+			rec.EntityOrHash(), rec.Reason,
+		)
+		return ptr.Ptr(mautrix.MForbidden.WithMessage("You're banned from this room"))
+	}
+
+	zerolog.Ctx(ctx).Debug().
+		Stringer("user_id", userID).
+		Stringer("room_id", roomID).
+		Msg("Allowing restricted join")
+	return nil
+}
+
 func (pe *PolicyEvaluator) HandleUserMayJoinRoom(ctx context.Context, userID id.UserID, roomID id.RoomID, isInvited bool) {
 	if !pe.AutoRejectInvites {
 		return
