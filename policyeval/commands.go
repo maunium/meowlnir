@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"net/http"
 	"regexp"
 	"slices"
 	"strconv"
@@ -15,12 +14,16 @@ import (
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/util"
 )
+
+const SuccessReaction = "✅"
 
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
 	if !evt.Mautrix.WasEncrypted && pe.Bot.CryptoHelper != nil {
@@ -33,86 +36,99 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			Msg("Dropping encrypted event with insufficient trust state")
 		return
 	}
-	msg := evt.Content.AsMessage()
-	fields := strings.Fields(msg.Body)
-	if len(fields) == 0 || len(fields[0]) < 2 || fields[0][0] != '!' {
-		return
-	}
-	cmd := strings.ToLower(fields[0])
-	args := fields[1:]
-	zerolog.Ctx(ctx).Info().Str("command", cmd).Msg("Handling command")
-	switch cmd {
-	case "!join":
-		if len(args) == 0 {
-			pe.sendNotice(ctx, "Usage: `!join <room ID>...`")
+	pe.commandProcessor.Process(ctx, evt)
+}
+
+var cmdJoin = &commands.Handler[*PolicyEvaluator]{
+	Name: "join",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) == 0 {
+			ce.Reply("Usage: `!join <room ID>...`")
 			return
 		}
-		for _, arg := range args {
-			_, err := pe.Bot.JoinRoom(ctx, arg, nil)
+		for _, arg := range ce.Args {
+			_, err := ce.Meta.Bot.JoinRoom(ce.Ctx, arg, nil)
 			if err != nil {
-				pe.sendNotice(ctx, "Failed to join room %q: %v", arg, err)
+				ce.Reply("Failed to join room `%s`: %v", format.EscapeMarkdown(arg), err)
 			} else {
-				pe.sendNotice(ctx, "Joined room %q", arg)
+				ce.Reply("Joined room `%s`", format.EscapeMarkdown(arg))
 			}
 		}
-		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!knock":
-		if len(args) == 0 {
-			pe.sendNotice(ctx, "Usage: `!knock <rooms...>`")
+		ce.React(SuccessReaction)
+	},
+}
+
+var cmdKnock = &commands.Handler[*PolicyEvaluator]{
+	Name: "knock",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) == 0 {
+			ce.Reply("Usage: `!knock <rooms...>`")
 			return
 		}
-		for _, arg := range args {
-			_, err := pe.Bot.KnockRoom(ctx, arg, nil)
+		for _, arg := range ce.Args {
+			_, err := ce.Meta.Bot.KnockRoom(ce.Ctx, arg, nil)
 			if err != nil {
-				pe.sendNotice(ctx, "Failed to knock on room %q: %v", arg, err)
+				ce.Reply("Failed to knock on room `%s`: %v", format.EscapeMarkdown(arg), err)
 			} else {
-				pe.sendNotice(ctx, "Requested to join room %q", arg)
+				ce.Reply("Requested to join room `%s`", format.EscapeMarkdown(arg))
 			}
 		}
-		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!leave":
-		if len(args) == 0 {
-			pe.sendNotice(ctx, "Usage: `!leave <room ID>...`")
+		ce.React(SuccessReaction)
+	},
+}
+
+var cmdLeave = &commands.Handler[*PolicyEvaluator]{
+	Name: "leave",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) == 0 {
+			ce.Reply("Usage: `!leave <room ID>...`")
 			return
 		}
-		for _, arg := range args {
-			target := pe.resolveRoom(ctx, arg)
+		for _, arg := range ce.Args {
+			target := ce.Meta.resolveRoom(ce.Ctx, arg)
 			if target == "" {
 				continue
 			}
-			_, err := pe.Bot.LeaveRoom(ctx, target)
+			_, err := ce.Meta.Bot.LeaveRoom(ce.Ctx, target)
 			if err != nil {
-				pe.sendNotice(ctx, "Failed to leave room %q: %v", arg, err)
+				ce.Reply("Failed to leave room %q: %v", arg, err)
 			} else {
-				pe.sendNotice(ctx, "Left room %q", arg)
+				ce.Reply("Left room %q", arg)
 			}
 		}
-	case "!powerlevel", "!pl":
-		if len(args) < 1 {
-			pe.sendNotice(ctx, "Usage: `!powerlevel <room|all> <key> <level>`")
+	},
+}
+
+var cmdPowerLevel = &commands.Handler[*PolicyEvaluator]{
+	Name:    "powerlevel",
+	Aliases: []string{"pl"},
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+
+		if len(ce.Args) < 1 {
+			ce.Reply("Usage: `!powerlevel <room|all> <key> <level>`")
 			return
 		}
 		var rooms []id.RoomID
-		if args[0] == "all" {
-			rooms = pe.GetProtectedRooms()
+		if ce.Args[0] == "all" {
+			rooms = ce.Meta.GetProtectedRooms()
 		} else {
-			room := pe.resolveRoom(ctx, args[0])
+			room := ce.Meta.resolveRoom(ce.Ctx, ce.Args[0])
 			if room == "" {
 				return
 			}
 			rooms = []id.RoomID{room}
 		}
-		key := args[1]
-		level, err := strconv.Atoi(args[2])
+		key := ce.Args[1]
+		level, err := strconv.Atoi(ce.Args[2])
 		if err != nil {
-			pe.sendNotice(ctx, "Invalid power level `%s`: %v", args[2], err)
+			ce.Reply("Invalid power level `%s`: %v", ce.Args[2], err)
 			return
 		}
 		for _, room := range rooms {
 			var pls event.PowerLevelsEventContent
-			err = pe.Bot.Client.StateEvent(ctx, room, event.StatePowerLevels, "", &pls)
+			err = ce.Meta.Bot.Client.StateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
-				pe.sendNotice(ctx, "Failed to get power levels in `%s`: %v", room, err)
+				ce.Reply("Failed to get power levels in `%s`: %v", room, err)
 				return
 			}
 			const MagicUnsetValue = -1644163703
@@ -157,96 +173,111 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 					}
 					pls.Events[key] = level
 				} else {
-					pe.sendNotice(ctx, "Invalid power level key `%s`", key)
+					ce.Reply("Invalid power level key `%s`", key)
 					return
 				}
 			}
 			if oldLevel == level && oldLevel != MagicUnsetValue {
-				pe.sendNotice(ctx, "Power level for `%s` in `%s` is already set to `%d`", key, room, level)
+				ce.Reply("Power level for `%s` in `%s` is already set to `%d`", key, room, level)
 				continue
 			}
-			_, err = pe.Bot.Client.SendStateEvent(ctx, room, event.StatePowerLevels, "", &pls)
+			_, err = ce.Meta.Bot.Client.SendStateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
-				pe.sendNotice(ctx, "Failed to set power levels in `%s`: %v", room, err)
+				ce.Reply("Failed to set power levels in `%s`: %v", room, err)
 				continue
 			}
 		}
-		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!redact":
-		if len(args) < 1 {
-			pe.sendNotice(ctx, "Usage: `!redact <event link or user ID> [reason]`")
+		ce.React(SuccessReaction)
+	},
+}
+
+var cmdRedact = &commands.Handler[*PolicyEvaluator]{
+	Name: "redact",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) < 1 {
+			ce.Reply("Usage: `!redact <event link or user ID> [reason]`")
 			return
 		}
 		var target *id.MatrixURI
 		var err error
-		if args[0][0] == '@' {
+		if ce.Args[0][0] == '@' {
 			target = &id.MatrixURI{
 				Sigil1: '@',
-				MXID1:  args[0],
+				MXID1:  ce.Args[0],
 			}
 		} else {
-			target, err = id.ParseMatrixURIOrMatrixToURL(args[0])
+			target, err = id.ParseMatrixURIOrMatrixToURL(ce.Args[0])
 			if err != nil {
-				pe.sendNotice(ctx, "Failed to parse `%s`: %v", args[0], err)
+				ce.Reply("Failed to parse `%s`: %v", ce.Args[0], err)
 				return
 			}
 		}
-		reason := strings.Join(args[1:], " ")
+		reason := strings.Join(ce.Args[1:], " ")
 		if target.Sigil1 == '@' {
-			pe.RedactUser(ctx, target.UserID(), reason, false)
+			ce.Meta.RedactUser(ce.Ctx, target.UserID(), reason, false)
 		} else if target.Sigil1 == '!' && target.Sigil2 == '$' {
-			_, err = pe.Bot.RedactEvent(ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: reason})
+			_, err = ce.Meta.Bot.RedactEvent(ce.Ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: reason})
 			if err != nil {
-				pe.sendNotice(ctx, "Failed to redact event `%s`: %v", target.EventID(), err)
+				ce.Reply("Failed to redact event `%s`: %v", target.EventID(), err)
 				return
 			}
 		} else {
-			pe.sendNotice(ctx, "Invalid target `%s` (must be a user ID or event link)", args[0])
+			ce.Reply("Invalid target `%s` (must be a user ID or event link)", ce.Args[0])
 			return
 		}
-		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!redact-recent":
-		if len(args) < 2 {
-			pe.sendNotice(ctx, "Usage: `!redact-recent <room ID> <since duration> [reason]`")
+		ce.React(SuccessReaction)
+	},
+}
+
+var cmdRedactRecent = &commands.Handler[*PolicyEvaluator]{
+	Name: "redact-recent",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) < 2 {
+			ce.Reply("Usage: `!redact-recent <room ID> <since duration> [reason]`")
 			return
 		}
-		room := pe.resolveRoom(ctx, args[0])
+		room := ce.Meta.resolveRoom(ce.Ctx, ce.Args[0])
 		if room == "" {
 			return
 		}
-		since, err := time.ParseDuration(args[1])
+		since, err := time.ParseDuration(ce.Args[1])
 		if err != nil {
-			pe.sendNotice(ctx, "Invalid duration `%s`: %v", args[1], err)
+			ce.Reply("Invalid duration `%s`: %v", ce.Args[1], err)
 			return
 		}
-		reason := strings.Join(args[2:], " ")
-		redactedCount, err := pe.redactRecentMessages(ctx, room, "", since, false, reason)
+		reason := strings.Join(ce.Args[2:], " ")
+		redactedCount, err := ce.Meta.redactRecentMessages(ce.Ctx, room, "", since, false, reason)
 		if err != nil {
-			pe.sendNotice(ctx, "Failed to redact recent messages: %v", err)
+			ce.Reply("Failed to redact recent messages: %v", err)
 			return
 		}
-		pe.sendNotice(ctx, "Redacted %d messages", redactedCount)
-		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!kick":
-		if len(args) < 1 {
-			pe.sendNotice(ctx, "Usage: `!kick <user ID> [reason]`")
+		ce.Reply("Redacted %d messages", redactedCount)
+		ce.React(SuccessReaction)
+	},
+}
+
+var cmdKick = &commands.Handler[*PolicyEvaluator]{
+	Name: "kick",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) < 1 {
+			ce.Reply("Usage: `!kick <user ID> [reason]`")
 			return
 		}
-		ignoreUserLimit := args[0] == "--force"
+		ignoreUserLimit := ce.Args[0] == "--force"
 		if ignoreUserLimit {
-			args = args[1:]
+			ce.Args = ce.Args[1:]
 		}
-		pattern := glob.Compile(args[0])
-		reason := strings.Join(args[1:], " ")
-		users := slices.Collect(pe.findMatchingUsers(pattern, nil, true))
+		pattern := glob.Compile(ce.Args[0])
+		reason := strings.Join(ce.Args[1:], " ")
+		users := slices.Collect(ce.Meta.findMatchingUsers(pattern, nil, true))
 		if len(users) > 10 && !ignoreUserLimit {
 			// TODO replace the force flag with a reaction confirmation
-			pe.sendNotice(ctx, "%d users matching `%s` found, use `--force` to kick all of them.", len(users), args[0])
+			ce.Reply("%d users matching `%s` found, use `--force` to kick all of them.", len(users), ce.Args[0])
 			return
 		}
 		for _, userID := range users {
 			successCount := 0
-			rooms := pe.getRoomsUserIsIn(userID)
+			rooms := ce.Meta.getRoomsUserIsIn(userID)
 			if len(rooms) == 0 {
 				continue
 			}
@@ -254,48 +285,54 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			for i, room := range rooms {
 				roomStrings[i] = fmt.Sprintf("[%s](%s)", room, room.URI().MatrixToURL())
 				var err error
-				if !pe.DryRun {
-					_, err = pe.Bot.KickUser(ctx, room, &mautrix.ReqKickUser{
+				if !ce.Meta.DryRun {
+					_, err = ce.Meta.Bot.KickUser(ce.Ctx, room, &mautrix.ReqKickUser{
 						Reason: reason,
 						UserID: userID,
 					})
 				}
 				if err != nil {
-					pe.sendNotice(ctx, "Failed to kick `%s` from `%s`: %v", userID, room, err)
+					ce.Reply("Failed to kick `%s` from `%s`: %v", userID, room, err)
 				} else {
 					successCount++
 				}
 			}
-			pe.sendNotice(ctx, "Kicked `%s` from %d rooms: %s", userID, successCount, strings.Join(roomStrings, ", "))
+			ce.Reply("Kicked `%s` from %d rooms: %s", userID, successCount, strings.Join(roomStrings, ", "))
 		}
 		if len(users) == 0 {
-			pe.sendNotice(ctx, "No users matching `%s` found in any rooms", args[0])
+			ce.Reply("No users matching `%s` found in any rooms", ce.Args[0])
 			return
 		}
-		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!ban", "!takedown":
-		if len(args) < 2 {
-			pe.sendNotice(ctx, "Usage: `%s [--hash] <list shortcode> <entity> [reason]`", cmd)
+		ce.React(SuccessReaction)
+	},
+}
+
+var cmdBan = &commands.Handler[*PolicyEvaluator]{
+	Name:    "ban",
+	Aliases: []string{"takedown"},
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) < 2 {
+			ce.Reply("Usage: `%s [--hash] <list shortcode> <entity> [reason]`", ce.Command)
 			return
 		}
-		hash := args[0] == "--hash"
+		hash := ce.Args[0] == "--hash"
 		if hash {
-			args = args[1:]
+			ce.Args = ce.Args[1:]
 		}
-		list := pe.FindListByShortcode(args[0])
+		list := ce.Meta.FindListByShortcode(ce.Args[0])
 		if list == nil {
-			pe.sendNotice(ctx, `List %q not found`, args[0])
+			ce.Reply(`List %q not found`, ce.Args[0])
 			return
 		}
-		target := args[1]
+		target := ce.Args[1]
 		entityType, ok := validateEntity(target)
 		if !ok {
-			pe.sendNotice(ctx, "Invalid entity `%s`", target)
+			ce.Reply("Invalid entity `%s`", target)
 			return
 		}
-		match := pe.Store.MatchExact(pe.GetWatchedLists(), entityType, target)
+		match := ce.Meta.Store.MatchExact(ce.Meta.GetWatchedLists(), entityType, target)
 		if rec := match.Recommendations().BanOrUnban; rec != nil && rec.Recommendation == event.PolicyRecommendationUnban {
-			pe.sendNotice(ctx, "`%s` has an unban recommendation: %s", target, rec.Reason)
+			ce.Reply("`%s` has an unban recommendation: %s", target, rec.Reason)
 			return
 		}
 		var existingStateKey string
@@ -306,7 +343,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		}
 		policy := &event.ModPolicyContent{
 			Entity:         target,
-			Reason:         strings.Join(args[2:], " "),
+			Reason:         strings.Join(ce.Args[2:], " "),
 			Recommendation: event.PolicyRecommendationBan,
 		}
 		if hash {
@@ -316,90 +353,101 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			}
 			policy.Entity = ""
 		}
-		if cmd == "!takedown" || cmd == "!takedown-user" {
+		if ce.Command == "takedown" {
 			policy.Recommendation = event.PolicyRecommendationUnstableTakedown
 			policy.Reason = ""
 		}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, target, policy)
+		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
 		if err != nil {
-			pe.sendNotice(ctx, `Failed to send ban policy: %v`, err)
+			ce.Reply(`Failed to send ban policy: %v`, err)
 			return
 		}
-		zerolog.Ctx(ctx).Info().
+		zerolog.Ctx(ce.Ctx).Info().
 			Stringer("policy_list", list.RoomID).
 			Any("policy", policy).
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent ban policy from command")
-		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!remove-ban", "!remove-unban", "!remove-policy":
-		if len(args) < 2 {
-			pe.sendNotice(ctx, "Usage: `!remove-policy <list> <entity>`")
+		ce.React(SuccessReaction)
+	},
+}
+
+var cmdRemovePolicy = &commands.Handler[*PolicyEvaluator]{
+	Name:    "remove-policy",
+	Aliases: []string{"remove-ban", "remove-unban"},
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) < 2 {
+			ce.Reply("Usage: `!remove-policy <list> <entity>`")
 			return
 		}
-		list := pe.FindListByShortcode(args[0])
+		list := ce.Meta.FindListByShortcode(ce.Args[0])
 		if list == nil {
-			pe.sendNotice(ctx, `List %q not found`, args[0])
+			ce.Reply(`List %q not found`, ce.Args[0])
 			return
 		}
-		target := args[1]
+		target := ce.Args[1]
 		entityType, ok := validateEntity(target)
 		if !ok {
-			pe.sendNotice(ctx, "Invalid entity `%s`", target)
+			ce.Reply("Invalid entity `%s`", target)
 			return
 		}
 		var existingStateKey string
-		match := pe.Store.MatchExact([]id.RoomID{list.RoomID}, entityType, target)
+		match := ce.Meta.Store.MatchExact([]id.RoomID{list.RoomID}, entityType, target)
 		if len(match) == 0 {
-			pe.sendNotice(ctx, "No rule banning `%s` found in [%s](%s)", target, list.Name, list.RoomID.URI().MatrixToURL())
+			ce.Reply("No rule banning `%s` found in [%s](%s)", target, list.Name, list.RoomID.URI().MatrixToURL())
 			return
 		}
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			existingStateKey = rec.StateKey
 			// TODO: handle wildcards and multiple matches, etc
-			if cmd == "!remove-unban" && rec.Recommendation != event.PolicyRecommendationUnban {
-				pe.sendNotice(ctx, "`%s` does not have an unban recommendation", target)
+			if ce.Command == "remove-unban" && rec.Recommendation != event.PolicyRecommendationUnban {
+				ce.Reply("`%s` does not have an unban recommendation", target)
 				return
-			} else if cmd == "!remove-ban" && rec.Recommendation != event.PolicyRecommendationBan {
-				pe.sendNotice(ctx, "`%s` does not have a ban recommendation", target)
+			} else if ce.Command == "remove-ban" && rec.Recommendation != event.PolicyRecommendationBan {
+				ce.Reply("`%s` does not have a ban recommendation", target)
 				return
 			}
 		}
 		policy := &event.ModPolicyContent{}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, target, policy)
+		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
 		if err != nil {
-			pe.sendNotice(ctx, `Failed to remove policy: %v`, err)
+			ce.Reply(`Failed to remove policy: %v`, err)
 			return
 		}
-		zerolog.Ctx(ctx).Info().
+		zerolog.Ctx(ce.Ctx).Info().
 			Stringer("policy_list", list.RoomID).
 			Any("policy", policy).
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Removed policy from command")
-		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!add-unban":
-		if len(args) < 2 {
-			pe.sendNotice(ctx, "Usage: `!add-unban <list shortcode> <entity> <reason>`")
+		ce.React(SuccessReaction)
+	},
+}
+
+var cmdAddUnban = &commands.Handler[*PolicyEvaluator]{
+	Name: "add-unban",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) < 2 {
+			ce.Reply("Usage: `!add-unban <list shortcode> <entity> <reason>`")
 			return
 		}
-		list := pe.FindListByShortcode(args[0])
+		list := ce.Meta.FindListByShortcode(ce.Args[0])
 		if list == nil {
-			pe.sendNotice(ctx, `List %q not found`, args[0])
+			ce.Reply(`List %q not found`, ce.Args[0])
 			return
 		}
-		target := args[1]
+		target := ce.Args[1]
 		var match policylist.Match
 		var entityType policylist.EntityType
 		if !strings.HasPrefix(target, "@") {
 			entityType = policylist.EntityTypeServer
-			match = pe.Store.MatchServer(pe.GetWatchedLists(), target)
+			match = ce.Meta.Store.MatchServer(ce.Meta.GetWatchedLists(), target)
 		} else {
 			entityType = policylist.EntityTypeUser
-			match = pe.Store.MatchUser(pe.GetWatchedLists(), id.UserID(target))
+			match = ce.Meta.Store.MatchUser(ce.Meta.GetWatchedLists(), id.UserID(target))
 		}
 		var existingStateKey string
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			if rec.Recommendation == event.PolicyRecommendationUnban {
-				pe.sendNotice(ctx, "`%s` already has an unban recommendation: %s", target, rec.Reason)
+				ce.Reply("`%s` already has an unban recommendation: %s", target, rec.Reason)
 				return
 			} else if rec.RoomID == list.RoomID {
 				existingStateKey = rec.StateKey
@@ -407,168 +455,188 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 		}
 		policy := &event.ModPolicyContent{
 			Entity:         target,
-			Reason:         strings.Join(args[2:], " "),
+			Reason:         strings.Join(ce.Args[2:], " "),
 			Recommendation: event.PolicyRecommendationUnban,
 		}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, entityType, existingStateKey, target, policy)
+		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
 		if err != nil {
-			pe.sendNotice(ctx, `Failed to send unban policy: %v`, err)
+			ce.Reply(`Failed to send unban policy: %v`, err)
 			return
 		}
-		zerolog.Ctx(ctx).Info().
+		zerolog.Ctx(ce.Ctx).Info().
 			Stringer("policy_list", list.RoomID).
 			Any("policy", policy).
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent unban policy from command")
-		pe.sendSuccessReaction(ctx, evt.ID)
-	case "!match":
-		target := args[0]
+		ce.React(SuccessReaction)
+	},
+}
+
+var cmdMatch = &commands.Handler[*PolicyEvaluator]{
+	Name: "match",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		target := ce.Args[0]
 		targetUser := id.UserID(target)
 		userIDHash, ok := util.DecodeBase64Hash(target)
 		if ok {
-			targetUser, ok = pe.getUserIDFromHash(*userIDHash)
+			targetUser, ok = ce.Meta.getUserIDFromHash(*userIDHash)
 			if !ok {
-				pe.sendNotice(ctx, "No user found for hash `%s`", target)
+				ce.Reply("No user found for hash `%s`", target)
 				return
 			}
 			target = targetUser.String()
-			pe.sendNotice(ctx, "Matched user `%s` for hash `%s`", targetUser, target)
+			ce.Reply("Matched user `%s` for hash `%s`", targetUser, target)
 		}
 		entityType, _ := validateEntity(target)
 		var dur time.Duration
 		var match policylist.Match
 		if entityType == policylist.EntityTypeUser {
 			start := time.Now()
-			match = pe.Store.MatchUser(nil, targetUser)
+			match = ce.Meta.Store.MatchUser(nil, targetUser)
 			dur = time.Since(start)
-			rooms := pe.getRoomsUserIsIn(targetUser)
+			rooms := ce.Meta.getRoomsUserIsIn(targetUser)
 			if len(rooms) > 0 {
 				formattedRooms := make([]string, len(rooms))
-				pe.protectedRoomsLock.RLock()
+				ce.Meta.protectedRoomsLock.RLock()
 				for i, roomID := range rooms {
 					name := roomID.String()
-					meta := pe.protectedRooms[roomID]
+					meta := ce.Meta.protectedRooms[roomID]
 					if meta != nil && meta.Name != "" {
 						name = meta.Name
 					}
 					formattedRooms[i] = fmt.Sprintf("* [%s](%s)", name, roomID.URI().MatrixToURL())
 				}
-				pe.protectedRoomsLock.RUnlock()
-				pe.sendNotice(ctx, "User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
+				ce.Meta.protectedRoomsLock.RUnlock()
+				ce.Reply("User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
 			}
 		} else if entityType == policylist.EntityTypeRoom {
 			start := time.Now()
-			match = pe.Store.MatchRoom(nil, id.RoomID(target))
+			match = ce.Meta.Store.MatchRoom(nil, id.RoomID(target))
 			dur = time.Since(start)
 		} else if entityType == policylist.EntityTypeServer {
 			start := time.Now()
-			match = pe.Store.MatchServer(nil, target)
+			match = ce.Meta.Store.MatchServer(nil, target)
 			dur = time.Since(start)
 		} else {
-			pe.sendNotice(ctx, "Invalid entity `%s`", target)
+			ce.Reply("Invalid entity `%s`", target)
 			return
 		}
 		if match != nil {
 			eventStrings := make([]string, len(match))
 			for i, policy := range match {
 				policyRoomName := policy.RoomID.String()
-				if meta := pe.GetWatchedListMeta(policy.RoomID); meta != nil {
+				if meta := ce.Meta.GetWatchedListMeta(policy.RoomID); meta != nil {
 					policyRoomName = meta.Name
 				}
 				eventStrings[i] = fmt.Sprintf("* [%s] [%s](%s) set recommendation `%s` for `%s` at %s for `%s`",
 					policyRoomName, policy.Sender, policy.Sender.URI().MatrixToURL(), policy.Recommendation, policy.EntityOrHash(), time.UnixMilli(policy.Timestamp), policy.Reason)
 			}
-			pe.sendNotice(ctx, "Matched in %s with recommendation %s\n\n%s", dur, match.Recommendations(), strings.Join(eventStrings, "\n"))
+			ce.Reply("Matched in %s with recommendation %s\n\n%s", dur, match.Recommendations(), strings.Join(eventStrings, "\n"))
 		} else {
-			pe.sendNotice(ctx, "No match in %s", dur)
+			ce.Reply("No match in %s", dur)
 		}
-	case "!search":
-		target := args[0]
+	},
+}
+
+var cmdSearch = &commands.Handler[*PolicyEvaluator]{
+	Name: "search",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		target := ce.Args[0]
 		start := time.Now()
-		match := pe.Store.Search(nil, target)
+		match := ce.Meta.Store.Search(nil, target)
 		dur := time.Since(start)
 		if len(match) > 25 {
-			pe.sendNotice(ctx, "Too many results (%d) in %s, please narrow your search", len(match), dur)
+			ce.Reply("Too many results (%d) in %s, please narrow your search", len(match), dur)
 		} else if len(match) > 0 {
 			eventStrings := make([]string, len(match))
 			for i, policy := range match {
 				policyRoomName := policy.RoomID.String()
-				if meta := pe.GetWatchedListMeta(policy.RoomID); meta != nil {
+				if meta := ce.Meta.GetWatchedListMeta(policy.RoomID); meta != nil {
 					policyRoomName = meta.Name
 				}
 				eventStrings[i] = fmt.Sprintf("* [%s] [%s](%s) set recommendation `%s` for %ss matching `%s` at %s for `%s`",
 					policyRoomName, policy.Sender, policy.Sender.URI().MatrixToURL(), policy.Recommendation, policy.EntityType, policy.EntityOrHash(), time.UnixMilli(policy.Timestamp), policy.Reason)
 			}
-			pe.sendNotice(ctx, "Found %d results in %s:\n\n%s", len(match), dur, strings.Join(eventStrings, "\n"))
+			ce.Reply("Found %d results in %s:\n\n%s", len(match), dur, strings.Join(eventStrings, "\n"))
 		} else {
-			pe.sendNotice(ctx, "No results in %s", dur)
+			ce.Reply("No results in %s", dur)
 		}
 		if strings.HasPrefix(target, "@") {
-			users := slices.Collect(pe.findMatchingUsers(glob.Compile(target), nil, true))
+			users := slices.Collect(ce.Meta.findMatchingUsers(glob.Compile(target), nil, true))
 			if len(users) > 25 {
-				pe.sendNotice(ctx, "Found %d users matching `%s` in protected rooms (too many to list)", len(users), target)
+				ce.Reply("Found %d users matching `%s` in protected rooms (too many to list)", len(users), target)
 			} else if len(users) > 0 {
 				userStrings := make([]string, len(users))
 				for i, user := range users {
 					userStrings[i] = fmt.Sprintf("* [%s](%s)", user, user.URI().MatrixToURL())
 				}
-				pe.sendNotice(
-					ctx, "Found %d users matching `%s` in protected rooms:\n\n%s",
+				ce.Meta.sendNotice(
+					ce.Ctx, "Found %d users matching `%s` in protected rooms:\n\n%s",
 					len(users),
 					target,
 					strings.Join(userStrings, "\n"),
 				)
 			} else {
-				pe.sendNotice(ctx, "No users matching `%s` found in protected rooms", target)
+				ce.Reply("No users matching `%s` found in protected rooms", target)
 			}
 		}
-	case "!send-as-bot":
-		if len(args) < 2 {
-			pe.sendNotice(ctx, "Usage: `!send-as-bot <room ID> <message>`")
+	},
+}
+
+var cmdSendAsBot = &commands.Handler[*PolicyEvaluator]{
+	Name: "send-as-bot",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) < 2 {
+			ce.Reply("Usage: `!send-as-bot <room ID> <message>`")
 			return
 		}
-		target := pe.resolveRoom(ctx, args[0])
+		target := ce.Meta.resolveRoom(ce.Ctx, ce.Args[0])
 		if target == "" {
 			return
 		}
-		resp, err := pe.Bot.SendMessageEvent(ctx, target, event.EventMessage, &event.MessageEventContent{
+		resp, err := ce.Meta.Bot.SendMessageEvent(ce.Ctx, target, event.EventMessage, &event.MessageEventContent{
 			MsgType: event.MsgText,
-			Body:    strings.Join(args[1:], " "),
+			Body:    strings.Join(ce.Args[1:], " "),
 		})
 		if err != nil {
-			pe.sendNotice(ctx, "Failed to send message to [%s](%s): %v", target, target.URI().MatrixToURL(), err)
+			ce.Reply("Failed to send message to [%s](%s): %v", target, target.URI().MatrixToURL(), err)
 		} else {
-			pe.sendNotice(ctx, "Sent message to [%s](%s): [%s](%s)", target, target.URI().MatrixToURL(), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
+			ce.Reply("Sent message to [%s](%s): [%s](%s)", target, target.URI().MatrixToURL(), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
 		}
-	case "!help", "!meowlnir":
-		if len(args) == 0 {
-			pe.sendNotice(ctx, "Available commands:\n"+
-				"* `!join <rooms...>` - Join a room\n"+
-				"* `!knock <rooms...>` - Ask to join a room\n"+
-				"* `!leave <rooms...>` - Leave a room\n"+
-				"* `!powerlevel <room|all> <key> <level>` - Set a power level\n"+
-				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n"+
-				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n"+
-				"* `!kick <user ID> [reason]` - Kick a user from all rooms\n"+
-				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n"+
-				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n"+
-				"* `!remove-ban <list shortcode> <entity>` - Remove a ban policy\n"+
-				"* `!add-unban <list shortcode> <entity> [reason]` - Add a ban exclusion policy\n"+
-				"* `!match <entity>` - Match an entity against all lists\n"+
-				"* `!search <pattern>` - Search for rules by a pattern in all lists\n"+
-				"* `!send-as-bot <room> <message>` - Send a message as the bot\n"+
+	},
+}
+
+var cmdHelp = &commands.Handler[*PolicyEvaluator]{
+	Name: "help",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) == 0 {
+			ce.Reply("Available commands:\n" +
+				"* `!join <rooms...>` - Join a room\n" +
+				"* `!knock <rooms...>` - Ask to join a room\n" +
+				"* `!leave <rooms...>` - Leave a room\n" +
+				"* `!powerlevel <room|all> <key> <level>` - Set a power level\n" +
+				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n" +
+				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n" +
+				"* `!kick <user ID> [reason]` - Kick a user from all rooms\n" +
+				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n" +
+				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n" +
+				"* `!remove-ban <list shortcode> <entity>` - Remove a ban policy\n" +
+				"* `!add-unban <list shortcode> <entity> [reason]` - Add a ban exclusion policy\n" +
+				"* `!match <entity>` - Match an entity against all lists\n" +
+				"* `!search <pattern>` - Search for rules by a pattern in all lists\n" +
+				"* `!send-as-bot <room> <message>` - Send a message as the bot\n" +
 				// "* `!help <command>` - Show detailed help for a command\n" +
-				"* `!help` - Show this help message\n"+
-				"\n"+
+				"* `!help` - Show this help message\n" +
+				"\n" +
 				"All fields that want a room will accept both room IDs and aliases.\n",
 			)
 		} else {
-			switch strings.ToLower(strings.TrimLeft(args[0], "!")) {
+			switch strings.ToLower(strings.TrimLeft(ce.Args[0], "!")) {
 			case "join":
 				// TODO
 			}
 		}
-	}
+	},
 }
 
 func (pe *PolicyEvaluator) resolveRoom(ctx context.Context, room string) id.RoomID {
@@ -608,97 +676,4 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 		stateKey = base64.StdEncoding.EncodeToString(stateKeyHash[:])
 	}
 	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), stateKey, content)
-}
-
-func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderClient *mautrix.Client, targetUserID id.UserID, roomID id.RoomID, eventID id.EventID, reason string) error {
-	sender := senderClient.UserID
-	var evt *event.Event
-	var err error
-	if eventID != "" {
-		evt, err = senderClient.GetEvent(ctx, roomID, eventID)
-		if err != nil {
-			zerolog.Ctx(ctx).Err(err).Msg("Failed to get report target event with user's token")
-			pe.sendNotice(
-				ctx, `[%s](%s) reported [an event](%s) for %s, but the event could not be fetched: %v`,
-				sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(), reason, err,
-			)
-			return fmt.Errorf("failed to fetch event: %w", err)
-		}
-		targetUserID = evt.Sender
-	}
-	if !pe.Admins.Has(sender) || !strings.HasPrefix(reason, "/") || targetUserID == "" {
-		if eventID != "" {
-			pe.sendNotice(
-				ctx, `[%s](%s) reported [an event](%s) from [%s](%s) for %s`,
-				sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(),
-				evt.Sender, evt.Sender.URI().MatrixToURL(),
-				reason,
-			)
-		} else if roomID != "" {
-			pe.sendNotice(
-				ctx, `[%s](%s) reported [a room](%s) for %s`,
-				sender, sender.URI().MatrixToURL(), roomID.URI().MatrixToURL(),
-				reason,
-			)
-		} else if targetUserID != "" {
-			pe.sendNotice(
-				ctx, `[%s](%s) reported [%s](%s) for %s`,
-				sender, sender.URI().MatrixToURL(), targetUserID.URI().MatrixToURL(),
-				reason,
-			)
-		}
-		return nil
-	}
-	fields := strings.Fields(reason)
-	cmd := strings.TrimPrefix(fields[0], "/")
-	args := fields[1:]
-	switch strings.ToLower(cmd) {
-	case "ban":
-		if len(args) < 2 {
-			return mautrix.MInvalidParam.WithMessage("Not enough arguments for ban")
-		}
-		list := pe.FindListByShortcode(args[0])
-		if list == nil {
-			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of [%s](%s): list %q not found`,
-				sender, sender.URI().MatrixToURL(), targetUserID, targetUserID.URI().MatrixToURL(), args[0])
-			return mautrix.MNotFound.WithMessage(fmt.Sprintf("List with shortcode %q not found", args[0]))
-		}
-		match := pe.Store.MatchUser([]id.RoomID{list.RoomID}, targetUserID)
-		if rec := match.Recommendations().BanOrUnban; rec != nil {
-			if rec.Recommendation == event.PolicyRecommendationUnban {
-				return mautrix.RespError{
-					ErrCode:    "FI.MAU.MEOWLNIR.UNBAN_RECOMMENDED",
-					Err:        fmt.Sprintf("%s has an unban recommendation: %s", targetUserID, rec.Reason),
-					StatusCode: http.StatusConflict,
-				}
-			} else {
-				return mautrix.RespError{
-					ErrCode:    "FI.MAU.MEOWLNIR.ALREADY_BANNED",
-					Err:        fmt.Sprintf("%s is already banned for: %s", targetUserID, rec.Reason),
-					StatusCode: http.StatusConflict,
-				}
-			}
-		}
-		policy := &event.ModPolicyContent{
-			Entity:         string(targetUserID),
-			Reason:         strings.Join(args[1:], " "),
-			Recommendation: event.PolicyRecommendationBan,
-		}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, "", string(targetUserID), policy)
-		if err != nil {
-			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of [%s](%s) for %s ([%s](%s)): %v`,
-				sender, sender.URI().MatrixToURL(), targetUserID, targetUserID.URI().MatrixToURL(),
-				list.Name, list.RoomID, list.RoomID.URI().MatrixToURL(), err)
-			return fmt.Errorf("failed to send policy: %w", err)
-		}
-		zerolog.Ctx(ctx).Info().
-			Stringer("policy_list", list.RoomID).
-			Any("policy", policy).
-			Stringer("policy_event_id", resp.EventID).
-			Msg("Sent ban policy from report")
-		pe.sendNotice(ctx, `Processed [%s](%s)'s report of [%s](%s) and sent a ban policy to %s ([%s](%s)) for %s`,
-			sender, sender.URI().MatrixToURL(), targetUserID, targetUserID.URI().MatrixToURL(),
-			list.Name, list.RoomID, list.RoomID.URI().MatrixToURL(), policy.Reason)
-	}
-	return nil
 }
