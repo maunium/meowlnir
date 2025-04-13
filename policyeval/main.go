@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exsync"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
@@ -35,6 +36,8 @@ type PolicyEvaluator struct {
 
 	ManagementRoom id.RoomID
 	Admins         *exsync.Set[id.UserID]
+
+	commandProcessor *commands.Processor[*PolicyEvaluator]
 
 	watchedListsMap     map[id.RoomID]*config.WatchedPolicyList
 	watchedListsList    []id.RoomID
@@ -77,6 +80,7 @@ func NewPolicyEvaluator(
 		Store:                store,
 		ManagementRoom:       managementRoom,
 		Admins:               exsync.NewSet[id.UserID](),
+		commandProcessor:     commands.NewProcessor[*PolicyEvaluator](bot.Client),
 		protectedRoomMembers: make(map[id.UserID][]id.RoomID),
 		memberHashes:         make(map[[32]byte]id.UserID),
 		watchedListsMap:      make(map[id.RoomID]*config.WatchedPolicyList),
@@ -90,18 +94,34 @@ func NewPolicyEvaluator(
 		FilterLocalInvites:   filterLocalInvites,
 		DryRun:               dryRun,
 	}
+	pe.commandProcessor.LogArgs = true
+	pe.commandProcessor.Meta = pe
+	pe.commandProcessor.PreValidator = commands.AnyPreValidator[*PolicyEvaluator]{
+		commands.ValidatePrefixCommand[*PolicyEvaluator](pe.Bot.UserID.String()),
+		commands.ValidatePrefixCommand[*PolicyEvaluator]("!meowlnir"),
+		commands.ValidatePrefixSubstring[*PolicyEvaluator]("!"),
+	}
+	pe.commandProcessor.Register(
+		cmdJoin,
+		cmdKnock,
+		cmdLeave,
+		cmdPowerLevel,
+		cmdRedact,
+		cmdRedactRecent,
+		cmdKick,
+		cmdBan,
+		cmdRemovePolicy,
+		cmdAddUnban,
+		cmdMatch,
+		cmdSearch,
+		cmdSendAsBot,
+		cmdHelp,
+	)
 	return pe
 }
 
 func (pe *PolicyEvaluator) sendNotice(ctx context.Context, message string, args ...any) {
 	pe.Bot.SendNotice(ctx, pe.ManagementRoom, message, args...)
-}
-
-func (pe *PolicyEvaluator) sendSuccessReaction(ctx context.Context, eventID id.EventID) {
-	_, err := pe.Bot.SendReaction(ctx, pe.ManagementRoom, eventID, "✅")
-	if err != nil {
-		zerolog.Ctx(ctx).Err(err).Msg("Failed to send reaction to confirm successful handling of command")
-	}
 }
 
 func (pe *PolicyEvaluator) Load(ctx context.Context) {
