@@ -28,10 +28,14 @@ meowlnir:
 
     # Which management room should handle requests to the Matrix report API?
     report_room: '!roomid:example.com'
-    # If a policy matches any of these user IDs, the policy is ignored entirely.
+    # If a policy matches any of these entities, the policy is ignored entirely.
     # This can be used as a hacky way to protect against policies which are too wide.
+    #
+    # The example values can be left here and will already prevent banning everyone,
+    # but you should also add some known-good users and servers that should never get banned.
     hacky_rule_filter:
     - "@user:example.com"
+    - example.com
 
 antispam:
     # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.
