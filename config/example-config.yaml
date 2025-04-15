@@ -76,7 +76,7 @@ database:
     max_conn_idle_time: null
     max_conn_lifetime: null
 
-# Database config for accessing the Synapse database.
+# Database config for accessing the Synapse database. Only postgres is supported.
 synapse_db:
     type: postgres
     uri: postgres://user:password@host/synapse?sslmode=disable
