@@ -1,4 +1,4 @@
-# v0.4.0 (unreleased)
+# v0.4.0 (2025-04-16)
 
 * Added support for automatic unbans (thanks to [@nexy7574] in [#2]).
 * Merged separate user and server ban commands into one with validation to
@@ -7,12 +7,16 @@
   moderation bot.
 * Added support for redacting individual events with `!redact` command.
 * Added `!redact-recent` command to redact all recent messages in a room.
-* Added `!powerlevel` command to change a power level in a room.
+* Added `!powerlevel` command to change a power level in rooms.
 * Added `!help` command to view available commands.
+* Added `!search` command to search for policies using glob patterns.
+* Added support for redacting messages on all server implementations
+  (thanks to [@nexy7574] in [#16]).
 * Fixed server ban evaluation to ignore port numbers as per
   [the spec](https://spec.matrix.org/v1.13/client-server-api/#mroomserver_acl).
 
 [#2]: https://github.com/maunium/meowlnir/pull/2
+[#16]: https://github.com/maunium/meowlnir/pull/16
 
 # v0.3.0 (2025-03-16)
 

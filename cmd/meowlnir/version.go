@@ -12,7 +12,7 @@ import (
 const (
 	Name    = "Meowlnir"
 	URL     = "https://github.com/maunium/meowlnir"
-	Version = "0.3.0"
+	Version = "0.4.0"
 )
 
 var (
