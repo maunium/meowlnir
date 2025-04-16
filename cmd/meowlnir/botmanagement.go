@@ -269,6 +269,7 @@ func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
 	didUpdate := m.loadManagementRoom(context.WithoutCancel(r.Context()), roomID, bot)
 	if didUpdate {
 		exhttp.WriteEmptyJSONResponse(w, http.StatusCreated)
+	} else {
+		exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 	}
-	exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 }
