@@ -2,7 +2,6 @@ package policyeval
 
 import (
 	"context"
-	"fmt"
 	"slices"
 
 	"github.com/rs/zerolog"
@@ -63,7 +62,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
 			Msg("Blocking invite from banned user")
-		return ptr.Ptr(mautrix.MForbidden.WithMessage(fmt.Sprintf("You're not allowed to send invites due to %s", rec.Reason)))
+		return ptr.Ptr(mautrix.MForbidden.WithMessage("You're not allowed to send invites"))
 	}
 
 	if rec = pe.Store.MatchRoom(lists, roomID).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
@@ -71,7 +70,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
 			Msg("Blocking invite to banned room")
-		return ptr.Ptr(mautrix.MForbidden.WithMessage(fmt.Sprintf("Inviting to this room is not allowed due to %s", rec.Reason)))
+		return ptr.Ptr(mautrix.MForbidden.WithMessage("Inviting users to this room is not allowed"))
 	}
 
 	if rec = pe.Store.MatchServer(lists, inviterServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
@@ -79,7 +78,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
 			Msg("Blocking invite from banned server")
-		return ptr.Ptr(mautrix.MForbidden.WithMessage(fmt.Sprintf("Inviting from your server (%s) is not allowed due to %s", inviterServer, rec.Reason)))
+		return ptr.Ptr(mautrix.MForbidden.WithMessage("You're not allowed to send invites"))
 	}
 
 	// Parsing room IDs is generally not allowed, but in this case,
@@ -90,7 +89,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
 			Msg("Blocking invite to room on banned server")
-		return ptr.Ptr(mautrix.MForbidden.WithMessage(fmt.Sprintf("Inviting to this room is not allowed due to %s", rec.Reason)))
+		return ptr.Ptr(mautrix.MForbidden.WithMessage("Inviting users to this room is not allowed"))
 	}
 
 	rec = nil
