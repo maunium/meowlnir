@@ -123,7 +123,7 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 		Msg("Policy list change")
 	removedAndAddedAreEquivalent := removed != nil && added != nil && removed.EntityOrHash() == added.EntityOrHash() && removed.Recommendation == added.Recommendation
 	sendNotice := pe.sendNotice
-	if !policyRoomMeta.NotifyOnChange {
+	if policyRoomMeta.DontNotifyOnChange {
 		sendNotice = noopSendNotice
 	}
 	if removedAndAddedAreEquivalent {
