@@ -46,8 +46,8 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 			for _, room := range rooms {
 				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
 			}
-			shouldRedact := recs.BanOrUnban.Reason == "spam" || recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown
-			if !shouldRedact && len(pe.autoRedactPatterns) > 0 && recs.BanOrUnban.Reason != "" {
+			shouldRedact := recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown
+			if !shouldRedact && recs.BanOrUnban.Reason != "" {
 				for _, pattern := range pe.autoRedactPatterns {
 					if pattern.Match(recs.BanOrUnban.Reason) {
 						shouldRedact = true

@@ -7,10 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"go.mau.fi/util/glob"
-
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exsync"
+	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"

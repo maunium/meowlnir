@@ -11,8 +11,6 @@ import (
 	"sync"
 	"syscall"
 
-	"go.mau.fi/util/glob"
-
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog"
 	up "go.mau.fi/util/configupgrade"
@@ -21,6 +19,7 @@ import (
 	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/exslices"
 	"go.mau.fi/util/exzerolog"
+	"go.mau.fi/util/glob"
 	"go.mau.fi/util/ptr"
 	"gopkg.in/yaml.v3"
 	flag "maunium.net/go/mauflag"
@@ -166,13 +165,9 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	m.EvaluatorByManagementRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
 
 	var compiledGlobs []glob.Glob
-	if len(m.Config.Meowlnir.HackyRedactPatterns) == 0 {
-		compiledGlobs = nil
-	} else {
-		for _, pattern := range m.Config.Meowlnir.HackyRedactPatterns {
-			compiled := glob.Compile(pattern)
-			compiledGlobs = append(compiledGlobs, compiled)
-		}
+	for _, pattern := range m.Config.Meowlnir.HackyRedactPatterns {
+		compiled := glob.Compile(pattern)
+		compiledGlobs = append(compiledGlobs, compiled)
 	}
 	m.HackyAutoRedactPatterns = compiledGlobs
 

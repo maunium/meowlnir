@@ -40,8 +40,7 @@ meowlnir:
     # target. The reason `spam` is already implicit. Ignored for takedowns.
     # Uses a glob pattern to match.
     hacky_redact_patterns:
-    - "example?"
-    - "redact:*"
+    - "spam"
 
 antispam:
     # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.
