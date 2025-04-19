@@ -36,6 +36,12 @@ meowlnir:
     hacky_rule_filter:
     - "@user:example.com"
     - example.com
+    # If a policy reason matches any of these patterns, the bot will automatically redact all messages from the banned
+    # target. The reason `spam` is already implicit. Ignored for takedowns.
+    # Uses a glob pattern to match.
+    hacky_redact_patterns:
+    - "example?"
+    - "redact:*"
 
 antispam:
     # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.

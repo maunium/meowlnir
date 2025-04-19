@@ -28,8 +28,9 @@ type MeowlnirConfig struct {
 	ManagementSecret string `yaml:"management_secret"`
 	DryRun           bool   `yaml:"dry_run"`
 
-	ReportRoom      id.RoomID `yaml:"report_room"`
-	HackyRuleFilter []string  `yaml:"hacky_rule_filter"`
+	ReportRoom          id.RoomID `yaml:"report_room"`
+	HackyRuleFilter     []string  `yaml:"hacky_rule_filter"`
+	HackyRedactPatterns []string  `yaml:"hacky_redact_patterns"`
 }
 
 type AntispamConfig struct {
