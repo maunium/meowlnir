@@ -42,6 +42,7 @@ func upgradeConfig(helper up.Helper) {
 		generateOrCopy(helper, "antispam", "secret")
 	}
 	helper.Copy(up.Str|up.Null, "antispam", "auto_reject_invites_token")
+	helper.Copy(up.Bool, "antispam", "filter_local_invites")
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "pickle_key"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "encryption", "pickle_key")
