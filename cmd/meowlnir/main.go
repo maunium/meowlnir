@@ -19,6 +19,7 @@ import (
 	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/exslices"
 	"go.mau.fi/util/exzerolog"
+	"go.mau.fi/util/glob"
 	"go.mau.fi/util/ptr"
 	"gopkg.in/yaml.v3"
 	flag "maunium.net/go/mauflag"
@@ -60,6 +61,7 @@ type Meowlnir struct {
 	Bots                      map[id.UserID]*bot.Bot
 	EvaluatorByProtectedRoom  map[id.RoomID]*policyeval.PolicyEvaluator
 	EvaluatorByManagementRoom map[id.RoomID]*policyeval.PolicyEvaluator
+	HackyAutoRedactPatterns   []glob.Glob
 }
 
 func (m *Meowlnir) loadSecret(secret string) [32]byte {
@@ -162,6 +164,13 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	m.EvaluatorByProtectedRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
 	m.EvaluatorByManagementRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
 
+	var compiledGlobs []glob.Glob
+	for _, pattern := range m.Config.Meowlnir.HackyRedactPatterns {
+		compiled := glob.Compile(pattern)
+		compiledGlobs = append(compiledGlobs, compiled)
+	}
+	m.HackyAutoRedactPatterns = compiledGlobs
+
 	m.Log.Info().Msg("Initialization complete")
 }
 
@@ -227,6 +236,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 		m.Config.Antispam.AutoRejectInvitesToken != "",
 		m.Config.Antispam.FilterLocalInvites,
 		m.Config.Meowlnir.DryRun,
+		m.HackyAutoRedactPatterns,
 	)
 }
 

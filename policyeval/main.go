@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exsync"
+	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -58,6 +59,7 @@ type PolicyEvaluator struct {
 	AutoRejectInvites  bool
 	FilterLocalInvites bool
 	createPuppetClient func(userID id.UserID) *mautrix.Client
+	autoRedactPatterns []glob.Glob
 }
 
 func NewPolicyEvaluator(
@@ -69,6 +71,7 @@ func NewPolicyEvaluator(
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
 	createPuppetClient func(userID id.UserID) *mautrix.Client,
 	autoRejectInvites, filterLocalInvites, dryRun bool,
+	hackyAutoRedactPatterns []glob.Glob,
 ) *PolicyEvaluator {
 	pe := &PolicyEvaluator{
 		Bot:                  bot,
@@ -89,6 +92,7 @@ func NewPolicyEvaluator(
 		AutoRejectInvites:    autoRejectInvites,
 		FilterLocalInvites:   filterLocalInvites,
 		DryRun:               dryRun,
+		autoRedactPatterns:   hackyAutoRedactPatterns,
 	}
 	return pe
 }
