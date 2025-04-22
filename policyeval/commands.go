@@ -220,7 +220,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 			return
 		}
 		reason := strings.Join(args[2:], " ")
-		redactedCount, err := pe.redactRecentMessages(ctx, room, "", since, reason)
+		redactedCount, err := pe.redactRecentMessages(ctx, room, "", since, false, reason)
 		if err != nil {
 			pe.sendNotice(ctx, "Failed to redact recent messages: %v", err)
 			return
