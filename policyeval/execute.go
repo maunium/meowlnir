@@ -252,7 +252,7 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 			Stringer("user_id", userID).
 			Msg("Falling back to history iteration based event discovery for redaction. This is slow.")
 		for _, roomID := range pe.GetProtectedRooms() {
-			redactedCount, err := pe.redactRecentMessages(ctx, roomID, userID, 24*time.Hour, reason)
+			redactedCount, err := pe.redactRecentMessages(ctx, roomID, userID, 24*time.Hour, true, reason)
 			if err != nil {
 				zerolog.Ctx(ctx).Err(err).
 					Stringer("user_id", userID).
@@ -294,7 +294,7 @@ func (pe *PolicyEvaluator) redactEventsInRoom(ctx context.Context, userID id.Use
 	return
 }
 
-func (pe *PolicyEvaluator) redactRecentMessages(ctx context.Context, roomID id.RoomID, sender id.UserID, maxAge time.Duration, reason string) (int, error) {
+func (pe *PolicyEvaluator) redactRecentMessages(ctx context.Context, roomID id.RoomID, sender id.UserID, maxAge time.Duration, redactState bool, reason string) (int, error) {
 	var pls event.PowerLevelsEventContent
 	err := pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &pls)
 	if err != nil {
@@ -315,7 +315,7 @@ func (pe *PolicyEvaluator) redactRecentMessages(ctx context.Context, roomID id.R
 		for _, evt := range events.Chunk {
 			if evt.Timestamp < minTS {
 				return redactedCount, nil
-			} else if evt.StateKey != nil ||
+			} else if (evt.StateKey != nil && !redactState) ||
 				evt.Type == event.EventRedaction ||
 				pls.GetUserLevel(evt.Sender) >= pls.Redact() ||
 				evt.Unsigned.RedactedBecause != nil {
