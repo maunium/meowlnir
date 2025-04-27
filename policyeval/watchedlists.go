@@ -102,6 +102,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	pe.watchedListsMap = watchedMap
 	pe.watchedListsList = watchedList
 	pe.watchedListsForACLs = aclWatchedList
+	pe.watchedListsEvent = content
 	pe.watchedListsLock.Unlock()
 	if !isInitial {
 		unsubscribed, subscribed := exslices.Diff(oldWatchedList, watchedList)

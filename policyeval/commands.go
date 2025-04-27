@@ -19,6 +19,7 @@ import (
 	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
+	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/util"
 )
@@ -602,6 +603,75 @@ var cmdSendAsBot = &commands.Handler[*PolicyEvaluator]{
 			ce.Reply("Failed to send message to [%s](%s): %v", target, target.URI().MatrixToURL(), err)
 		} else {
 			ce.Reply("Sent message to [%s](%s): [%s](%s)", target, target.URI().MatrixToURL(), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
+		}
+	},
+}
+
+var cmdRooms = &commands.Handler[*PolicyEvaluator]{
+	Name:    "rooms",
+	Aliases: []string{"room", "protect", "unprotect"},
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if ce.Command == "rooms" || ce.Command == "room" {
+			if len(ce.Args) == 0 {
+				ce.Command = "list"
+			} else {
+				ce.Command = strings.ToLower(ce.Args[0])
+				ce.Args = ce.Args[1:]
+			}
+		}
+		switch ce.Command {
+		case "protect", "unprotect":
+			if len(ce.Args) < 1 {
+				ce.Reply("Usage: `!rooms <protect/unprotect> <room ID or alias>...`")
+				return
+			}
+			ce.Meta.protectedRoomsLock.RLock()
+			contentCopy := *ce.Meta.protectedRoomsEvent
+			contentCopy.Rooms = slices.Clone(contentCopy.Rooms)
+			ce.Meta.protectedRoomsLock.RUnlock()
+			changed := false
+			for _, room := range ce.Args {
+				roomID := resolveRoom(ce, room)
+				if roomID == "" {
+					continue
+				}
+				itemIdx := slices.Index(contentCopy.Rooms, roomID)
+				if ce.Command == "protect" {
+					if itemIdx >= 0 {
+						ce.Reply("`%s` is already protected", roomID)
+						continue
+					}
+					contentCopy.Rooms = append(contentCopy.Rooms, roomID)
+					changed = true
+				} else {
+					if itemIdx < 0 {
+						ce.Reply("`%s` is not protected", roomID)
+						continue
+					}
+					contentCopy.Rooms = slices.Delete(contentCopy.Rooms, itemIdx, itemIdx+1)
+					changed = true
+				}
+			}
+			if changed {
+				_, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateProtectedRooms, "", &contentCopy)
+				if err != nil {
+					ce.Reply("Failed to update protected rooms: %v", err)
+					return
+				}
+				ce.React(SuccessReaction)
+			}
+		case "list":
+			var buf strings.Builder
+			buf.WriteString("Protected rooms:\n\n")
+			serverName := ce.Meta.Bot.UserID.Homeserver()
+			ce.Meta.protectedRoomsLock.RLock()
+			for roomID, meta := range ce.Meta.protectedRooms {
+				_, _ = fmt.Fprintf(&buf, "* [%s](%s) (`%s`)\n", meta.Name, roomID.URI(serverName).MatrixToURL(), roomID)
+			}
+			ce.Meta.protectedRoomsLock.RUnlock()
+			ce.Reply(buf.String())
+		default:
+			ce.Reply("Unknown subcommand `!rooms %s`", ce.Command)
 		}
 	},
 }

@@ -40,6 +40,7 @@ type PolicyEvaluator struct {
 
 	commandProcessor *commands.Processor[*PolicyEvaluator]
 
+	watchedListsEvent   *config.WatchedListsEventContent
 	watchedListsMap     map[id.RoomID]*config.WatchedPolicyList
 	watchedListsList    []id.RoomID
 	watchedListsForACLs []id.RoomID
@@ -49,6 +50,7 @@ type PolicyEvaluator struct {
 	aclLock    sync.Mutex
 
 	claimProtected       func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator
+	protectedRoomsEvent  *config.ProtectedRoomsEventContent
 	protectedRooms       map[id.RoomID]*protectedRoomMeta
 	wantToProtect        map[id.RoomID]struct{}
 	isJoining            map[id.RoomID]struct{}
@@ -119,6 +121,7 @@ func NewPolicyEvaluator(
 		cmdMatch,
 		cmdSearch,
 		cmdSendAsBot,
+		cmdRooms,
 		cmdHelp,
 	)
 	return pe

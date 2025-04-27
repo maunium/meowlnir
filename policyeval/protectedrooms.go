@@ -178,6 +178,7 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 		return nil, []string{"* Failed to parse protected rooms event"}
 	}
 	pe.protectedRoomsLock.Lock()
+	pe.protectedRoomsEvent = content
 	pe.skipACLForRooms = content.SkipACL
 	for roomID := range pe.protectedRooms {
 		if !slices.Contains(content.Rooms, roomID) {
