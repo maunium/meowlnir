@@ -24,6 +24,9 @@ import (
 	"go.mau.fi/meowlnir/util"
 )
 
+type CommandEvent = commands.Event[*PolicyEvaluator]
+type CommandHandler = commands.Handler[*PolicyEvaluator]
+
 const SuccessReaction = "✅"
 
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
@@ -40,9 +43,9 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 	pe.commandProcessor.Process(ctx, evt)
 }
 
-var cmdJoin = &commands.Handler[*PolicyEvaluator]{
+var cmdJoin = &CommandHandler{
 	Name: "join",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) == 0 {
 			ce.Reply("Usage: `!join <room ID>...`")
 			return
@@ -59,9 +62,9 @@ var cmdJoin = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdKnock = &commands.Handler[*PolicyEvaluator]{
+var cmdKnock = &CommandHandler{
 	Name: "knock",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) == 0 {
 			ce.Reply("Usage: `!knock <rooms...>`")
 			return
@@ -78,9 +81,9 @@ var cmdKnock = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdLeave = &commands.Handler[*PolicyEvaluator]{
+var cmdLeave = &CommandHandler{
 	Name: "leave",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) == 0 {
 			ce.Reply("Usage: `!leave <room ID>...`")
 			return
@@ -100,10 +103,10 @@ var cmdLeave = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdPowerLevel = &commands.Handler[*PolicyEvaluator]{
+var cmdPowerLevel = &CommandHandler{
 	Name:    "powerlevel",
 	Aliases: []string{"pl"},
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 
 		if len(ce.Args) < 1 {
 			ce.Reply("Usage: `!powerlevel <room|all> <key> <level>`")
@@ -192,9 +195,9 @@ var cmdPowerLevel = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdRedact = &commands.Handler[*PolicyEvaluator]{
+var cmdRedact = &CommandHandler{
 	Name: "redact",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) < 1 {
 			ce.Reply("Usage: `!redact <event link or user ID> [reason]`")
 			return
@@ -230,9 +233,9 @@ var cmdRedact = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdRedactRecent = &commands.Handler[*PolicyEvaluator]{
+var cmdRedactRecent = &CommandHandler{
 	Name: "redact-recent",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) < 2 {
 			ce.Reply("Usage: `!redact-recent <room ID> <since duration> [reason]`")
 			return
@@ -257,9 +260,9 @@ var cmdRedactRecent = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdKick = &commands.Handler[*PolicyEvaluator]{
+var cmdKick = &CommandHandler{
 	Name: "kick",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) < 1 {
 			ce.Reply("Usage: `!kick <user ID> [reason]`")
 			return
@@ -308,10 +311,10 @@ var cmdKick = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdBan = &commands.Handler[*PolicyEvaluator]{
+var cmdBan = &CommandHandler{
 	Name:    "ban",
 	Aliases: []string{"takedown"},
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) < 2 {
 			ce.Reply("Usage: `%s [--hash] <list shortcode> <entity> [reason]`", ce.Command)
 			return
@@ -372,10 +375,10 @@ var cmdBan = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdRemovePolicy = &commands.Handler[*PolicyEvaluator]{
+var cmdRemovePolicy = &CommandHandler{
 	Name:    "remove-policy",
 	Aliases: []string{"remove-ban", "remove-unban"},
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) < 2 {
 			ce.Reply("Usage: `!remove-policy <list> <entity>`")
 			return
@@ -423,9 +426,9 @@ var cmdRemovePolicy = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdAddUnban = &commands.Handler[*PolicyEvaluator]{
+var cmdAddUnban = &CommandHandler{
 	Name: "add-unban",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) < 2 {
 			ce.Reply("Usage: `!add-unban <list shortcode> <entity> <reason>`")
 			return
@@ -473,9 +476,9 @@ var cmdAddUnban = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdMatch = &commands.Handler[*PolicyEvaluator]{
+var cmdMatch = &CommandHandler{
 	Name: "match",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		target := ce.Args[0]
 		targetUser := id.UserID(target)
 		userIDHash, ok := util.DecodeBase64Hash(target)
@@ -539,9 +542,9 @@ var cmdMatch = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdSearch = &commands.Handler[*PolicyEvaluator]{
+var cmdSearch = &CommandHandler{
 	Name: "search",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		target := ce.Args[0]
 		start := time.Now()
 		match := ce.Meta.Store.Search(nil, target)
@@ -584,9 +587,9 @@ var cmdSearch = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdSendAsBot = &commands.Handler[*PolicyEvaluator]{
+var cmdSendAsBot = &CommandHandler{
 	Name: "send-as-bot",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) < 2 {
 			ce.Reply("Usage: `!send-as-bot <room ID> <message>`")
 			return
@@ -607,10 +610,10 @@ var cmdSendAsBot = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdRooms = &commands.Handler[*PolicyEvaluator]{
+var cmdRooms = &CommandHandler{
 	Name:    "rooms",
 	Aliases: []string{"room", "protect", "unprotect"},
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if ce.Command == "rooms" || ce.Command == "room" {
 			if len(ce.Args) == 0 {
 				ce.Command = "list"
@@ -676,9 +679,9 @@ var cmdRooms = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-var cmdHelp = &commands.Handler[*PolicyEvaluator]{
+var cmdHelp = &CommandHandler{
 	Name: "help",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+	Func: func(ce *CommandEvent) {
 		if len(ce.Args) == 0 {
 			ce.Reply("Available commands:\n" +
 				"* `!join <rooms...>` - Join a room\n" +
@@ -709,7 +712,7 @@ var cmdHelp = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-func resolveRoom(ce *commands.Event[*PolicyEvaluator], room string) id.RoomID {
+func resolveRoom(ce *CommandEvent, room string) id.RoomID {
 	if strings.HasPrefix(room, "#") {
 		resp, err := ce.Meta.Bot.ResolveAlias(ce.Ctx, id.RoomAlias(room))
 		if err != nil {
