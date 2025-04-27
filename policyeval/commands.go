@@ -85,7 +85,7 @@ var cmdLeave = &commands.Handler[*PolicyEvaluator]{
 			return
 		}
 		for _, arg := range ce.Args {
-			target := ce.Meta.resolveRoom(ce.Ctx, arg)
+			target := resolveRoom(ce, arg)
 			if target == "" {
 				continue
 			}
@@ -112,7 +112,7 @@ var cmdPowerLevel = &commands.Handler[*PolicyEvaluator]{
 		if ce.Args[0] == "all" {
 			rooms = ce.Meta.GetProtectedRooms()
 		} else {
-			room := ce.Meta.resolveRoom(ce.Ctx, ce.Args[0])
+			room := resolveRoom(ce, ce.Args[0])
 			if room == "" {
 				return
 			}
@@ -236,7 +236,7 @@ var cmdRedactRecent = &commands.Handler[*PolicyEvaluator]{
 			ce.Reply("Usage: `!redact-recent <room ID> <since duration> [reason]`")
 			return
 		}
-		room := ce.Meta.resolveRoom(ce.Ctx, ce.Args[0])
+		room := resolveRoom(ce, ce.Args[0])
 		if room == "" {
 			return
 		}
@@ -590,7 +590,7 @@ var cmdSendAsBot = &commands.Handler[*PolicyEvaluator]{
 			ce.Reply("Usage: `!send-as-bot <room ID> <message>`")
 			return
 		}
-		target := ce.Meta.resolveRoom(ce.Ctx, ce.Args[0])
+		target := resolveRoom(ce, ce.Args[0])
 		if target == "" {
 			return
 		}
@@ -639,14 +639,14 @@ var cmdHelp = &commands.Handler[*PolicyEvaluator]{
 	},
 }
 
-func (pe *PolicyEvaluator) resolveRoom(ctx context.Context, room string) id.RoomID {
+func resolveRoom(ce *commands.Event[*PolicyEvaluator], room string) id.RoomID {
 	if strings.HasPrefix(room, "#") {
-		resp, err := pe.Bot.ResolveAlias(ctx, id.RoomAlias(room))
+		resp, err := ce.Meta.Bot.ResolveAlias(ce.Ctx, id.RoomAlias(room))
 		if err != nil {
-			zerolog.Ctx(ctx).Warn().Err(err).
+			zerolog.Ctx(ce.Ctx).Warn().Err(err).
 				Str("room_input", room).
 				Msg("Failed to resolve alias")
-			pe.sendNotice(ctx, "Failed to resolve alias `%s`: %v", room, err)
+			ce.Reply("Failed to resolve alias `%s`: %v", format.EscapeMarkdown(room), err)
 			return ""
 		}
 		return resp.RoomID
