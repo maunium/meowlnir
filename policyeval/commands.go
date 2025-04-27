@@ -53,9 +53,9 @@ var cmdJoin = &CommandHandler{
 		for _, arg := range ce.Args {
 			_, err := ce.Meta.Bot.JoinRoom(ce.Ctx, arg, nil)
 			if err != nil {
-				ce.Reply("Failed to join room `%s`: %v", format.EscapeMarkdown(arg), err)
+				ce.Reply("Failed to join room %s: %v", format.SafeMarkdownCode(arg), err)
 			} else {
-				ce.Reply("Joined room `%s`", format.EscapeMarkdown(arg))
+				ce.Reply("Joined room %s", format.SafeMarkdownCode(arg))
 			}
 		}
 		ce.React(SuccessReaction)
@@ -72,9 +72,9 @@ var cmdKnock = &CommandHandler{
 		for _, arg := range ce.Args {
 			_, err := ce.Meta.Bot.KnockRoom(ce.Ctx, arg, nil)
 			if err != nil {
-				ce.Reply("Failed to knock on room `%s`: %v", format.EscapeMarkdown(arg), err)
+				ce.Reply("Failed to knock on room %s: %v", format.SafeMarkdownCode(arg), err)
 			} else {
-				ce.Reply("Requested to join room `%s`", format.EscapeMarkdown(arg))
+				ce.Reply("Requested to join room %s", format.SafeMarkdownCode(arg))
 			}
 		}
 		ce.React(SuccessReaction)
@@ -95,9 +95,9 @@ var cmdLeave = &CommandHandler{
 			}
 			_, err := ce.Meta.Bot.LeaveRoom(ce.Ctx, target)
 			if err != nil {
-				ce.Reply("Failed to leave room %q: %v", arg, err)
+				ce.Reply("Failed to leave room %s: %v", format.SafeMarkdownCode(arg), err)
 			} else {
-				ce.Reply("Left room %q", arg)
+				ce.Reply("Left room %s", format.SafeMarkdownCode(arg))
 			}
 		}
 	},
@@ -125,14 +125,14 @@ var cmdPowerLevel = &CommandHandler{
 		key := ce.Args[1]
 		level, err := strconv.Atoi(ce.Args[2])
 		if err != nil {
-			ce.Reply("Invalid power level `%s`: %v", ce.Args[2], err)
+			ce.Reply("Invalid power level %s: %v", format.SafeMarkdownCode(ce.Args[2]), err)
 			return
 		}
 		for _, room := range rooms {
 			var pls event.PowerLevelsEventContent
 			err = ce.Meta.Bot.Client.StateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
-				ce.Reply("Failed to get power levels in `%s`: %v", room, err)
+				ce.Reply("Failed to get power levels in %s: %v", format.SafeMarkdownCode(room), err)
 				return
 			}
 			const MagicUnsetValue = -1644163703
@@ -177,17 +177,22 @@ var cmdPowerLevel = &CommandHandler{
 					}
 					pls.Events[key] = level
 				} else {
-					ce.Reply("Invalid power level key `%s`", key)
+					ce.Reply("Invalid power level key %s", format.SafeMarkdownCode(key))
 					return
 				}
 			}
 			if oldLevel == level && oldLevel != MagicUnsetValue {
-				ce.Reply("Power level for `%s` in `%s` is already set to `%d`", key, room, level)
+				ce.Reply(
+					"Power level for %s in %s is already set to %s",
+					format.SafeMarkdownCode(key),
+					format.SafeMarkdownCode(room),
+					format.SafeMarkdownCode(strconv.Itoa(level)),
+				)
 				continue
 			}
 			_, err = ce.Meta.Bot.Client.SendStateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
-				ce.Reply("Failed to set power levels in `%s`: %v", room, err)
+				ce.Reply("Failed to set power levels in %s: %v", format.SafeMarkdownCode(room), err)
 				continue
 			}
 		}
@@ -212,7 +217,7 @@ var cmdRedact = &CommandHandler{
 		} else {
 			target, err = id.ParseMatrixURIOrMatrixToURL(ce.Args[0])
 			if err != nil {
-				ce.Reply("Failed to parse `%s`: %v", ce.Args[0], err)
+				ce.Reply("Failed to parse %s: %v", format.SafeMarkdownCode(ce.Args[0]), err)
 				return
 			}
 		}
@@ -222,11 +227,11 @@ var cmdRedact = &CommandHandler{
 		} else if target.Sigil1 == '!' && target.Sigil2 == '$' {
 			_, err = ce.Meta.Bot.RedactEvent(ce.Ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: reason})
 			if err != nil {
-				ce.Reply("Failed to redact event `%s`: %v", target.EventID(), err)
+				ce.Reply("Failed to redact event %s: %v", format.SafeMarkdownCode(target.EventID()), err)
 				return
 			}
 		} else {
-			ce.Reply("Invalid target `%s` (must be a user ID or event link)", ce.Args[0])
+			ce.Reply("Invalid target %s (must be a user ID or event link)", format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
 		ce.React(SuccessReaction)
@@ -246,7 +251,7 @@ var cmdRedactRecent = &CommandHandler{
 		}
 		since, err := time.ParseDuration(ce.Args[1])
 		if err != nil {
-			ce.Reply("Invalid duration `%s`: %v", ce.Args[1], err)
+			ce.Reply("Invalid duration %s: %v", format.SafeMarkdownCode(ce.Args[1]), err)
 			return
 		}
 		reason := strings.Join(ce.Args[2:], " ")
@@ -276,7 +281,7 @@ var cmdKick = &CommandHandler{
 		users := slices.Collect(ce.Meta.findMatchingUsers(pattern, nil, true))
 		if len(users) > 10 && !ignoreUserLimit {
 			// TODO replace the force flag with a reaction confirmation
-			ce.Reply("%d users matching `%s` found, use `--force` to kick all of them.", len(users), ce.Args[0])
+			ce.Reply("%d users matching %s found, use `--force` to kick all of them.", len(users), format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
 		for _, userID := range users {
@@ -296,15 +301,15 @@ var cmdKick = &CommandHandler{
 					})
 				}
 				if err != nil {
-					ce.Reply("Failed to kick `%s` from `%s`: %v", userID, room, err)
+					ce.Reply("Failed to kick %s from %s: %v", format.SafeMarkdownCode(userID), format.SafeMarkdownCode(room), err)
 				} else {
 					successCount++
 				}
 			}
-			ce.Reply("Kicked `%s` from %d rooms: %s", userID, successCount, strings.Join(roomStrings, ", "))
+			ce.Reply("Kicked %s from %d rooms: %s", format.SafeMarkdownCode(userID), successCount, strings.Join(roomStrings, ", "))
 		}
 		if len(users) == 0 {
-			ce.Reply("No users matching `%s` found in any rooms", ce.Args[0])
+			ce.Reply("No users matching %s found in any rooms", format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
 		ce.React(SuccessReaction)
@@ -325,18 +330,18 @@ var cmdBan = &CommandHandler{
 		}
 		list := ce.Meta.FindListByShortcode(ce.Args[0])
 		if list == nil {
-			ce.Reply(`List %q not found`, ce.Args[0])
+			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
 		target := ce.Args[1]
 		entityType, ok := validateEntity(target)
 		if !ok {
-			ce.Reply("Invalid entity `%s`", target)
+			ce.Reply("Invalid entity %s", format.SafeMarkdownCode(target))
 			return
 		}
 		match := ce.Meta.Store.MatchExact(ce.Meta.GetWatchedLists(), entityType, target)
 		if rec := match.Recommendations().BanOrUnban; rec != nil && rec.Recommendation == event.PolicyRecommendationUnban {
-			ce.Reply("`%s` has an unban recommendation: %s", target, rec.Reason)
+			ce.Reply("%s has an unban recommendation: %s", format.SafeMarkdownCode(target), format.SafeMarkdownCode(rec.Reason))
 			return
 		}
 		var existingStateKey string
@@ -363,7 +368,7 @@ var cmdBan = &CommandHandler{
 		}
 		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
 		if err != nil {
-			ce.Reply(`Failed to send ban policy: %v`, err)
+			ce.Reply("Failed to send ban policy: %v", err)
 			return
 		}
 		zerolog.Ctx(ce.Ctx).Info().
@@ -385,36 +390,36 @@ var cmdRemovePolicy = &CommandHandler{
 		}
 		list := ce.Meta.FindListByShortcode(ce.Args[0])
 		if list == nil {
-			ce.Reply(`List %q not found`, ce.Args[0])
+			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
 		target := ce.Args[1]
 		entityType, ok := validateEntity(target)
 		if !ok {
-			ce.Reply("Invalid entity `%s`", target)
+			ce.Reply("Invalid entity %s", format.SafeMarkdownCode(target))
 			return
 		}
 		var existingStateKey string
 		match := ce.Meta.Store.MatchExact([]id.RoomID{list.RoomID}, entityType, target)
 		if len(match) == 0 {
-			ce.Reply("No rule banning `%s` found in [%s](%s)", target, list.Name, list.RoomID.URI().MatrixToURL())
+			ce.Reply("No rule banning %s found in [%s](%s)", format.SafeMarkdownCode(target), format.EscapeMarkdown(list.Name), list.RoomID.URI().MatrixToURL())
 			return
 		}
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			existingStateKey = rec.StateKey
 			// TODO: handle wildcards and multiple matches, etc
 			if ce.Command == "remove-unban" && rec.Recommendation != event.PolicyRecommendationUnban {
-				ce.Reply("`%s` does not have an unban recommendation", target)
+				ce.Reply("%s does not have an unban recommendation", format.SafeMarkdownCode(target))
 				return
 			} else if ce.Command == "remove-ban" && rec.Recommendation != event.PolicyRecommendationBan {
-				ce.Reply("`%s` does not have a ban recommendation", target)
+				ce.Reply("%s does not have a ban recommendation", format.SafeMarkdownCode(target))
 				return
 			}
 		}
 		policy := &event.ModPolicyContent{}
 		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
 		if err != nil {
-			ce.Reply(`Failed to remove policy: %v`, err)
+			ce.Reply("Failed to remove policy: %v", err)
 			return
 		}
 		zerolog.Ctx(ce.Ctx).Info().
@@ -435,7 +440,7 @@ var cmdAddUnban = &CommandHandler{
 		}
 		list := ce.Meta.FindListByShortcode(ce.Args[0])
 		if list == nil {
-			ce.Reply(`List %q not found`, ce.Args[0])
+			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
 		target := ce.Args[1]
@@ -451,7 +456,7 @@ var cmdAddUnban = &CommandHandler{
 		var existingStateKey string
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			if rec.Recommendation == event.PolicyRecommendationUnban {
-				ce.Reply("`%s` already has an unban recommendation: %s", target, rec.Reason)
+				ce.Reply("%s already has an unban recommendation: %s", format.SafeMarkdownCode(target), format.SafeMarkdownCode(rec.Reason))
 				return
 			} else if rec.RoomID == list.RoomID {
 				existingStateKey = rec.StateKey
@@ -464,7 +469,7 @@ var cmdAddUnban = &CommandHandler{
 		}
 		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
 		if err != nil {
-			ce.Reply(`Failed to send unban policy: %v`, err)
+			ce.Reply("Failed to send unban policy: %v", err)
 			return
 		}
 		zerolog.Ctx(ce.Ctx).Info().
@@ -485,11 +490,11 @@ var cmdMatch = &CommandHandler{
 		if ok {
 			targetUser, ok = ce.Meta.getUserIDFromHash(*userIDHash)
 			if !ok {
-				ce.Reply("No user found for hash `%s`", target)
+				ce.Reply("No user found for hash %s", format.SafeMarkdownCode(target))
 				return
 			}
 			target = targetUser.String()
-			ce.Reply("Matched user `%s` for hash `%s`", targetUser, target)
+			ce.Reply("Matched user %s for hash %s", format.SafeMarkdownCode(targetUser.String()), format.SafeMarkdownCode(target))
 		}
 		entityType, _ := validateEntity(target)
 		var dur time.Duration
@@ -522,7 +527,7 @@ var cmdMatch = &CommandHandler{
 			match = ce.Meta.Store.MatchServer(nil, target)
 			dur = time.Since(start)
 		} else {
-			ce.Reply("Invalid entity `%s`", target)
+			ce.Reply("Invalid entity %s", format.SafeMarkdownCode(target))
 			return
 		}
 		if match != nil {
@@ -532,10 +537,23 @@ var cmdMatch = &CommandHandler{
 				if meta := ce.Meta.GetWatchedListMeta(policy.RoomID); meta != nil {
 					policyRoomName = meta.Name
 				}
-				eventStrings[i] = fmt.Sprintf("* [%s] [%s](%s) set recommendation `%s` for `%s` at %s for `%s`",
-					policyRoomName, policy.Sender, policy.Sender.URI().MatrixToURL(), policy.Recommendation, policy.EntityOrHash(), time.UnixMilli(policy.Timestamp), policy.Reason)
+				eventStrings[i] = fmt.Sprintf(
+					"* [%s] [%s](%s) set recommendation %s for %s at %s for %s",
+					format.EscapeMarkdown(policyRoomName),
+					policy.Sender,
+					policy.Sender.URI().MatrixToURL(),
+					format.SafeMarkdownCode(policy.Recommendation),
+					format.SafeMarkdownCode(policy.EntityOrHash()),
+					format.EscapeMarkdown(time.UnixMilli(policy.Timestamp).String()),
+					format.SafeMarkdownCode(policy.Reason),
+				)
 			}
-			ce.Reply("Matched in %s with recommendation %s\n\n%s", dur, match.Recommendations(), strings.Join(eventStrings, "\n"))
+			ce.Reply(
+				"Matched in %s with recommendation %s\n\n%s",
+				dur.String(),
+				format.SafeMarkdownCode(match.Recommendations().String()),
+				strings.Join(eventStrings, "\n"),
+			)
 		} else {
 			ce.Reply("No match in %s", dur)
 		}
@@ -558,8 +576,17 @@ var cmdSearch = &CommandHandler{
 				if meta := ce.Meta.GetWatchedListMeta(policy.RoomID); meta != nil {
 					policyRoomName = meta.Name
 				}
-				eventStrings[i] = fmt.Sprintf("* [%s] [%s](%s) set recommendation `%s` for %ss matching `%s` at %s for `%s`",
-					policyRoomName, policy.Sender, policy.Sender.URI().MatrixToURL(), policy.Recommendation, policy.EntityType, policy.EntityOrHash(), time.UnixMilli(policy.Timestamp), policy.Reason)
+				eventStrings[i] = fmt.Sprintf(
+					"* [%s] [%s](%s) set recommendation %s for %ss matching %s at %s for %s",
+					format.EscapeMarkdown(policyRoomName),
+					policy.Sender,
+					policy.Sender.URI().MatrixToURL(),
+					format.SafeMarkdownCode(policy.Recommendation),
+					policy.EntityType,
+					format.SafeMarkdownCode(policy.EntityOrHash()),
+					format.EscapeMarkdown(time.UnixMilli(policy.Timestamp).String()),
+					format.SafeMarkdownCode(policy.Reason),
+				)
 			}
 			ce.Reply("Found %d results in %s:\n\n%s", len(match), dur, strings.Join(eventStrings, "\n"))
 		} else {
@@ -568,20 +595,20 @@ var cmdSearch = &CommandHandler{
 		if strings.HasPrefix(target, "@") {
 			users := slices.Collect(ce.Meta.findMatchingUsers(glob.Compile(target), nil, true))
 			if len(users) > 25 {
-				ce.Reply("Found %d users matching `%s` in protected rooms (too many to list)", len(users), target)
+				ce.Reply("Found %d users matching %s in protected rooms (too many to list)", len(users), format.SafeMarkdownCode(target))
 			} else if len(users) > 0 {
 				userStrings := make([]string, len(users))
 				for i, user := range users {
 					userStrings[i] = fmt.Sprintf("* [%s](%s)", user, user.URI().MatrixToURL())
 				}
 				ce.Meta.sendNotice(
-					ce.Ctx, "Found %d users matching `%s` in protected rooms:\n\n%s",
+					ce.Ctx, "Found %d users matching %s in protected rooms:\n\n%s",
 					len(users),
-					target,
+					format.SafeMarkdownCode(target),
 					strings.Join(userStrings, "\n"),
 				)
 			} else {
-				ce.Reply("No users matching `%s` found in protected rooms", target)
+				ce.Reply("No users matching %s found in protected rooms", format.SafeMarkdownCode(target))
 			}
 		}
 	},
@@ -629,7 +656,7 @@ var cmdListProtectedRooms = &CommandHandler{
 		serverName := ce.Meta.Bot.UserID.Homeserver()
 		ce.Meta.protectedRoomsLock.RLock()
 		for roomID, meta := range ce.Meta.protectedRooms {
-			_, _ = fmt.Fprintf(&buf, "* [%s](%s) (`%s`)\n", meta.Name, roomID.URI(serverName).MatrixToURL(), roomID)
+			_, _ = fmt.Fprintf(&buf, "* [%s](%s) (%s)\n", format.EscapeMarkdown(meta.Name), roomID.URI(serverName).MatrixToURL(), format.SafeMarkdownCode(roomID))
 		}
 		ce.Meta.protectedRoomsLock.RUnlock()
 		ce.Reply(buf.String())
@@ -657,14 +684,14 @@ var cmdProtectRoom = &CommandHandler{
 			itemIdx := slices.Index(contentCopy.Rooms, roomID)
 			if ce.Command == "protect" {
 				if itemIdx >= 0 {
-					ce.Reply("`%s` is already protected", roomID)
+					ce.Reply("%s is already protected", format.SafeMarkdownCode(roomID))
 					continue
 				}
 				contentCopy.Rooms = append(contentCopy.Rooms, roomID)
 				changed = true
 			} else {
 				if itemIdx < 0 {
-					ce.Reply("`%s` is not protected", roomID)
+					ce.Reply("%s is not protected", format.SafeMarkdownCode(roomID))
 					continue
 				}
 				contentCopy.Rooms = slices.Delete(contentCopy.Rooms, itemIdx, itemIdx+1)
@@ -722,7 +749,7 @@ func resolveRoom(ce *CommandEvent, room string) id.RoomID {
 			zerolog.Ctx(ce.Ctx).Warn().Err(err).
 				Str("room_input", room).
 				Msg("Failed to resolve alias")
-			ce.Reply("Failed to resolve alias `%s`: %v", format.EscapeMarkdown(room), err)
+			ce.Reply("Failed to resolve alias %s: %v", format.SafeMarkdownCode(room), err)
 			return ""
 		}
 		return resp.RoomID
