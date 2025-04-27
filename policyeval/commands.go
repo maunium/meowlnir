@@ -612,69 +612,72 @@ var cmdSendAsBot = &CommandHandler{
 
 var cmdRooms = &CommandHandler{
 	Name:    "rooms",
-	Aliases: []string{"room", "protect", "unprotect"},
+	Aliases: []string{"room"},
+	Subcommands: []*CommandHandler{
+		cmdListProtectedRooms,
+		cmdProtectRoom,
+		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
+	},
+	Func: cmdListProtectedRooms.Func,
+}
+
+var cmdListProtectedRooms = &CommandHandler{
+	Name: "list",
 	Func: func(ce *CommandEvent) {
-		if ce.Command == "rooms" || ce.Command == "room" {
-			if len(ce.Args) == 0 {
-				ce.Command = "list"
-			} else {
-				ce.Command = strings.ToLower(ce.Args[0])
-				ce.Args = ce.Args[1:]
-			}
+		var buf strings.Builder
+		buf.WriteString("Protected rooms:\n\n")
+		serverName := ce.Meta.Bot.UserID.Homeserver()
+		ce.Meta.protectedRoomsLock.RLock()
+		for roomID, meta := range ce.Meta.protectedRooms {
+			_, _ = fmt.Fprintf(&buf, "* [%s](%s) (`%s`)\n", meta.Name, roomID.URI(serverName).MatrixToURL(), roomID)
 		}
-		switch ce.Command {
-		case "protect", "unprotect":
-			if len(ce.Args) < 1 {
-				ce.Reply("Usage: `!rooms <protect/unprotect> <room ID or alias>...`")
-				return
+		ce.Meta.protectedRoomsLock.RUnlock()
+		ce.Reply(buf.String())
+	},
+}
+
+var cmdProtectRoom = &CommandHandler{
+	Name:    "protect",
+	Aliases: []string{"unprotect"},
+	Func: func(ce *CommandEvent) {
+		if len(ce.Args) < 1 {
+			ce.Reply("Usage: `!rooms <protect/unprotect> <room ID or alias>...`")
+			return
+		}
+		ce.Meta.protectedRoomsLock.RLock()
+		contentCopy := *ce.Meta.protectedRoomsEvent
+		contentCopy.Rooms = slices.Clone(contentCopy.Rooms)
+		ce.Meta.protectedRoomsLock.RUnlock()
+		changed := false
+		for _, room := range ce.Args {
+			roomID := resolveRoom(ce, room)
+			if roomID == "" {
+				continue
 			}
-			ce.Meta.protectedRoomsLock.RLock()
-			contentCopy := *ce.Meta.protectedRoomsEvent
-			contentCopy.Rooms = slices.Clone(contentCopy.Rooms)
-			ce.Meta.protectedRoomsLock.RUnlock()
-			changed := false
-			for _, room := range ce.Args {
-				roomID := resolveRoom(ce, room)
-				if roomID == "" {
+			itemIdx := slices.Index(contentCopy.Rooms, roomID)
+			if ce.Command == "protect" {
+				if itemIdx >= 0 {
+					ce.Reply("`%s` is already protected", roomID)
 					continue
 				}
-				itemIdx := slices.Index(contentCopy.Rooms, roomID)
-				if ce.Command == "protect" {
-					if itemIdx >= 0 {
-						ce.Reply("`%s` is already protected", roomID)
-						continue
-					}
-					contentCopy.Rooms = append(contentCopy.Rooms, roomID)
-					changed = true
-				} else {
-					if itemIdx < 0 {
-						ce.Reply("`%s` is not protected", roomID)
-						continue
-					}
-					contentCopy.Rooms = slices.Delete(contentCopy.Rooms, itemIdx, itemIdx+1)
-					changed = true
+				contentCopy.Rooms = append(contentCopy.Rooms, roomID)
+				changed = true
+			} else {
+				if itemIdx < 0 {
+					ce.Reply("`%s` is not protected", roomID)
+					continue
 				}
+				contentCopy.Rooms = slices.Delete(contentCopy.Rooms, itemIdx, itemIdx+1)
+				changed = true
 			}
-			if changed {
-				_, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateProtectedRooms, "", &contentCopy)
-				if err != nil {
-					ce.Reply("Failed to update protected rooms: %v", err)
-					return
-				}
-				ce.React(SuccessReaction)
+		}
+		if changed {
+			_, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateProtectedRooms, "", &contentCopy)
+			if err != nil {
+				ce.Reply("Failed to update protected rooms: %v", err)
+				return
 			}
-		case "list":
-			var buf strings.Builder
-			buf.WriteString("Protected rooms:\n\n")
-			serverName := ce.Meta.Bot.UserID.Homeserver()
-			ce.Meta.protectedRoomsLock.RLock()
-			for roomID, meta := range ce.Meta.protectedRooms {
-				_, _ = fmt.Fprintf(&buf, "* [%s](%s) (`%s`)\n", meta.Name, roomID.URI(serverName).MatrixToURL(), roomID)
-			}
-			ce.Meta.protectedRoomsLock.RUnlock()
-			ce.Reply(buf.String())
-		default:
-			ce.Reply("Unknown subcommand `!rooms %s`", ce.Command)
+			ce.React(SuccessReaction)
 		}
 	},
 }

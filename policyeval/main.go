@@ -122,6 +122,7 @@ func NewPolicyEvaluator(
 		cmdSearch,
 		cmdSendAsBot,
 		cmdRooms,
+		cmdProtectRoom,
 		cmdHelp,
 	)
 	return pe
