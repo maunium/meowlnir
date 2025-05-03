@@ -678,6 +678,24 @@ var cmdSuspend = &CommandHandler{
 	},
 }
 
+var cmdDeactivate = &CommandHandler{
+	Name: "deactivate",
+	Func: func(ce *CommandEvent) {
+		if len(ce.Args) > 1 && ce.Args[1] != "--erase" {
+			ce.Reply("Usage: `!deactivate <user ID> [--erase]`")
+			return
+		}
+		err := ce.Meta.Bot.SynapseAdmin.DeactivateAccount(ce.Ctx, id.UserID(ce.Args[0]), synapseadmin.ReqDeleteUser{
+			Erase: len(ce.Args) > 1 && ce.Args[1] == "--erase",
+		})
+		if err != nil {
+			ce.Reply("Failed to deactivate: %v", err)
+		} else {
+			ce.React(SuccessReaction)
+		}
+	},
+}
+
 var cmdProtectRoom = &CommandHandler{
 	Name:    "protect",
 	Aliases: []string{"unprotect"},
