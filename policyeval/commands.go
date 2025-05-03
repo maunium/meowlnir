@@ -653,10 +653,9 @@ var cmdListProtectedRooms = &CommandHandler{
 	Func: func(ce *CommandEvent) {
 		var buf strings.Builder
 		buf.WriteString("Protected rooms:\n\n")
-		serverName := ce.Meta.Bot.UserID.Homeserver()
 		ce.Meta.protectedRoomsLock.RLock()
 		for roomID, meta := range ce.Meta.protectedRooms {
-			_, _ = fmt.Fprintf(&buf, "* [%s](%s) (%s)\n", format.EscapeMarkdown(meta.Name), roomID.URI(serverName).MatrixToURL(), format.SafeMarkdownCode(roomID))
+			_, _ = fmt.Fprintf(&buf, "* [%s](%s) (%s)\n", format.EscapeMarkdown(meta.Name), roomID.URI(ce.Meta.Bot.ServerName).MatrixToURL(), format.SafeMarkdownCode(roomID))
 		}
 		ce.Meta.protectedRoomsLock.RUnlock()
 		ce.Reply(buf.String())

@@ -23,9 +23,8 @@ func (pe *PolicyEvaluator) CompileACL() (*event.ServerACLEventContent, time.Dura
 
 		AllowIPLiterals: false,
 	}
-	botServer := pe.Bot.UserID.Homeserver()
 	for entity, policy := range rules {
-		if policy.Pattern.Match(botServer) {
+		if policy.Pattern.Match(pe.Bot.ServerName) {
 			continue
 		}
 		if policy.Recommendation != event.PolicyRecommendationUnban {

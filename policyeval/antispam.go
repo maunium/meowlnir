@@ -23,9 +23,8 @@ type pendingInvite struct {
 
 func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, invitee id.UserID, roomID id.RoomID) *mautrix.RespError {
 	inviterServer := inviter.Homeserver()
-	ourServer := pe.Bot.UserID.Homeserver()
 	// We only care about federated invites.
-	if inviterServer == ourServer && !pe.FilterLocalInvites {
+	if inviterServer == pe.Bot.ServerName && !pe.FilterLocalInvites {
 		return nil
 	}
 
@@ -34,7 +33,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		Stringer("invitee", invitee).
 		Stringer("room_id", roomID).
 		Logger()
-	if invitee.Homeserver() != ourServer {
+	if invitee.Homeserver() != pe.Bot.ServerName {
 		// This shouldn't happen
 		// TODO this check should be removed if multi-server support is added
 		log.Warn().Msg("Ignoring invite to non-local user")
