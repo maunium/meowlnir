@@ -19,6 +19,7 @@ type WatchedPolicyList struct {
 	DontApply    bool      `json:"dont_apply"`
 	DontApplyACL bool      `json:"dont_apply_acl"`
 	AutoUnban    bool      `json:"auto_unban"`
+	AutoSuspend  bool      `json:"auto_suspend"`
 
 	DontNotifyOnChange bool `json:"dont_notify_on_change"`
 }

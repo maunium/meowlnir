@@ -18,6 +18,7 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
+	"maunium.net/go/mautrix/synapseadmin"
 
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/policylist"
@@ -662,6 +663,21 @@ var cmdListProtectedRooms = &CommandHandler{
 	},
 }
 
+var cmdSuspend = &CommandHandler{
+	Name:    "suspend",
+	Aliases: []string{"unsuspend"},
+	Func: func(ce *CommandEvent) {
+		err := ce.Meta.Bot.SynapseAdmin.SuspendAccount(ce.Ctx, id.UserID(ce.Args[0]), synapseadmin.ReqSuspendUser{
+			Suspend: ce.Command != "unsuspend",
+		})
+		if err != nil {
+			ce.Reply("Failed to %s: %v", ce.Command, err)
+		} else {
+			ce.React(SuccessReaction)
+		}
+	},
+}
+
 var cmdProtectRoom = &CommandHandler{
 	Name:    "protect",
 	Aliases: []string{"unprotect"},
@@ -727,6 +743,8 @@ var cmdHelp = &CommandHandler{
 				"* `!match <entity>` - Match an entity against all lists\n" +
 				"* `!search <pattern>` - Search for rules by a pattern in all lists\n" +
 				"* `!send-as-bot <room> <message>` - Send a message as the bot\n" +
+				"* `![un]suspend <user ID>` - Suspend or unsuspend a user\n" +
+				"* `!rooms <protect/unprotect> <room ID or alias>...` - Protect or unprotect a room\n" +
 				// "* `!help <command>` - Show detailed help for a command\n" +
 				"* `!help` - Show this help message\n" +
 				"\n" +

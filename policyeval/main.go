@@ -121,6 +121,7 @@ func NewPolicyEvaluator(
 		cmdMatch,
 		cmdSearch,
 		cmdSendAsBot,
+		cmdSuspend,
 		cmdRooms,
 		cmdProtectRoom,
 		cmdHelp,

@@ -132,9 +132,17 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policylist.Policy) {
 	switch policy.EntityType {
 	case policylist.EntityTypeUser:
+		didEval := false
 		for userID := range pe.findMatchingUsers(policy.Pattern, policy.EntityHash, false) {
+			didEval = true
 			// Do a full evaluation to ensure new policies don't bypass existing higher priority policies
 			pe.EvaluateUser(ctx, userID, true)
+		}
+		if !didEval {
+			exact, ok := policy.Pattern.(glob.ExactGlob)
+			if ok && id.UserID(exact).Homeserver() == pe.Bot.ServerName {
+				pe.EvaluateUser(ctx, id.UserID(exact), true)
+			}
 		}
 	case policylist.EntityTypeServer:
 		pe.UpdateACL(ctx)

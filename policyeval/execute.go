@@ -12,6 +12,7 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+	"maunium.net/go/mautrix/synapseadmin"
 
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
@@ -61,6 +62,7 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 			if isNew {
 				go pe.RejectPendingInvites(context.WithoutCancel(ctx), userID, recs.BanOrUnban)
 			}
+			pe.maybeApplySuspend(ctx, userID, recs.BanOrUnban)
 		} else {
 			// TODO unban if banned in some rooms? or just require doing that manually
 			//takenActions, err := pe.DB.TakenAction.GetAllByTargetUser(ctx, userID, database.TakenActionTypeBanOrUnban)
@@ -78,6 +80,24 @@ func filterReason(reason string) string {
 		return ""
 	}
 	return reason
+}
+
+func (pe *PolicyEvaluator) maybeApplySuspend(ctx context.Context, userID id.UserID, policy *policylist.Policy) {
+	if userID.Homeserver() != pe.Bot.ServerName {
+		return
+	}
+	plist := pe.GetWatchedListMeta(policy.RoomID)
+	if !plist.AutoSuspend {
+		return
+	}
+	err := pe.Bot.SynapseAdmin.SuspendAccount(ctx, userID, synapseadmin.ReqSuspendUser{Suspend: true})
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).Stringer("user_id", userID).Msg("Failed to suspend user")
+		pe.sendNotice(ctx, "Failed to suspend [%s](%s): %v", userID, userID.URI().MatrixToURL(), err)
+	} else {
+		zerolog.Ctx(ctx).Info().Stringer("user_id", userID).Msg("Suspended user")
+		pe.sendNotice(ctx, "Suspended [%s](%s) due to received ban policy", userID, userID.URI().MatrixToURL())
+	}
 }
 
 func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomID id.RoomID, policy *policylist.Policy) {
