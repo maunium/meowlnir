@@ -317,6 +317,54 @@ var cmdKick = &CommandHandler{
 	},
 }
 
+func (pe *PolicyEvaluator) deduplicatePolicy(
+	ce *CommandEvent,
+	list *config.WatchedPolicyList,
+	policy *event.ModPolicyContent,
+) (entityType policylist.EntityType, existingStateKey string, ok bool) {
+	entityType, ok = validateEntity(policy.Entity)
+	if !ok {
+		ce.Reply("Invalid entity %s", format.SafeMarkdownCode(policy.Entity))
+		return
+	}
+	match := ce.Meta.Store.MatchExact([]id.RoomID{list.RoomID}, entityType, policy.Entity)
+	rec := match.Recommendations().BanOrUnban
+	if rec == nil {
+		return entityType, "", true
+	} else if rec.Recommendation == policy.Recommendation && rec.EntityOrHash() == policy.EntityOrHash() {
+		if rec.Reason == policy.Reason {
+			ce.Reply(
+				"%s already has a %s recommendation in [%s](%s) for %s (sent by [%s](%s) at %s)",
+				format.SafeMarkdownCode(policy.EntityOrHash()),
+				format.SafeMarkdownCode(rec.Recommendation),
+				format.EscapeMarkdown(list.Name),
+				list.RoomID.URI(ce.Meta.Bot.ServerName).MatrixToURL(),
+				format.SafeMarkdownCode(rec.Reason),
+				format.EscapeMarkdown(rec.Sender.String()),
+				rec.Sender.URI().MatrixToURL(),
+				time.UnixMilli(rec.Timestamp).String(),
+			)
+			return entityType, "", false
+		} else {
+			return entityType, rec.StateKey, true
+		}
+	} else if (policy.Recommendation != event.PolicyRecommendationUnban && rec.Recommendation == event.PolicyRecommendationUnban) ||
+		(policy.Recommendation == event.PolicyRecommendationUnban && rec.Recommendation != event.PolicyRecommendationUnban) {
+		ce.Reply(
+			"%s has a conflicting %s recommendation for %s (sent by [%s](%s) at %s)",
+			format.SafeMarkdownCode(policy.EntityOrHash()),
+			format.SafeMarkdownCode(rec.Recommendation),
+			format.SafeMarkdownCode(rec.Reason),
+			format.EscapeMarkdown(rec.Sender.String()),
+			rec.Sender.URI().MatrixToURL(),
+			time.UnixMilli(rec.Timestamp).String(),
+		)
+		return entityType, "", false
+	} else {
+		return entityType, "", true
+	}
+}
+
 var cmdBan = &CommandHandler{
 	Name:    "ban",
 	Aliases: []string{"takedown"},
@@ -334,38 +382,27 @@ var cmdBan = &CommandHandler{
 			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
-		target := ce.Args[1]
-		entityType, ok := validateEntity(target)
-		if !ok {
-			ce.Reply("Invalid entity %s", format.SafeMarkdownCode(target))
-			return
-		}
-		match := ce.Meta.Store.MatchExact(ce.Meta.GetWatchedLists(), entityType, target)
-		if rec := match.Recommendations().BanOrUnban; rec != nil && rec.Recommendation == event.PolicyRecommendationUnban {
-			ce.Reply("%s has an unban recommendation: %s", format.SafeMarkdownCode(target), format.SafeMarkdownCode(rec.Reason))
-			return
-		}
-		var existingStateKey string
-		for _, policy := range match {
-			if policy.RoomID == list.RoomID && policy.Entity == target {
-				existingStateKey = policy.StateKey
-			}
-		}
 		policy := &event.ModPolicyContent{
-			Entity:         target,
+			Entity:         ce.Args[1],
 			Reason:         strings.Join(ce.Args[2:], " "),
 			Recommendation: event.PolicyRecommendationBan,
 		}
 		if hash {
-			targetHash := util.SHA256String(target)
+			targetHash := util.SHA256String(policy.Entity)
 			policy.UnstableHashes = &event.PolicyHashes{
 				SHA256: base64.StdEncoding.EncodeToString(targetHash[:]),
 			}
-			policy.Entity = ""
 		}
 		if ce.Command == "takedown" {
 			policy.Recommendation = event.PolicyRecommendationUnstableTakedown
-			policy.Reason = ""
+		}
+		entityType, existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy)
+		if !ok {
+			return
+		}
+		target := policy.Entity
+		if hash {
+			policy.Entity = ""
 		}
 		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
 		if err != nil {
@@ -444,31 +481,16 @@ var cmdAddUnban = &CommandHandler{
 			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
-		target := ce.Args[1]
-		var match policylist.Match
-		var entityType policylist.EntityType
-		if !strings.HasPrefix(target, "@") {
-			entityType = policylist.EntityTypeServer
-			match = ce.Meta.Store.MatchServer(ce.Meta.GetWatchedLists(), target)
-		} else {
-			entityType = policylist.EntityTypeUser
-			match = ce.Meta.Store.MatchUser(ce.Meta.GetWatchedLists(), id.UserID(target))
-		}
-		var existingStateKey string
-		if rec := match.Recommendations().BanOrUnban; rec != nil {
-			if rec.Recommendation == event.PolicyRecommendationUnban {
-				ce.Reply("%s already has an unban recommendation: %s", format.SafeMarkdownCode(target), format.SafeMarkdownCode(rec.Reason))
-				return
-			} else if rec.RoomID == list.RoomID {
-				existingStateKey = rec.StateKey
-			}
-		}
 		policy := &event.ModPolicyContent{
-			Entity:         target,
+			Entity:         ce.Args[1],
 			Reason:         strings.Join(ce.Args[2:], " "),
 			Recommendation: event.PolicyRecommendationUnban,
 		}
-		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
+		entityType, existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy)
+		if !ok {
+			return
+		}
+		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, policy.Entity, policy)
 		if err != nil {
 			ce.Reply("Failed to send unban policy: %v", err)
 			return
