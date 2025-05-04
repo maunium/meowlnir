@@ -9,6 +9,8 @@ import (
 	"go.mau.fi/util/glob"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/meowlnir/util"
 )
 
 // Store is a collection of policy rooms that allows matching users, rooms, and servers
@@ -132,7 +134,7 @@ func (s *Store) match(listIDs []id.RoomID, entity string, listGetter func(*Room)
 	return
 }
 
-func (s *Store) MatchExact(listIDs []id.RoomID, entityType EntityType, entity string) (output Match) {
+func (s *Store) matchExactFunc(listIDs []id.RoomID, entityType EntityType, fn func(*List) Match) (output Match) {
 	if listIDs == nil {
 		s.roomsLock.Lock()
 		listIDs = slices.Collect(maps.Keys(s.rooms))
@@ -154,9 +156,21 @@ func (s *Store) MatchExact(listIDs []id.RoomID, entityType EntityType, entity st
 		case EntityTypeServer:
 			rules = list.GetServerRules()
 		}
-		output = append(output, rules.MatchExact(entity)...)
+		output = append(output, fn(rules)...)
 	}
 	return
+}
+
+func (s *Store) MatchExact(listIDs []id.RoomID, entityType EntityType, entity string) (output Match) {
+	return s.matchExactFunc(listIDs, entityType, func(list *List) Match {
+		return list.MatchExact(entity)
+	})
+}
+
+func (s *Store) MatchHash(listIDs []id.RoomID, entityType EntityType, entity [util.HashSize]byte) (output Match) {
+	return s.matchExactFunc(listIDs, entityType, func(list *List) Match {
+		return list.MatchHash(entity)
+	})
 }
 
 func (s *Store) Search(listIDs []id.RoomID, entity string) (output Match) {

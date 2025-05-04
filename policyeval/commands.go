@@ -438,7 +438,12 @@ var cmdRemovePolicy = &CommandHandler{
 			return
 		}
 		var existingStateKey string
-		match := ce.Meta.Store.MatchExact([]id.RoomID{list.RoomID}, entityType, target)
+		var match policylist.Match
+		if hashEntity, ok := util.DecodeBase64Hash(target); ok {
+			match = ce.Meta.Store.MatchHash([]id.RoomID{list.RoomID}, entityType, *hashEntity)
+		} else {
+			match = ce.Meta.Store.MatchExact([]id.RoomID{list.RoomID}, entityType, target)
+		}
 		if len(match) == 0 {
 			ce.Reply("No rule banning %s found in [%s](%s)", format.SafeMarkdownCode(target), format.EscapeMarkdown(list.Name), list.RoomID.URI().MatrixToURL())
 			return
