@@ -35,6 +35,35 @@ func (pe *PolicyEvaluator) CompileACL() (*event.ServerACLEventContent, time.Dura
 	return &acl, time.Since(start)
 }
 
+func (pe *PolicyEvaluator) DeferredUpdateACL() {
+	select {
+	case pe.aclDeferChan <- struct{}{}:
+	default:
+	}
+}
+
+const aclDeferTime = 15 * time.Second
+
+func (pe *PolicyEvaluator) aclDeferLoop() {
+	ctx := pe.Bot.Log.With().
+		Str("action", "deferred acl update").
+		Stringer("management_room", pe.ManagementRoom).
+		Logger().
+		WithContext(context.Background())
+	for {
+		<-pe.aclDeferChan
+		after := time.NewTimer(aclDeferTime)
+		for {
+			select {
+			case <-pe.aclDeferChan:
+				after.Reset(aclDeferTime)
+			case <-after.C:
+				pe.UpdateACL(ctx)
+			}
+		}
+	}
+}
+
 func (pe *PolicyEvaluator) UpdateACL(ctx context.Context) {
 	log := zerolog.Ctx(ctx)
 	pe.aclLock.Lock()

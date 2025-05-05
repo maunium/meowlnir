@@ -123,7 +123,7 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 			}
 		}
 	case policylist.EntityTypeServer:
-		pe.UpdateACL(ctx)
+		pe.DeferredUpdateACL()
 	case policylist.EntityTypeRoom:
 		// Ignored for now
 	}
@@ -145,7 +145,7 @@ func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policy
 			}
 		}
 	case policylist.EntityTypeServer:
-		pe.UpdateACL(ctx)
+		pe.DeferredUpdateACL()
 	case policylist.EntityTypeRoom:
 		// Ignored for now, could hook up to room deletion later
 	}
