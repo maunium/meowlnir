@@ -50,16 +50,14 @@ func (pe *PolicyEvaluator) aclDeferLoop() {
 		Stringer("management_room", pe.ManagementRoom).
 		Logger().
 		WithContext(context.Background())
+	after := time.NewTimer(aclDeferTime)
+	after.Stop()
 	for {
-		<-pe.aclDeferChan
-		after := time.NewTimer(aclDeferTime)
-		for {
-			select {
-			case <-pe.aclDeferChan:
-				after.Reset(aclDeferTime)
-			case <-after.C:
-				pe.UpdateACL(ctx)
-			}
+		select {
+		case <-pe.aclDeferChan:
+			after.Reset(aclDeferTime)
+		case <-after.C:
+			pe.UpdateACL(ctx)
 		}
 	}
 }
