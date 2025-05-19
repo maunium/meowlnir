@@ -153,6 +153,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to create Matrix appservice")
 		os.Exit(13)
 	}
+	m.PolicyServer = policyeval.NewPolicyServer()
 	m.AS.Log = m.Log.With().Str("component", "matrix").Logger()
 	m.AS.StateStore = m.StateStore
 	m.EventProcessor = appservice.NewEventProcessor(m.AS)
@@ -170,7 +171,6 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		compiledGlobs = append(compiledGlobs, compiled)
 	}
 	m.HackyAutoRedactPatterns = compiledGlobs
-	m.PolicyServer = policyeval.NewPolicyServer()
 
 	m.Log.Info().Msg("Initialization complete")
 }
