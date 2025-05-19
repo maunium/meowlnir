@@ -45,7 +45,6 @@ type EncryptionConfig struct {
 }
 
 type PolicyServerConfig struct {
-	Auth         bool `yaml:"auth"`
 	AlwaysRedact bool `yaml:"always_redact"`
 }
 

@@ -24,8 +24,22 @@ type psCacheEntry struct {
 
 type PolicyServer struct {
 	Federation *federation.Client
+	ServerAuth *federation.ServerAuth
 	EventCache map[id.EventID]psCacheEntry
 	cacheLock  *sync.RWMutex
+}
+
+func NewPolicyServer() *PolicyServer {
+	inMemCache := federation.NewInMemoryCache()
+	fed := federation.NewClient("meowlnir.localhost", nil, inMemCache)
+	return &PolicyServer{
+		EventCache: make(map[id.EventID]psCacheEntry),
+		cacheLock:  &sync.RWMutex{},
+		Federation: fed,
+		ServerAuth: federation.NewServerAuth(fed, inMemCache, func(auth federation.XMatrixAuth) string {
+			return auth.Destination
+		}),
+	}
 }
 
 func (ps *PolicyServer) getCachedRecommendation(evtID id.EventID) (*PolicyServerResponse, bool) {
