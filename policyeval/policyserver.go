@@ -15,7 +15,6 @@ import (
 
 type PolicyServer struct {
 	Federation *federation.Client
-	Auth       *federation.ServerAuth
 }
 
 type PSRecommendation string

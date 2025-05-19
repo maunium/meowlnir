@@ -15,24 +15,17 @@ import (
 
 func (m *Meowlnir) FederationAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if m.Config.PolicyServer.SigningKey != nil && *m.Config.PolicyServer.SigningKey != "" {
-			ourKey, err := federation.ParseSynapseKey(*m.Config.PolicyServer.SigningKey)
-			if err != nil {
-				hlog.FromRequest(r).Err(err).Msg("Failed to parse our own signing key")
-				mautrix.MUnknown.WithMessage("Policy Server error: invalid signing key").Write(w)
-				return
-			}
+		if m.Config.PolicyServer.Auth {
 			auth := federation.ParseXMatrixAuth(r.Header.Get("X-Matrix"))
 			var body []byte
 			if r.Body != nil {
-				_, err = r.Body.Read(body)
+				_, err := r.Body.Read(body)
 				if err != nil {
 					hlog.FromRequest(r).Err(err).Msg("Failed to read request body")
 					mautrix.MUnknown.WithMessage("Policy Server error: invalid request body").Write(w)
 					return
 				}
 			}
-			client := federation.NewClient("meowlnir", ourKey, federation.NewInMemoryCache())
 			ask := &federation.ReqQueryKeys{
 				ServerKeys: map[string]map[id.KeyID]federation.QueryKeysCriteria{
 					auth.Origin: {
@@ -42,7 +35,7 @@ func (m *Meowlnir) FederationAuth(next http.Handler) http.Handler {
 					},
 				},
 			}
-			keys, err := client.QueryKeys(r.Context(), auth.Origin, ask)
+			keys, err := m.PolicyServer.Federation.QueryKeys(r.Context(), auth.Origin, ask)
 			if err != nil {
 				hlog.FromRequest(r).Err(err).Msg("Failed to query keys")
 				mautrix.MForbidden.WithMessage("Policy Server error: unknown signing key").Write(w)

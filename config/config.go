@@ -45,7 +45,7 @@ type EncryptionConfig struct {
 }
 
 type PolicyServerConfig struct {
-	SigningKey *string `yaml:"signing_key"`
+	Auth bool `yaml:"auth"`
 }
 
 type Config struct {
