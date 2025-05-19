@@ -11,8 +11,6 @@ import (
 	"sync"
 	"syscall"
 
-	"maunium.net/go/mautrix/federation"
-
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog"
 	up "go.mau.fi/util/configupgrade"
@@ -172,9 +170,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		compiledGlobs = append(compiledGlobs, compiled)
 	}
 	m.HackyAutoRedactPatterns = compiledGlobs
-	m.PolicyServer = &policyeval.PolicyServer{
-		Federation: federation.NewClient("meowlnir.localhost", nil, federation.NewInMemoryCache()),
-	}
+	m.PolicyServer = policyeval.NewPolicyServer()
 
 	m.Log.Info().Msg("Initialization complete")
 }
