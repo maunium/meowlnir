@@ -16,16 +16,14 @@ import (
 type psCacheEntry struct {
 	Recommendation PSRecommendation
 	Timestamp      time.Time
-	// May be needed in future:
-	//RoomID         id.RoomID
-	//PDU            *util.EventPDU
-
+	RoomID         id.RoomID
+	PDU            *util.EventPDU
 }
 
 type PolicyServer struct {
 	Federation *federation.Client
 	ServerAuth *federation.ServerAuth
-	EventCache map[id.EventID]psCacheEntry
+	EventCache map[id.EventID]*psCacheEntry
 	cacheLock  *sync.RWMutex
 }
 
@@ -33,7 +31,7 @@ func NewPolicyServer() *PolicyServer {
 	inMemCache := federation.NewInMemoryCache()
 	fed := federation.NewClient("meowlnir.localhost", nil, inMemCache)
 	return &PolicyServer{
-		EventCache: make(map[id.EventID]psCacheEntry),
+		EventCache: make(map[id.EventID]*psCacheEntry),
 		cacheLock:  &sync.RWMutex{},
 		Federation: fed,
 		ServerAuth: federation.NewServerAuth(fed, inMemCache, func(auth federation.XMatrixAuth) string {
@@ -57,13 +55,10 @@ func (ps *PolicyServer) getCachedRecommendation(evtID id.EventID) (*PolicyServer
 	return nil, false
 }
 
-func (ps *PolicyServer) cacheRecommendation(evtID id.EventID, recommendation PSRecommendation) {
+func (ps *PolicyServer) cacheRecommendation(evtID id.EventID, entry *psCacheEntry) {
 	ps.cacheLock.Lock()
 	defer ps.cacheLock.Unlock()
-	ps.EventCache[evtID] = psCacheEntry{
-		Recommendation: recommendation,
-		Timestamp:      time.Now(),
-	}
+	ps.EventCache[evtID] = entry
 	if len(ps.EventCache) > 1000 {
 		// clear out old entries to save space
 		for k := range ps.EventCache {
@@ -126,7 +121,12 @@ func (ps *PolicyServer) HandleCheck(ctx context.Context, evtID id.EventID, pdu *
 	logger := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
 	logger.Trace().Interface("event", pdu).Msg("received check for protected room")
 	res = ps.getRecommendation(ctx, evtID, pdu, evaluator)
-	ps.cacheRecommendation(evtID, res.Recommendation)
+	ps.cacheRecommendation(evtID, &psCacheEntry{
+		Recommendation: res.Recommendation,
+		Timestamp:      time.Now(),
+		RoomID:         pdu.RoomID,
+		PDU:            pdu,
+	})
 	if res.Recommendation == PSRecommendationSpam {
 		logger.Warn().Stringer("recommendations", res.policy.Recommendations()).Msg("event rejected for spam")
 		if redact {
