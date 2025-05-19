@@ -48,7 +48,6 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
 			}
 			// Update relevant cached entries in the policy server
-			pe.policyServer.cacheLock.Lock()
 			for evtID, cache := range pe.policyServer.EventCache {
 				if cache.PDU.Sender == userID && cache.PDU.RoomID == recs.BanOrUnban.RoomID {
 					cache.Recommendation = PSRecommendationSpam
