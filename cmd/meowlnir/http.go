@@ -29,7 +29,9 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		http.StripPrefix("/_matrix/policy", policyServerRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "policy server").Logger()),
 		hlog.RequestIDHandler("request_id", "X-Request-ID"),
-		requestlog.AccessLogger(false)))
+		requestlog.AccessLogger(false),
+		m.FederationAuth,
+	))
 
 	antispamRouter := http.NewServeMux()
 	antispamRouter.HandleFunc("POST /{policyListID}/{callback}", m.PostCallback)

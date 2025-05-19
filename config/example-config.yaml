@@ -90,6 +90,12 @@ synapse_db:
     max_conn_idle_time: null
     max_conn_lifetime: null
 
+# Configuration for the policy server.
+# Right now, you only need to copy your Synapse signing key here, to enable authentication.
+# By default, policy requests are unauthenticated.
+policy_server:
+    signing_key:
+
 # Logging config. See https://github.com/tulir/zeroconfig for details.
 logging:
     min_level: debug

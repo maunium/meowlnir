@@ -44,12 +44,17 @@ type EncryptionConfig struct {
 	PickleKey string `yaml:"pickle_key"`
 }
 
+type PolicyServerConfig struct {
+	SigningKey *string `yaml:"signing_key"`
+}
+
 type Config struct {
-	Homeserver HomeserverConfig  `yaml:"homeserver"`
-	Meowlnir   MeowlnirConfig    `yaml:"meowlnir"`
-	Antispam   AntispamConfig    `yaml:"antispam"`
-	Encryption EncryptionConfig  `yaml:"encryption"`
-	Database   dbutil.Config     `yaml:"database"`
-	SynapseDB  dbutil.Config     `yaml:"synapse_db"`
-	Logging    zeroconfig.Config `yaml:"logging"`
+	Homeserver   HomeserverConfig   `yaml:"homeserver"`
+	Meowlnir     MeowlnirConfig     `yaml:"meowlnir"`
+	Antispam     AntispamConfig     `yaml:"antispam"`
+	Encryption   EncryptionConfig   `yaml:"encryption"`
+	Database     dbutil.Config      `yaml:"database"`
+	SynapseDB    dbutil.Config      `yaml:"synapse_db"`
+	Logging      zeroconfig.Config  `yaml:"logging"`
+	PolicyServer PolicyServerConfig `yaml:"policy_server"`
 }
