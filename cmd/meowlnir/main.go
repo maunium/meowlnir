@@ -238,6 +238,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 		m.Config.Antispam.FilterLocalInvites,
 		m.Config.Meowlnir.DryRun,
 		m.HackyAutoRedactPatterns,
+		m.PolicyServer,
 	)
 }
 

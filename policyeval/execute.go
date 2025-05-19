@@ -47,6 +47,15 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 			for _, room := range rooms {
 				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
 			}
+			// Update relevant cached entries in the policy server
+			pe.policyServer.cacheLock.Lock()
+			for evtID, cache := range pe.policyServer.EventCache {
+				if cache.PDU.Sender == userID && cache.PDU.RoomID == recs.BanOrUnban.RoomID {
+					cache.Recommendation = PSRecommendationSpam
+					pe.policyServer.cacheRecommendation(evtID, cache)
+				}
+			}
+			pe.policyServer.cacheLock.Unlock()
 			shouldRedact := recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown
 			if !shouldRedact && recs.BanOrUnban.Reason != "" {
 				for _, pattern := range pe.autoRedactPatterns {
