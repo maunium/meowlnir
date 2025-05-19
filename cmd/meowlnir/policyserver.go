@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/rs/zerolog/hlog"
-	"go.mau.fi/util/jsontime"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
@@ -16,7 +15,13 @@ import (
 func (m *Meowlnir) FederationAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if m.Config.PolicyServer.Auth {
-			auth := federation.ParseXMatrixAuth(r.Header.Get("X-Matrix"))
+			auth := federation.ParseXMatrixAuth(r.Header.Get("Authorization"))
+			if auth.Origin == "" {
+				hlog.FromRequest(r).Error().Msg("Missing origin in X-Matrix header")
+				mautrix.MForbidden.WithMessage("Policy Server error: missing origin").Write(w)
+				return
+			}
+
 			var body []byte
 			if r.Body != nil {
 				_, err := r.Body.Read(body)
@@ -26,28 +31,23 @@ func (m *Meowlnir) FederationAuth(next http.Handler) http.Handler {
 					return
 				}
 			}
-			ask := &federation.ReqQueryKeys{
-				ServerKeys: map[string]map[id.KeyID]federation.QueryKeysCriteria{
-					auth.Origin: {
-						auth.KeyID: {
-							MinimumValidUntilTS: jsontime.UnixMilliNow(),
-						},
-					},
-				},
-			}
-			keys, err := m.PolicyServer.Federation.QueryKeys(r.Context(), auth.Origin, ask)
+			keys, err := m.PolicyServer.Federation.ServerKeys(r.Context(), auth.Origin)
 			if err != nil {
 				hlog.FromRequest(r).Err(err).Msg("Failed to query keys")
 				mautrix.MForbidden.WithMessage("Policy Server error: unknown signing key").Write(w)
 				return
 			}
-			key, ok := keys.VerifyKeys[auth.KeyID]
-			if !ok {
-				hlog.FromRequest(r).Err(err).Msg("Failed to verify key")
+			hlog.FromRequest(r).Trace().Interface("keys_response", keys).Msg("Got keys response")
+			if !keys.HasKey(auth.KeyID) {
+				hlog.FromRequest(r).Err(err).
+					Interface("verify_keys", keys.VerifyKeys).
+					Stringer("wanted_key", auth.KeyID).
+					Msg("Failed to verify key")
 				mautrix.MForbidden.WithMessage("Policy Server error: invalid/expired signing key").Write(w)
 				return
 			}
-			if !federation.VerifyJSONRaw(key.Key, auth.Signature, body) {
+			key := keys.VerifyKeys[auth.KeyID].Key
+			if !federation.VerifyJSON(auth.Origin, auth.KeyID, key, body) {
 				hlog.FromRequest(r).Err(err).Msg("Failed to verify signature")
 				mautrix.MForbidden.WithMessage("Policy Server error: invalid signature").Write(w)
 				return
