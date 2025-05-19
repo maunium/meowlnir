@@ -92,7 +92,11 @@ synapse_db:
 
 # Configuration for the policy server.
 policy_server:
-    auth: true  # false to not require federation authentication
+    # Enables or disables federation authentication and signature verification (recommended)
+    auth: true
+    # If enabled, always issue redactions for events that are blocked by the policy server.
+    # This is useful to prevent failed events from reaching servers that do not yet respect policy servers.
+    always_redact: true
 
 # Logging config. See https://github.com/tulir/zeroconfig for details.
 logging:

@@ -105,7 +105,7 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, evtID id.EventID,
 	return respPSOk
 }
 
-func (ps *PolicyServer) HandleCheck(ctx context.Context, evtID id.EventID, pdu *util.EventPDU, evaluator *PolicyEvaluator) (res *PolicyServerResponse, err error) {
+func (ps *PolicyServer) HandleCheck(ctx context.Context, evtID id.EventID, pdu *util.EventPDU, evaluator *PolicyEvaluator, redact bool) (res *PolicyServerResponse, err error) {
 	if r, ok := ps.getCachedRecommendation(evtID); ok {
 		return r, nil
 	}
@@ -115,6 +115,11 @@ func (ps *PolicyServer) HandleCheck(ctx context.Context, evtID id.EventID, pdu *
 	ps.cacheRecommendation(evtID, res.Recommendation)
 	if res.Recommendation == PSRecommendationSpam {
 		logger.Warn().Stringer("recommendations", res.policy.Recommendations()).Msg("event rejected for spam")
+		if redact {
+			if _, err := evaluator.Bot.RedactEvent(ctx, pdu.RoomID, evtID); err != nil {
+				logger.Error().Err(err).Msg("failed to redact event")
+			}
+		}
 	} else {
 		logger.Trace().Msg("event accepted")
 	}
