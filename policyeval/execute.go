@@ -54,7 +54,6 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 					pe.policyServer.cacheRecommendation(evtID, cache)
 				}
 			}
-			pe.policyServer.cacheLock.Unlock()
 			shouldRedact := recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown
 			if !shouldRedact && recs.BanOrUnban.Reason != "" {
 				for _, pattern := range pe.autoRedactPatterns {
