@@ -253,6 +253,10 @@ func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.User
 }
 
 func (pe *PolicyEvaluator) sendRedactResult(ctx context.Context, events, rooms int, userID id.UserID, errorMessages []string) {
+	if events == 0 && len(errorMessages) == 0 {
+		// Skip sending a message if no events were redacted and there were no errors
+		return
+	}
 	output := fmt.Sprintf("Redacted %s across %s from [%s](%s)",
 		pluralize(events, "event"), pluralize(rooms, "room"),
 		userID, userID.URI().MatrixToURL())
@@ -280,7 +284,9 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 					Msg("Failed to redact recent messages")
 				continue
 			}
-			pe.sendNotice(ctx, "Redacted %d events from [%s](%s) in [%s](%s)", redactedCount, userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL())
+			if redactedCount > 0 {
+				pe.sendNotice(ctx, "Redacted %d events from [%s](%s) in [%s](%s)", redactedCount, userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL())
+			}
 		}
 	}
 }
