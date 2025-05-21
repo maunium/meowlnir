@@ -123,16 +123,16 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 			err = respErr
 		}
 		zerolog.Ctx(ctx).Err(err).Any("attempted_action", ta).Msg("Failed to ban user")
-		pe.sendNotice(ctx, "Failed to ban [%s](%s) in [%s](%s) for %s: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
+		pe.sendNotice(ctx, "Failed to ban ||[%s](%s)|| in [%s](%s) for %s: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
 		return
 	}
 	err = pe.DB.TakenAction.Put(ctx, ta)
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Any("taken_action", ta).Msg("Failed to save taken action")
-		pe.sendNotice(ctx, "Banned [%s](%s) in [%s](%s) for %s, but failed to save to database: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
+		pe.sendNotice(ctx, "Banned ||[%s](%s)|| in [%s](%s) for %s, but failed to save to database: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
 	} else {
 		zerolog.Ctx(ctx).Info().Any("taken_action", ta).Msg("Took action")
-		pe.sendNotice(ctx, "Banned [%s](%s) in [%s](%s) for %s", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason)
+		pe.sendNotice(ctx, "Banned ||[%s](%s)|| in [%s](%s) for %s", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason)
 	}
 }
 
