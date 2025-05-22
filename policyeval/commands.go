@@ -732,7 +732,11 @@ var cmdProtectRoom = &CommandHandler{
 			return
 		}
 		ce.Meta.protectedRoomsLock.RLock()
-		contentCopy := *ce.Meta.protectedRoomsEvent
+		evtContent := ce.Meta.protectedRoomsEvent
+		if evtContent == nil {
+			evtContent = &config.ProtectedRoomsEventContent{Rooms: []id.RoomID{}}
+		}
+		contentCopy := *evtContent
 		contentCopy.Rooms = slices.Clone(contentCopy.Rooms)
 		ce.Meta.protectedRoomsLock.RUnlock()
 		changed := false
