@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -459,15 +460,13 @@ var cmdRemovePolicy = &CommandHandler{
 				return
 			}
 		}
-		policy := &event.ModPolicyContent{}
-		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
+		resp, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, list.RoomID, entityType.EventType(), existingStateKey, json.RawMessage("{}"))
 		if err != nil {
 			ce.Reply("Failed to remove policy: %v", err)
 			return
 		}
 		zerolog.Ctx(ce.Ctx).Info().
 			Stringer("policy_list", list.RoomID).
-			Any("policy", policy).
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Removed policy from command")
 		ce.React(SuccessReaction)
