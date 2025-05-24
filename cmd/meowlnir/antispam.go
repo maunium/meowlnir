@@ -74,7 +74,7 @@ func (m *Meowlnir) handlePotentialRoomBan(ctx context.Context, roomID id.RoomID)
 		return
 	}
 	if m.RoomHashes.Put(roomID) {
-		mgmtRoom.EvaluateRoom(ctx, roomID)
+		mgmtRoom.EvaluateRoom(ctx, roomID, false)
 	}
 }
 

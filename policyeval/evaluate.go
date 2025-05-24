@@ -99,12 +99,12 @@ func (pe *PolicyEvaluator) EvaluateUser(ctx context.Context, userID id.UserID, i
 	pe.ApplyPolicy(ctx, userID, match, isNewRule)
 }
 
-func (pe *PolicyEvaluator) EvaluateRoom(ctx context.Context, roomID id.RoomID) {
+func (pe *PolicyEvaluator) EvaluateRoom(ctx context.Context, roomID id.RoomID, isNewRule bool) {
 	match := pe.Store.MatchRoom(pe.GetWatchedLists(), roomID)
 	if match == nil {
 		return
 	}
-	pe.PromptRoomPolicy(ctx, roomID, match)
+	pe.PromptRoomPolicy(ctx, roomID, match, isNewRule)
 }
 
 func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *policylist.Policy) {
@@ -168,7 +168,7 @@ func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policy
 			// TODO glob room bans?
 			return
 		}
-		pe.EvaluateRoom(ctx, roomID)
+		pe.EvaluateRoom(ctx, roomID, true)
 	}
 }
 

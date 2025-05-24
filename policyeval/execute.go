@@ -78,19 +78,38 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 	}
 }
 
-func (pe *PolicyEvaluator) PromptRoomPolicy(ctx context.Context, roomID id.RoomID, policy policylist.Match) {
+func (pe *PolicyEvaluator) PromptRoomPolicy(ctx context.Context, roomID id.RoomID, policy policylist.Match, isNewRule bool) {
 	recs := policy.Recommendations()
 	if recs.BanOrUnban == nil || (recs.BanOrUnban.Recommendation != event.PolicyRecommendationBan && recs.BanOrUnban.Recommendation != event.PolicyRecommendationUnstableTakedown) {
 		return
 	}
+	rec := recs.BanOrUnban
 	roomInfo, err := pe.Bot.SynapseAdmin.RoomInfo(ctx, roomID)
 	var msg string
+	explanation := "banned"
+	if !isNewRule {
+		explanation = "discovered after being banned"
+	}
 	if err != nil {
-		msg = fmt.Sprintf(`Room %s (failed to get info) was banned`, format.SafeMarkdownCode(roomID))
+		msg = fmt.Sprintf(
+			`Room %s (failed to get info) was %s for %s by %s at %s`,
+			format.SafeMarkdownCode(roomID),
+			explanation,
+			format.SafeMarkdownCode(rec.Reason),
+			format.MarkdownMention(rec.Sender),
+			time.UnixMilli(rec.Timestamp).String(),
+		)
 	} else {
 		msg = fmt.Sprintf(
-			`Room %s (||%s|| with %d members, of which %d are local) was banned`,
-			format.SafeMarkdownCode(roomID), roomInfo.Name, roomInfo.JoinedMembers, roomInfo.JoinedLocalMembers,
+			`Room %s (||%s|| with %d members, of which %d are local) was %s for %s by %s at %s`,
+			format.SafeMarkdownCode(roomID),
+			roomInfo.Name,
+			roomInfo.JoinedMembers,
+			roomInfo.JoinedLocalMembers,
+			explanation,
+			format.SafeMarkdownCode(rec.Reason),
+			format.MarkdownMention(rec.Sender),
+			time.UnixMilli(rec.Timestamp).String(),
 		)
 	}
 	eventID := pe.Bot.SendNoticeOpts(
