@@ -10,10 +10,13 @@ import (
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 	"maunium.net/go/mautrix/synapseadmin"
 
+	"go.mau.fi/meowlnir/bot"
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
 )
@@ -73,6 +76,32 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 			//}
 		}
 	}
+}
+
+func (pe *PolicyEvaluator) PromptRoomPolicy(ctx context.Context, roomID id.RoomID, policy policylist.Match) {
+	recs := policy.Recommendations()
+	if recs.BanOrUnban == nil || (recs.BanOrUnban.Recommendation != event.PolicyRecommendationBan && recs.BanOrUnban.Recommendation != event.PolicyRecommendationUnstableTakedown) {
+		return
+	}
+	roomInfo, err := pe.Bot.SynapseAdmin.RoomInfo(ctx, roomID)
+	var msg string
+	if err != nil {
+		msg = fmt.Sprintf(`Room %s (failed to get info) was banned`, format.SafeMarkdownCode(roomID))
+	} else {
+		msg = fmt.Sprintf(
+			`Room %s (||%s|| with %d members, of which %d are local) was banned`,
+			format.SafeMarkdownCode(roomID), roomInfo.Name, roomInfo.JoinedMembers, roomInfo.JoinedLocalMembers,
+		)
+	}
+	eventID := pe.Bot.SendNoticeOpts(
+		ctx, pe.ManagementRoom, msg, &bot.SendNoticeOpts{Extra: map[string]any{
+			commands.ReactionCommandsKey: map[string]any{
+				"/block-room": "!rooms block --confirm " + roomID.String(),
+				"/ignore":     "", // TODO actually ignore this policy so it doesn't come up again?
+			},
+		}},
+	)
+	pe.sendReactions(ctx, eventID, "/block-room", "/ignore")
 }
 
 func filterReason(reason string) string {

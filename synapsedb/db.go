@@ -59,6 +59,8 @@ const getEventQuery = `
 	WHERE events.event_id = $1
 `
 
+const getAllRoomIDsQuery = `SELECT room_id FROM rooms`
+
 type roomEventTuple struct {
 	RoomID    id.RoomID
 	EventID   id.EventID
@@ -97,6 +99,12 @@ func (s *SynapseDB) GetEvent(ctx context.Context, eventID id.EventID) (*event.Ev
 		evt.Type.Class = event.StateEventType
 	}
 	return &evt, nil
+}
+
+var roomIDScanner = dbutil.ConvertRowFn[id.RoomID](dbutil.ScanSingleColumn[id.RoomID])
+
+func (s *SynapseDB) GetAllRooms(ctx context.Context) dbutil.RowIter[id.RoomID] {
+	return roomIDScanner.NewRowIter(s.DB.Query(ctx, getAllRoomIDsQuery))
 }
 
 func (s *SynapseDB) Close() error {

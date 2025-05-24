@@ -109,7 +109,7 @@ func removeActionString(rec event.PolicyRecommendation) string {
 	}
 }
 
-func noopSendNotice(_ context.Context, _ string, _ ...any) {}
+func noopSendNotice(_ context.Context, _ string, _ ...any) id.EventID { return "" }
 
 func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoom id.RoomID, added, removed *policylist.Policy) {
 	policyRoomMeta := pe.GetWatchedListMeta(policyRoom)

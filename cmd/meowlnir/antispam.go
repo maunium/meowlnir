@@ -61,7 +61,21 @@ func (m *Meowlnir) PostUserMayJoinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
-	go mgmtRoom.HandleUserMayJoinRoom(context.WithoutCancel(r.Context()), req.UserID, req.RoomID, req.IsInvited)
+	ctx := context.WithoutCancel(r.Context())
+	go mgmtRoom.HandleUserMayJoinRoom(ctx, req.UserID, req.RoomID, req.IsInvited)
+	go m.handlePotentialRoomBan(ctx, req.RoomID)
+}
+
+func (m *Meowlnir) handlePotentialRoomBan(ctx context.Context, roomID id.RoomID) {
+	m.MapLock.RLock()
+	mgmtRoom, ok := m.EvaluatorByManagementRoom[m.Config.Meowlnir.RoomBanRoom]
+	m.MapLock.RUnlock()
+	if !ok {
+		return
+	}
+	if m.RoomHashes.Put(roomID) {
+		mgmtRoom.EvaluateRoom(ctx, roomID)
+	}
 }
 
 func (m *Meowlnir) PostUserMayInvite(w http.ResponseWriter, r *http.Request) {
