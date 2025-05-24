@@ -12,7 +12,7 @@ import (
 func (m *Meowlnir) AddHTTPEndpoints() {
 	clientRouter := http.NewServeMux()
 	clientRouter.HandleFunc("POST /v3/rooms/{roomID}/report/{eventID}", m.PostReport)
-	clientRouter.HandleFunc("POST /v3/rooms/{roomID}", m.PostReport)
+	clientRouter.HandleFunc("POST /v3/rooms/{roomID}/report", m.PostReport)
 	clientRouter.HandleFunc("POST /v3/users/{userID}/report", m.PostReport)
 	m.AS.Router.PathPrefix("/_matrix/client").Handler(applyMiddleware(
 		http.StripPrefix("/_matrix/client", clientRouter),
