@@ -2,6 +2,7 @@ package policyeval
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/rs/zerolog"
@@ -11,6 +12,7 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
+	"go.mau.fi/meowlnir/bot"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/util"
 )
@@ -45,13 +47,18 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 
 	defer func() {
 		if rec != nil {
-			go pe.sendNotice(
+			go pe.Bot.SendNoticeOpts(
 				context.WithoutCancel(ctx),
-				"Blocked ||[%s](%s)|| from inviting [%s](%s) to [%s](%s) due to policy banning ||`%s`|| for `%s`",
-				inviter, inviter.URI().MatrixToURL(),
-				invitee, invitee.URI().MatrixToURL(),
-				roomID, roomID.URI().MatrixToURL(),
-				rec.EntityOrHash(), rec.Reason,
+				pe.ManagementRoom,
+				fmt.Sprintf(
+					"Blocked ||[%s](%s)|| from inviting [%s](%s) to [%s](%s) due to policy banning ||`%s`|| for `%s`",
+					inviter, inviter.URI().MatrixToURL(),
+					invitee, invitee.URI().MatrixToURL(),
+					roomID, roomID.URI().MatrixToURL(),
+					rec.EntityOrHash(), rec.Reason,
+				),
+				// Don't mention users
+				&bot.SendNoticeOpts{Mentions: &event.Mentions{}},
 			)
 		}
 	}()
