@@ -802,7 +802,7 @@ var cmdRoomDelete = &CommandHandler{
 			Purge: true,
 			Block: ce.Command == "block",
 		})
-		_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, roomID, reactionID)
+		_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, reactionID)
 		if err != nil {
 			ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
 		} else {
