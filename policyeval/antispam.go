@@ -105,7 +105,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 			// Add the inviter to the list of tracked members so that new policy evaluation
 			// will catch them and call RejectPendingInvites.
 			pe.protectedRoomMembers[inviter] = []id.RoomID{}
-			pe.memberHashes[util.SHA256String(string(inviter))] = inviter
+			pe.memberHashes[util.SHA256String(inviter)] = inviter
 		}
 		pe.protectedRoomsLock.Unlock()
 	}
