@@ -164,6 +164,9 @@ func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policy
 			roomID = pe.RoomHashes.Get(*policy.EntityHash)
 		} else if _, ok := policy.Pattern.(glob.ExactGlob); ok {
 			roomID = id.RoomID(policy.Entity)
+			if !pe.RoomHashes.Has(roomID) {
+				return
+			}
 		} else {
 			// TODO glob room bans?
 			return
