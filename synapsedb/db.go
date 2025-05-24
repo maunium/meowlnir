@@ -16,7 +16,8 @@ type SynapseDB struct {
 	DB *dbutil.Database
 }
 
-const PreferredVersion = 88
+const MaxPreferredVersion = 92
+const MinPreferredVersion = 88
 
 func (s *SynapseDB) CheckVersion(ctx context.Context) error {
 	var current, compat int
@@ -28,15 +29,15 @@ func (s *SynapseDB) CheckVersion(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if current < PreferredVersion {
+	if current < MinPreferredVersion {
 		zerolog.Ctx(ctx).Warn().
-			Int("preferred_version", PreferredVersion).
+			Int("min_preferred_version", MinPreferredVersion).
 			Int("current_version", current).
 			Int("current_compat_version", compat).
 			Msg("Synapse database schema is older than expected")
-	} else if compat > PreferredVersion {
+	} else if compat > MaxPreferredVersion {
 		zerolog.Ctx(ctx).Warn().
-			Int("preferred_version", PreferredVersion).
+			Int("min_preferred_version", MaxPreferredVersion).
 			Int("current_version", current).
 			Int("current_compat_version", compat).
 			Msg("Synapse database schema is newer than expected")
