@@ -75,4 +75,5 @@ func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event)
 			MediaProtectionCallback(ctx, pe.Bot.Client, evt, &cfg.NoMedia)
 		}
 	}
+	pe.commandProcessor.Process(ctx, evt)
 }

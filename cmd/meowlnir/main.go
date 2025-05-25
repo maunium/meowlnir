@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog"
@@ -33,6 +34,7 @@ import (
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policyeval"
+	"go.mau.fi/meowlnir/policyeval/roomhash"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/synapsedb"
 	"go.mau.fi/meowlnir/util"
@@ -62,6 +64,8 @@ type Meowlnir struct {
 	EvaluatorByProtectedRoom  map[id.RoomID]*policyeval.PolicyEvaluator
 	EvaluatorByManagementRoom map[id.RoomID]*policyeval.PolicyEvaluator
 	HackyAutoRedactPatterns   []glob.Glob
+
+	RoomHashes *roomhash.Map
 }
 
 func (m *Meowlnir) loadSecret(secret string) [32]byte {
@@ -120,6 +124,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		}
 	}
 
+	m.RoomHashes = roomhash.NewMap()
 	m.DB = database.New(mainDB)
 	m.StateStore = sqlstatestore.NewSQLStateStore(mainDB, dbutil.ZeroLogger(m.Log.With().Str("db_section", "matrix_state").Logger()), false)
 	if m.Config.Encryption.Enable {
@@ -226,6 +231,10 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 }
 
 func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeval.PolicyEvaluator {
+	var roomHashes *roomhash.Map
+	if m.Config.Meowlnir.RoomBanRoom == roomID {
+		roomHashes = m.RoomHashes
+	}
 	return policyeval.NewPolicyEvaluator(
 		bot, m.PolicyStore,
 		roomID,
@@ -237,6 +246,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 		m.Config.Antispam.FilterLocalInvites,
 		m.Config.Meowlnir.DryRun,
 		m.HackyAutoRedactPatterns,
+		roomHashes,
 	)
 }
 
@@ -309,6 +319,13 @@ func (m *Meowlnir) Run(ctx context.Context) {
 		}()
 	}
 	m.MapLock.Unlock()
+	if m.Config.Meowlnir.RoomBanRoom != "" && m.Config.Meowlnir.LoadAllRoomHashes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m.LoadAllRoomHashes(ctx)
+		}()
+	}
 	wg.Wait()
 
 	m.Log.Info().Msg("Startup complete")
@@ -324,6 +341,27 @@ func (m *Meowlnir) Run(ctx context.Context) {
 		if err != nil {
 			m.Log.Err(err).Msg("Failed to close Synapse database")
 		}
+	}
+}
+
+func (m *Meowlnir) LoadAllRoomHashes(ctx context.Context) {
+	if m.SynapseDB == nil {
+		m.Log.Warn().Msg("Synapse database not configured, can't load all room hashes")
+		return
+	}
+	start := time.Now()
+	rooms := m.SynapseDB.GetAllRooms(ctx)
+	count := 0
+	err := rooms.Iter(func(roomID id.RoomID) (bool, error) {
+		count++
+		m.RoomHashes.Put(roomID)
+		return true, nil
+	})
+	dur := time.Since(start)
+	if err != nil {
+		m.Log.Err(err).Dur("duration", dur).Msg("Failed to read room hashes from synapse database")
+	} else {
+		m.Log.Info().Dur("duration", dur).Int("count", count).Msg("Read all existing room IDs from synapse database")
 	}
 }
 

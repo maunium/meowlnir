@@ -2,6 +2,7 @@ package policyeval
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
 	"github.com/rs/zerolog"
@@ -11,6 +12,7 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
+	"go.mau.fi/meowlnir/bot"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/util"
 )
@@ -45,13 +47,18 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 
 	defer func() {
 		if rec != nil {
-			go pe.sendNotice(
+			go pe.Bot.SendNoticeOpts(
 				context.WithoutCancel(ctx),
-				"Blocked [%s](%s) from inviting [%s](%s) to [%s](%s) due to policy banning `%s` for `%s`",
-				inviter, inviter.URI().MatrixToURL(),
-				invitee, invitee.URI().MatrixToURL(),
-				roomID, roomID.URI().MatrixToURL(),
-				rec.EntityOrHash(), rec.Reason,
+				pe.ManagementRoom,
+				fmt.Sprintf(
+					"Blocked ||[%s](%s)|| from inviting [%s](%s) to [%s](%s) due to policy banning ||`%s`|| for `%s`",
+					inviter, inviter.URI().MatrixToURL(),
+					invitee, invitee.URI().MatrixToURL(),
+					roomID, roomID.URI().MatrixToURL(),
+					rec.EntityOrHash(), rec.Reason,
+				),
+				// Don't mention users
+				&bot.SendNoticeOpts{Mentions: &event.Mentions{}},
 			)
 		}
 	}()
@@ -105,7 +112,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 			// Add the inviter to the list of tracked members so that new policy evaluation
 			// will catch them and call RejectPendingInvites.
 			pe.protectedRoomMembers[inviter] = []id.RoomID{}
-			pe.memberHashes[util.SHA256String(string(inviter))] = inviter
+			pe.memberHashes[util.SHA256String(inviter)] = inviter
 		}
 		pe.protectedRoomsLock.Unlock()
 	}
@@ -128,7 +135,7 @@ func (pe *PolicyEvaluator) HandleAcceptMakeJoin(ctx context.Context, roomID id.R
 			Msg("Blocking restricted join from banned user")
 		go pe.sendNotice(
 			context.WithoutCancel(ctx),
-			"Blocked [%s](%s) from joining [%s](%s) due to policy banning `%s` for `%s`",
+			"Blocked ||[%s](%s)|| from joining [%s](%s) due to policy banning ||`%s`|| for `%s`",
 			userID, userID.URI().MatrixToURL(),
 			roomID, roomID.URI().MatrixToURL(),
 			rec.EntityOrHash(), rec.Reason,
@@ -227,7 +234,7 @@ func (pe *PolicyEvaluator) RejectPendingInvites(ctx context.Context, inviter id.
 		}
 		pe.sendNotice(
 			ctx,
-			"Rejected %d/%d invites to [%s](%s) from [%s](%s) due to policy banning `%s` for `%s`",
+			"Rejected %d/%d invites to [%s](%s) from ||[%s](%s)|| due to policy banning ||`%s`|| for `%s`",
 			successfullyRejected, len(rooms),
 			userID, userID.URI().MatrixToURL(),
 			inviter, inviter.URI().MatrixToURL(),

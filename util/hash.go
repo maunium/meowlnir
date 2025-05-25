@@ -3,15 +3,16 @@ package util
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"unsafe"
+
+	"go.mau.fi/util/exstrings"
 )
 
 const HashSize = sha256.Size
 
 var Base64SHA256Length = base64.StdEncoding.EncodedLen(HashSize)
 
-func SHA256String(entity string) [HashSize]byte {
-	return sha256.Sum256(unsafe.Slice(unsafe.StringData(entity), len(entity)))
+func SHA256String[T ~string](entity T) [HashSize]byte {
+	return sha256.Sum256(exstrings.UnsafeBytes(string(entity)))
 }
 
 func DecodeBase64Hash(hash string) (*[HashSize]byte, bool) {

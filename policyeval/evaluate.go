@@ -99,6 +99,14 @@ func (pe *PolicyEvaluator) EvaluateUser(ctx context.Context, userID id.UserID, i
 	pe.ApplyPolicy(ctx, userID, match, isNewRule)
 }
 
+func (pe *PolicyEvaluator) EvaluateRoom(ctx context.Context, roomID id.RoomID, isNewRule bool) {
+	match := pe.Store.MatchRoom(pe.GetWatchedLists(), roomID)
+	if match == nil {
+		return
+	}
+	pe.PromptRoomPolicy(ctx, roomID, match, isNewRule)
+}
+
 func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *policylist.Policy) {
 	switch policy.EntityType {
 	case policylist.EntityTypeUser:
@@ -125,7 +133,7 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 	case policylist.EntityTypeServer:
 		pe.DeferredUpdateACL()
 	case policylist.EntityTypeRoom:
-		// Ignored for now
+		// Probably don't need to do anything here
 	}
 }
 
@@ -147,7 +155,23 @@ func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policy
 	case policylist.EntityTypeServer:
 		pe.DeferredUpdateACL()
 	case policylist.EntityTypeRoom:
-		// Ignored for now, could hook up to room deletion later
+		if pe.RoomHashes == nil {
+			// This management room doesn't handle room bans
+			return
+		}
+		var roomID id.RoomID
+		if policy.EntityHash != nil {
+			roomID = pe.RoomHashes.Get(*policy.EntityHash)
+		} else if _, ok := policy.Pattern.(glob.ExactGlob); ok {
+			roomID = id.RoomID(policy.Entity)
+			if !pe.RoomHashes.Has(roomID) {
+				return
+			}
+		} else {
+			// TODO glob room bans?
+			return
+		}
+		pe.EvaluateRoom(ctx, roomID, true)
 	}
 }
 

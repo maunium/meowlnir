@@ -28,6 +28,11 @@ meowlnir:
 
     # Which management room should handle requests to the Matrix report API?
     report_room: '!roomid:example.com'
+    # Which management room should be in charge of deleting rooms from the server?
+    # Room bans will not be processed in other management rooms.
+    room_ban_room: null
+    # If true, Meowlnir will load all room IDs from the Synapse database on startup.
+    load_all_room_hashes: true
     # If a policy matches any of these entities, the policy is ignored entirely.
     # This can be used as a hacky way to protect against policies which are too wide.
     #

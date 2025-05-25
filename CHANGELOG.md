@@ -1,3 +1,27 @@
+# v0.5.0 (2025-05-16)
+
+* Added option to suppress notifications of policy list changes.
+* Added config option for customizing which ban reasons trigger automatic
+  redactions (thanks to [@nexy7574] in [#18]).
+* Added `!deactivate` command to deactivate local accounts using the Synapse
+  admin API.
+* Added support for automatically suspending local accounts using the Synapse
+  admin API when receiving a ban policy.
+  * Must be enabled per-policy-list using the `auto_suspend` flag.
+* Added debouncing for server ACL updates to prevent spamming events when
+  multiple changes are made quickly.
+* Added deduplication to management room commands to prevent accidentally
+  sending bans that already exist.
+* Fixed removing hashed policies using commands.
+* Fixed fallback redaction mechanism not redacting state events
+  (thanks to [@nexy7574] in [#19]).
+* Fixed the API returning an invalid response when creating a management room.
+* Switched to mautrix-go's new bot command framework for handling commands.
+* Removed policy reason from error messages returned by antispam API.
+
+[#18]: https://github.com/maunium/meowlnir/pull/18
+[#19]: https://github.com/maunium/meowlnir/pull/19
+
 # v0.4.0 (2025-04-16)
 
 * Added support for automatic unbans (thanks to [@nexy7574] in [#2]).

@@ -1,5 +1,6 @@
 # Meowlnir
-An opinionated Matrix moderation bot. Currently only compatible with Synapse.
+An opinionated Matrix moderation bot. Optimized for Synapse, but works with
+other server implementations to some extent.
 
 ## Discussion
 Matrix room: [#meowlnir:maunium.net](https://matrix.to/#/#meowlnir:maunium.net)
@@ -14,8 +15,9 @@ works the same way as in bridges.
 
 ### Configuration
 The example config can be found in [./config/example-config.yaml]. Meowlnir
-requires both its own database (both SQLite and Postgres are supported), as
-well as read-only access to the Synapse database.
+requires its own database (both SQLite and Postgres are supported), and can use
+read-only access to the Synapse database for optional features and performance
+improvements.
 
 [./config/example-config.yaml]: (https://github.com/maunium/meowlnir/blob/main/config/example-config.yaml).
 
@@ -79,6 +81,10 @@ experimental_features:
   msc3202_transaction_extensions: true
 ```
 
+If you use a homeserver without MSC4203/MSC3202 support, or don't want to enable
+them in Synapse, you can use Meowlnir without them by disabling encryption
+support entirely in the Meowlnir config.
+
 ### Creating bots
 You may have noticed that the config file doesn't have anything about the bot
 username or management rooms. This is because the bots and management rooms can
@@ -138,9 +144,9 @@ commands in the future, but for now, you can send state events manually.
 
 #### Subscribing to policy lists
 The `fi.mau.meowlnir.watched_lists` state event is used to subscribe to policy
-lists. It must have a `lists` key, which is a list of objects. Each object must
-contain `room_id`, `shortcode` and `name`, and may also specify `dont_apply`
-and `auto_unban`.
+lists. The state key must be empty and the content must have a `lists` key,
+which is a list of objects. Each object must contain `room_id`, `shortcode` and
+`name`, and may specify certain extra flags (documented below).
 
 For example, the event below will apply CME bans to protected rooms, as well as
 watch matrix.org's lists without applying them to rooms (i.e. the bot will send
@@ -173,11 +179,33 @@ messages when the list adds policies, but won't take action based on those).
 }
 ```
 
+When you send the event adding a new watched list, Meowlnir will confirm it was
+successful by sending a message. If you added a list and no message was sent,
+you probably did something wrong.
+
 To make the bot join a policy list, use the `!join <room ID or alias>` command.
+
+Available extra flags:
+
+* `dont_apply` - Watch the list (send notifications) without taking action based
+  on the policies.
+* `dont_apply_acl` - Watch the list and apply all other actions, except for
+  updating `m.room.server_acl` events in protected rooms.
+* `auto_unban` - Automatically unban users if the policy that triggered the ban
+  is removed.
+* `auto_suspend` - If a policy bans a local user, suspend them using the Synapse
+  admin API automatically. The bot user must be marked as a server admin.
+* `dont_notify_on_change` - Don't send management room notifications when
+  policies are added, removed or modified. Useful if you have multiple
+  management rooms and don't want to be spammed in all of them.
 
 #### Protecting rooms
 Protected rooms are listed in the `fi.mau.meowlnir.protected_rooms` state event.
-The event content is simply a `rooms` key which is a list of room IDs.
+The state key must be empty and the event content is simply a `rooms` key which
+is a list of room IDs.
+
+You can also use the `!rooms protect <id or alias>` command instead of sending
+the state event manually.
 
 ```json
 {

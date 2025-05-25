@@ -262,7 +262,7 @@ func (pe *PolicyEvaluator) unlockedUpdateUser(userID id.UserID, roomID id.RoomID
 	add := isInRoom(membership)
 	existingList, ok := pe.protectedRoomMembers[userID]
 	if !ok {
-		pe.memberHashes[util.SHA256String(string(userID))] = userID
+		pe.memberHashes[util.SHA256String(userID)] = userID
 	}
 	if add {
 		if !slices.Contains(existingList, roomID) {

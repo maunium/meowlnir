@@ -10,11 +10,11 @@ import (
 	"maunium.net/go/mautrix/id"
 )
 
-func (bot *Bot) SendNotice(ctx context.Context, roomID id.RoomID, message string, args ...any) {
+func (bot *Bot) SendNotice(ctx context.Context, roomID id.RoomID, message string, args ...any) id.EventID {
 	if len(args) > 0 {
 		message = fmt.Sprintf(message, args...)
 	}
-	bot.SendNoticeOpts(ctx, roomID, message, nil)
+	return bot.SendNoticeOpts(ctx, roomID, message, nil)
 }
 
 type SendNoticeOpts struct {
@@ -22,9 +22,10 @@ type SendNoticeOpts struct {
 	AllowHTML        bool
 	Mentions         *event.Mentions
 	SendAsText       bool
+	Extra            map[string]any
 }
 
-func (bot *Bot) SendNoticeOpts(ctx context.Context, roomID id.RoomID, message string, opts *SendNoticeOpts) {
+func (bot *Bot) SendNoticeOpts(ctx context.Context, roomID id.RoomID, message string, opts *SendNoticeOpts) id.EventID {
 	if opts == nil {
 		opts = &SendNoticeOpts{}
 	}
@@ -35,9 +36,19 @@ func (bot *Bot) SendNoticeOpts(ctx context.Context, roomID id.RoomID, message st
 	if opts.Mentions != nil {
 		content.Mentions = opts.Mentions
 	}
-	_, err := bot.Client.SendMessageEvent(ctx, roomID, event.EventMessage, &content)
+	var wrappedContent any = &content
+	if opts.Extra != nil {
+		wrappedContent = &event.Content{
+			Raw:    opts.Extra,
+			Parsed: &content,
+		}
+	}
+	resp, err := bot.Client.SendMessageEvent(ctx, roomID, event.EventMessage, wrappedContent)
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).
 			Msg("Failed to send management room message")
+		return ""
+	} else {
+		return resp.EventID
 	}
 }

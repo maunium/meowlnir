@@ -33,20 +33,20 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderClient *mautr
 	if !pe.Admins.Has(sender) || !strings.HasPrefix(reason, "/") || targetUserID == "" {
 		if eventID != "" {
 			pe.sendNotice(
-				ctx, `[%s](%s) reported [an event](%s) from [%s](%s) for %s`,
+				ctx, `[%s](%s) reported [an event](%s) from ||[%s](%s)|| for %s`,
 				sender, sender.URI().MatrixToURL(), roomID.EventURI(eventID).MatrixToURL(),
 				evt.Sender, evt.Sender.URI().MatrixToURL(),
 				reason,
 			)
 		} else if roomID != "" {
 			pe.sendNotice(
-				ctx, `[%s](%s) reported [a room](%s) for %s`,
+				ctx, `[%s](%s) reported ||[a room](%s)|| for %s`,
 				sender, sender.URI().MatrixToURL(), roomID.URI().MatrixToURL(),
 				reason,
 			)
 		} else if targetUserID != "" {
 			pe.sendNotice(
-				ctx, `[%s](%s) reported [%s](%s) for %s`,
+				ctx, `[%s](%s) reported ||[%s](%s)|| for %s`,
 				sender, sender.URI().MatrixToURL(), targetUserID.URI().MatrixToURL(),
 				reason,
 			)
@@ -90,7 +90,7 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderClient *mautr
 		}
 		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, "", string(targetUserID), policy)
 		if err != nil {
-			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of [%s](%s) for %s ([%s](%s)): %v`,
+			pe.sendNotice(ctx, `Failed to handle [%s](%s)'s report of ||[%s](%s)|| for %s ([%s](%s)): %v`,
 				sender, sender.URI().MatrixToURL(), targetUserID, targetUserID.URI().MatrixToURL(),
 				list.Name, list.RoomID, list.RoomID.URI().MatrixToURL(), err)
 			return fmt.Errorf("failed to send policy: %w", err)
@@ -100,7 +100,7 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderClient *mautr
 			Any("policy", policy).
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent ban policy from report")
-		pe.sendNotice(ctx, `Processed [%s](%s)'s report of [%s](%s) and sent a ban policy to %s ([%s](%s)) for %s`,
+		pe.sendNotice(ctx, `Processed [%s](%s)'s report of ||[%s](%s)|| and sent a ban policy to %s ([%s](%s)) for %s`,
 			sender, sender.URI().MatrixToURL(), targetUserID, targetUserID.URI().MatrixToURL(),
 			list.Name, list.RoomID, list.RoomID.URI().MatrixToURL(), policy.Reason)
 	}
