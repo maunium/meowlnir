@@ -10,10 +10,13 @@ import (
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 	"maunium.net/go/mautrix/synapseadmin"
 
+	"go.mau.fi/meowlnir/bot"
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
 )
@@ -82,6 +85,51 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 	}
 }
 
+func (pe *PolicyEvaluator) PromptRoomPolicy(ctx context.Context, roomID id.RoomID, policy policylist.Match, isNewRule bool) {
+	recs := policy.Recommendations()
+	if recs.BanOrUnban == nil || (recs.BanOrUnban.Recommendation != event.PolicyRecommendationBan && recs.BanOrUnban.Recommendation != event.PolicyRecommendationUnstableTakedown) {
+		return
+	}
+	rec := recs.BanOrUnban
+	roomInfo, err := pe.Bot.SynapseAdmin.RoomInfo(ctx, roomID)
+	var msg string
+	explanation := "banned"
+	if !isNewRule {
+		explanation = "discovered after being banned"
+	}
+	if err != nil {
+		msg = fmt.Sprintf(
+			`Room %s (failed to get info) was %s for %s by %s at %s`,
+			format.SafeMarkdownCode(roomID),
+			explanation,
+			format.SafeMarkdownCode(rec.Reason),
+			format.MarkdownMention(rec.Sender),
+			time.UnixMilli(rec.Timestamp).String(),
+		)
+	} else {
+		msg = fmt.Sprintf(
+			`Room %s (||%s|| with %d members, of which %d are local) was %s for %s by %s at %s`,
+			format.SafeMarkdownCode(roomID),
+			roomInfo.Name,
+			roomInfo.JoinedMembers,
+			roomInfo.JoinedLocalMembers,
+			explanation,
+			format.SafeMarkdownCode(rec.Reason),
+			format.MarkdownMention(rec.Sender),
+			time.UnixMilli(rec.Timestamp).String(),
+		)
+	}
+	eventID := pe.Bot.SendNoticeOpts(
+		ctx, pe.ManagementRoom, msg, &bot.SendNoticeOpts{Extra: map[string]any{
+			commands.ReactionCommandsKey: map[string]any{
+				"/block-room": "!rooms block --confirm " + roomID.String(),
+				"/ignore":     "", // TODO actually ignore this policy so it doesn't come up again?
+			},
+		}},
+	)
+	pe.sendReactions(ctx, eventID, "/block-room", "/ignore")
+}
+
 func filterReason(reason string) string {
 	if reason == "<no reason supplied>" {
 		return ""
@@ -130,16 +178,16 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 			err = respErr
 		}
 		zerolog.Ctx(ctx).Err(err).Any("attempted_action", ta).Msg("Failed to ban user")
-		pe.sendNotice(ctx, "Failed to ban [%s](%s) in [%s](%s) for %s: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
+		pe.sendNotice(ctx, "Failed to ban ||[%s](%s)|| in [%s](%s) for %s: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
 		return
 	}
 	err = pe.DB.TakenAction.Put(ctx, ta)
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Any("taken_action", ta).Msg("Failed to save taken action")
-		pe.sendNotice(ctx, "Banned [%s](%s) in [%s](%s) for %s, but failed to save to database: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
+		pe.sendNotice(ctx, "Banned ||[%s](%s)|| in [%s](%s) for %s, but failed to save to database: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
 	} else {
 		zerolog.Ctx(ctx).Info().Any("taken_action", ta).Msg("Took action")
-		pe.sendNotice(ctx, "Banned [%s](%s) in [%s](%s) for %s", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason)
+		pe.sendNotice(ctx, "Banned ||[%s](%s)|| in [%s](%s) for %s", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason)
 	}
 }
 
@@ -260,6 +308,10 @@ func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.User
 }
 
 func (pe *PolicyEvaluator) sendRedactResult(ctx context.Context, events, rooms int, userID id.UserID, errorMessages []string) {
+	if events == 0 && len(errorMessages) == 0 {
+		// Skip sending a message if no events were redacted and there were no errors
+		return
+	}
 	output := fmt.Sprintf("Redacted %s across %s from [%s](%s)",
 		pluralize(events, "event"), pluralize(rooms, "room"),
 		userID, userID.URI().MatrixToURL())
@@ -287,7 +339,9 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 					Msg("Failed to redact recent messages")
 				continue
 			}
-			pe.sendNotice(ctx, "Redacted %d events from [%s](%s) in [%s](%s)", redactedCount, userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL())
+			if redactedCount > 0 {
+				pe.sendNotice(ctx, "Redacted %d events from [%s](%s) in [%s](%s)", redactedCount, userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL())
+			}
 		}
 	}
 }

@@ -109,7 +109,7 @@ func removeActionString(rec event.PolicyRecommendation) string {
 	}
 }
 
-func noopSendNotice(_ context.Context, _ string, _ ...any) {}
+func noopSendNotice(_ context.Context, _ string, _ ...any) id.EventID { return "" }
 
 func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoom id.RoomID, added, removed *policylist.Policy) {
 	policyRoomMeta := pe.GetWatchedListMeta(policyRoom)
@@ -129,19 +129,19 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 	if removedAndAddedAreEquivalent {
 		if removed.Reason == added.Reason {
 			sendNotice(ctx,
-				"[%s] [%s](%s) re-%s `%s` for `%s`",
+				"[%s] [%s](%s) re-%s ||`%s`|| for `%s`",
 				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
 				addActionString(added.Recommendation), added.EntityOrHash(), added.Reason)
 		} else {
 			sendNotice(ctx,
-				"[%s] [%s](%s) changed the %s reason for `%s` from `%s` to `%s`",
+				"[%s] [%s](%s) changed the %s reason for ||`%s`|| from `%s` to `%s`",
 				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
 				changeActionString(added.Recommendation), added.EntityOrHash(), removed.Reason, added.Reason)
 		}
 	} else {
 		if removed != nil {
 			sendNotice(ctx,
-				"[%s] [%s](%s) %s %ss matching `%s` for `%s`",
+				"[%s] [%s](%s) %s %ss matching ||`%s`|| for `%s`",
 				policyRoomMeta.Name, removed.Sender, removed.Sender.URI().MatrixToURL(),
 				removeActionString(removed.Recommendation), removed.EntityType, removed.EntityOrHash(), removed.Reason,
 			)
@@ -155,7 +155,7 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 				suffix = " (rule was ignored)"
 			}
 			sendNotice(ctx,
-				"[%s] [%s](%s) %s %ss matching `%s` for `%s`%s",
+				"[%s] [%s](%s) %s %ss matching ||`%s`|| for `%s`%s",
 				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
 				addActionString(added.Recommendation), added.EntityType, added.EntityOrHash(), added.Reason,
 				suffix,

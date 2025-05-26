@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -33,14 +34,22 @@ const SuccessReaction = "✅"
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
 	if !evt.Mautrix.WasEncrypted && pe.Bot.CryptoHelper != nil {
 		zerolog.Ctx(ctx).Warn().
+			Stringer("event_id", evt.ID).
+			Stringer("sender", evt.Sender).
 			Msg("Dropping unencrypted command event")
 		return
 	} else if evt.Mautrix.WasEncrypted && evt.Mautrix.TrustState < id.TrustStateCrossSignedTOFU {
 		zerolog.Ctx(ctx).Warn().
+			Stringer("event_id", evt.ID).
+			Stringer("sender", evt.Sender).
 			Stringer("trust_state", evt.Mautrix.TrustState).
 			Msg("Dropping encrypted event with insufficient trust state")
 		return
 	}
+	pe.commandProcessor.Process(ctx, evt)
+}
+
+func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event) {
 	pe.commandProcessor.Process(ctx, evt)
 }
 
@@ -409,7 +418,7 @@ var cmdBan = &CommandHandler{
 			ce.Reply("Failed to send ban policy: %v", err)
 			return
 		}
-		zerolog.Ctx(ce.Ctx).Info().
+		ce.Log.Info().
 			Stringer("policy_list", list.RoomID).
 			Any("policy", policy).
 			Stringer("policy_event_id", resp.EventID).
@@ -459,15 +468,13 @@ var cmdRemovePolicy = &CommandHandler{
 				return
 			}
 		}
-		policy := &event.ModPolicyContent{}
-		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
+		resp, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, list.RoomID, entityType.EventType(), existingStateKey, json.RawMessage("{}"))
 		if err != nil {
 			ce.Reply("Failed to remove policy: %v", err)
 			return
 		}
-		zerolog.Ctx(ce.Ctx).Info().
+		ce.Log.Info().
 			Stringer("policy_list", list.RoomID).
-			Any("policy", policy).
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Removed policy from command")
 		ce.React(SuccessReaction)
@@ -500,7 +507,7 @@ var cmdAddUnban = &CommandHandler{
 			ce.Reply("Failed to send unban policy: %v", err)
 			return
 		}
-		zerolog.Ctx(ce.Ctx).Info().
+		ce.Log.Info().
 			Stringer("policy_list", list.RoomID).
 			Any("policy", policy).
 			Stringer("policy_event_id", resp.EventID).
@@ -509,81 +516,94 @@ var cmdAddUnban = &CommandHandler{
 	},
 }
 
+func doMatch(ce *CommandEvent, target string) {
+	targetUser := id.UserID(target)
+	userIDHash, ok := util.DecodeBase64Hash(target)
+	if ok {
+		targetUser, ok = ce.Meta.getUserIDFromHash(*userIDHash)
+		if !ok {
+			ce.Reply("No user found for hash %s", format.SafeMarkdownCode(target))
+			return
+		}
+		target = targetUser.String()
+		ce.Reply("Matched user %s for hash %s", format.SafeMarkdownCode(targetUser.String()), format.SafeMarkdownCode(target))
+	}
+	entityType, _ := validateEntity(target)
+	var dur time.Duration
+	var match policylist.Match
+	if entityType == policylist.EntityTypeUser {
+		start := time.Now()
+		match = ce.Meta.Store.MatchUser(nil, targetUser)
+		dur = time.Since(start)
+		rooms := ce.Meta.getRoomsUserIsIn(targetUser)
+		if len(rooms) > 0 {
+			formattedRooms := make([]string, len(rooms))
+			ce.Meta.protectedRoomsLock.RLock()
+			for i, roomID := range rooms {
+				name := roomID.String()
+				meta := ce.Meta.protectedRooms[roomID]
+				if meta != nil && meta.Name != "" {
+					name = meta.Name
+				}
+				formattedRooms[i] = fmt.Sprintf("* [%s](%s)", name, roomID.URI().MatrixToURL())
+			}
+			ce.Meta.protectedRoomsLock.RUnlock()
+			ce.Reply("User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
+		}
+	} else if entityType == policylist.EntityTypeRoom {
+		start := time.Now()
+		match = ce.Meta.Store.MatchRoom(nil, id.RoomID(target))
+		dur = time.Since(start)
+	} else if entityType == policylist.EntityTypeServer {
+		start := time.Now()
+		match = ce.Meta.Store.MatchServer(nil, target)
+		dur = time.Since(start)
+	} else {
+		ce.Reply("Invalid entity %s", format.SafeMarkdownCode(target))
+		return
+	}
+	if match != nil {
+		eventStrings := make([]string, len(match))
+		for i, policy := range match {
+			policyRoomName := policy.RoomID.String()
+			if meta := ce.Meta.GetWatchedListMeta(policy.RoomID); meta != nil {
+				policyRoomName = meta.Name
+			}
+			eventStrings[i] = fmt.Sprintf(
+				"* [%s] [%s](%s) set recommendation %s for %s at %s for %s",
+				format.EscapeMarkdown(policyRoomName),
+				policy.Sender,
+				policy.Sender.URI().MatrixToURL(),
+				format.SafeMarkdownCode(policy.Recommendation),
+				format.SafeMarkdownCode(policy.EntityOrHash()),
+				format.EscapeMarkdown(time.UnixMilli(policy.Timestamp).String()),
+				format.SafeMarkdownCode(policy.Reason),
+			)
+		}
+		ce.Reply(
+			"Matched in %s with recommendation %s\n\n%s",
+			dur.String(),
+			format.SafeMarkdownCode(match.Recommendations().String()),
+			strings.Join(eventStrings, "\n"),
+		)
+	} else {
+		ce.Reply("No match for %s in %s", format.SafeMarkdownCode(target), dur)
+	}
+}
+
 var cmdMatch = &CommandHandler{
 	Name: "match",
 	Func: func(ce *CommandEvent) {
-		target := ce.Args[0]
-		targetUser := id.UserID(target)
-		userIDHash, ok := util.DecodeBase64Hash(target)
-		if ok {
-			targetUser, ok = ce.Meta.getUserIDFromHash(*userIDHash)
-			if !ok {
-				ce.Reply("No user found for hash %s", format.SafeMarkdownCode(target))
-				return
-			}
-			target = targetUser.String()
-			ce.Reply("Matched user %s for hash %s", format.SafeMarkdownCode(targetUser.String()), format.SafeMarkdownCode(target))
-		}
-		entityType, _ := validateEntity(target)
-		var dur time.Duration
-		var match policylist.Match
-		if entityType == policylist.EntityTypeUser {
-			start := time.Now()
-			match = ce.Meta.Store.MatchUser(nil, targetUser)
-			dur = time.Since(start)
-			rooms := ce.Meta.getRoomsUserIsIn(targetUser)
-			if len(rooms) > 0 {
-				formattedRooms := make([]string, len(rooms))
-				ce.Meta.protectedRoomsLock.RLock()
-				for i, roomID := range rooms {
-					name := roomID.String()
-					meta := ce.Meta.protectedRooms[roomID]
-					if meta != nil && meta.Name != "" {
-						name = meta.Name
-					}
-					formattedRooms[i] = fmt.Sprintf("* [%s](%s)", name, roomID.URI().MatrixToURL())
-				}
-				ce.Meta.protectedRoomsLock.RUnlock()
-				ce.Reply("User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
-			}
-		} else if entityType == policylist.EntityTypeRoom {
-			start := time.Now()
-			match = ce.Meta.Store.MatchRoom(nil, id.RoomID(target))
-			dur = time.Since(start)
-		} else if entityType == policylist.EntityTypeServer {
-			start := time.Now()
-			match = ce.Meta.Store.MatchServer(nil, target)
-			dur = time.Since(start)
-		} else {
-			ce.Reply("Invalid entity %s", format.SafeMarkdownCode(target))
+		if len(ce.Args) == 0 {
+			ce.Reply("Usage: `!match <entity>...`")
 			return
 		}
-		if match != nil {
-			eventStrings := make([]string, len(match))
-			for i, policy := range match {
-				policyRoomName := policy.RoomID.String()
-				if meta := ce.Meta.GetWatchedListMeta(policy.RoomID); meta != nil {
-					policyRoomName = meta.Name
-				}
-				eventStrings[i] = fmt.Sprintf(
-					"* [%s] [%s](%s) set recommendation %s for %s at %s for %s",
-					format.EscapeMarkdown(policyRoomName),
-					policy.Sender,
-					policy.Sender.URI().MatrixToURL(),
-					format.SafeMarkdownCode(policy.Recommendation),
-					format.SafeMarkdownCode(policy.EntityOrHash()),
-					format.EscapeMarkdown(time.UnixMilli(policy.Timestamp).String()),
-					format.SafeMarkdownCode(policy.Reason),
-				)
-			}
-			ce.Reply(
-				"Matched in %s with recommendation %s\n\n%s",
-				dur.String(),
-				format.SafeMarkdownCode(match.Recommendations().String()),
-				strings.Join(eventStrings, "\n"),
-			)
+		if ce.Args[0] == "--whitespace" {
+			doMatch(ce, strings.TrimPrefix(ce.RawArgs, "--whitespace "))
 		} else {
-			ce.Reply("No match in %s", dur)
+			for _, arg := range ce.Args {
+				doMatch(ce, arg)
+			}
 		}
 	},
 }
@@ -671,6 +691,8 @@ var cmdRooms = &CommandHandler{
 	Subcommands: []*CommandHandler{
 		cmdListProtectedRooms,
 		cmdProtectRoom,
+		cmdRoomInfo,
+		cmdRoomDelete,
 		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
 	},
 	Func: cmdListProtectedRooms.Func,
@@ -687,6 +709,118 @@ var cmdListProtectedRooms = &CommandHandler{
 		}
 		ce.Meta.protectedRoomsLock.RUnlock()
 		ce.Reply(buf.String())
+	},
+}
+
+const roomInfoFmt = `Room %s (%s)
+
+* Canonical alias: %s
+* Creator: %s
+* Version: %s
+* Members: %d (%d local)`
+
+func formatRoomInfo(info *synapseadmin.RoomInfo) string {
+	return fmt.Sprintf(
+		roomInfoFmt,
+		format.SafeMarkdownCode(info.CanonicalAlias),
+		format.EscapeMarkdown(info.Name), format.SafeMarkdownCode(info.RoomID),
+		format.MarkdownMention(info.Creator),
+		info.Version,
+		info.JoinedMembers, info.JoinedLocalMembers,
+	)
+}
+
+var cmdRoomInfo = &CommandHandler{
+	Name: "info",
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		if len(ce.Args) == 0 {
+			ce.Reply("Usage: `!rooms info <room ID or alias>`")
+			return
+		}
+		roomID := resolveRoom(ce, ce.RawArgs)
+		if roomID == "" {
+			return
+		}
+		roomInfo, err := ce.Meta.Bot.SynapseAdmin.RoomInfo(ce.Ctx, roomID)
+		if err != nil {
+			ce.Reply("Failed to get room info: %v", err)
+			return
+		}
+		ce.Reply(formatRoomInfo(roomInfo))
+	},
+}
+
+func formatDeleteResult(resp synapseadmin.RespDeleteRoomStatus) string {
+	var parts []string
+	if len(resp.KickedUsers) > 10 {
+		parts = append(parts, fmt.Sprintf("* Kicked %d users", len(resp.KickedUsers)))
+	} else {
+		kickedUsers := make([]string, len(resp.KickedUsers))
+		for i, user := range resp.KickedUsers {
+			kickedUsers[i] = format.MarkdownMention(user)
+		}
+		parts = append(parts, fmt.Sprintf("* Kicked users: %s", strings.Join(kickedUsers, ", ")))
+	}
+	if len(resp.FailedToKickUsers) > 0 {
+		failedUsers := make([]string, len(resp.FailedToKickUsers))
+		for i, user := range resp.FailedToKickUsers {
+			failedUsers[i] = format.MarkdownMention(user)
+		}
+		parts = append(parts, fmt.Sprintf("* Failed to kick users: %s", strings.Join(failedUsers, ", ")))
+	}
+	if len(resp.LocalAliases) > 0 {
+		localAliases := make([]string, len(resp.LocalAliases))
+		for i, alias := range resp.LocalAliases {
+			localAliases[i] = format.SafeMarkdownCode(alias)
+		}
+		parts = append(parts, fmt.Sprintf("* Deleted local aliases: %s", strings.Join(localAliases, ", ")))
+	}
+	return strings.Join(parts, "\n")
+}
+
+var cmdRoomDelete = &CommandHandler{
+	Name:    "delete",
+	Aliases: []string{"purge", "block"},
+	Func: func(ce *CommandEvent) {
+		if len(ce.Args) == 0 {
+			ce.Reply("Usage: `!rooms %s <room ID>`", ce.Command)
+			return
+		}
+		if ce.Args[0] == "--confirm" {
+			andBlock := ""
+			if ce.Command == "block" {
+				andBlock = " and block"
+			}
+			roomID := strings.TrimPrefix(ce.RawArgs, "--confirm ")
+			evtID := ce.Respond(fmt.Sprintf("Really purge%s %s?", andBlock, format.SafeMarkdownCode(roomID)), commands.ReplyOpts{
+				Reply:         true,
+				AllowMarkdown: true,
+				Extra: map[string]any{
+					commands.ReactionCommandsKey: map[string]any{
+						"/confirm": fmt.Sprintf("!rooms %s %s", ce.Command, roomID),
+						"/cancel":  "",
+					},
+				},
+			})
+			ce.Meta.sendReactions(ce.Ctx, evtID, "/cancel", "/confirm")
+			return
+		}
+		roomID := id.RoomID(ce.RawArgs)
+		if ce.Meta.DryRun {
+			ce.Reply("Would have deleted room %s if dry run wasn't enabled", format.SafeMarkdownCode(roomID))
+			return
+		}
+		reactionID := ce.React("\u23f3\ufe0f")
+		resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoomSync(ce.Ctx, roomID, synapseadmin.ReqDeleteRoom{
+			Purge: true,
+			Block: ce.Command == "block",
+		})
+		_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, reactionID)
+		if err != nil {
+			ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
+		} else {
+			ce.Reply("Successfully deleted room %s\n\n%s", format.SafeMarkdownCode(roomID), formatDeleteResult(resp))
+		}
 	},
 }
 
@@ -732,7 +866,11 @@ var cmdProtectRoom = &CommandHandler{
 			return
 		}
 		ce.Meta.protectedRoomsLock.RLock()
-		contentCopy := *ce.Meta.protectedRoomsEvent
+		evtContent := ce.Meta.protectedRoomsEvent
+		if evtContent == nil {
+			evtContent = &config.ProtectedRoomsEventContent{Rooms: []id.RoomID{}}
+		}
+		contentCopy := *evtContent
 		contentCopy.Rooms = slices.Clone(contentCopy.Rooms)
 		ce.Meta.protectedRoomsLock.RUnlock()
 		changed := false
@@ -808,7 +946,7 @@ func resolveRoom(ce *CommandEvent, room string) id.RoomID {
 	if strings.HasPrefix(room, "#") {
 		resp, err := ce.Meta.Bot.ResolveAlias(ce.Ctx, id.RoomAlias(room))
 		if err != nil {
-			zerolog.Ctx(ce.Ctx).Warn().Err(err).
+			ce.Log.Warn().Err(err).
 				Str("room_input", room).
 				Msg("Failed to resolve alias")
 			ce.Reply("Failed to resolve alias %s: %v", format.SafeMarkdownCode(room), err)

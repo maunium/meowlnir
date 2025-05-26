@@ -18,6 +18,7 @@ import (
 	"go.mau.fi/meowlnir/bot"
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/database"
+	"go.mau.fi/meowlnir/policyeval/roomhash"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/synapsedb"
 )
@@ -37,6 +38,7 @@ type PolicyEvaluator struct {
 
 	ManagementRoom id.RoomID
 	Admins         *exsync.Set[id.UserID]
+	RoomHashes     *roomhash.Map
 
 	commandProcessor *commands.Processor[*PolicyEvaluator]
 
@@ -81,6 +83,7 @@ func NewPolicyEvaluator(
 	autoRejectInvites, filterLocalInvites, dryRun bool,
 	hackyAutoRedactPatterns []glob.Glob,
 	policyServer *PolicyServer,
+	roomHashes *roomhash.Map,
 ) *PolicyEvaluator {
 	pe := &PolicyEvaluator{
 		Bot:                  bot,
@@ -105,6 +108,7 @@ func NewPolicyEvaluator(
 		DryRun:               dryRun,
 		autoRedactPatterns:   hackyAutoRedactPatterns,
 		policyServer:         policyServer,
+		RoomHashes:           roomHashes,
 	}
 	pe.commandProcessor.LogArgs = true
 	pe.commandProcessor.Meta = pe
@@ -113,6 +117,7 @@ func NewPolicyEvaluator(
 		commands.ValidatePrefixCommand[*PolicyEvaluator]("!meowlnir"),
 		commands.ValidatePrefixSubstring[*PolicyEvaluator]("!"),
 	}
+	pe.commandProcessor.ReactionCommandPrefix = "/"
 	pe.commandProcessor.Register(
 		cmdJoin,
 		cmdKnock,
@@ -137,8 +142,23 @@ func NewPolicyEvaluator(
 	return pe
 }
 
-func (pe *PolicyEvaluator) sendNotice(ctx context.Context, message string, args ...any) {
-	pe.Bot.SendNotice(ctx, pe.ManagementRoom, message, args...)
+func (pe *PolicyEvaluator) sendNotice(ctx context.Context, message string, args ...any) id.EventID {
+	return pe.Bot.SendNotice(ctx, pe.ManagementRoom, message, args...)
+}
+
+func (pe *PolicyEvaluator) sendReactions(ctx context.Context, eventID id.EventID, reactions ...string) {
+	if eventID == "" {
+		return
+	}
+	for _, react := range reactions {
+		_, err := pe.Bot.SendReaction(ctx, pe.ManagementRoom, eventID, react)
+		if err != nil {
+			zerolog.Ctx(ctx).Err(err).
+				Stringer("event_id", eventID).
+				Str("reaction", react).
+				Msg("Failed to send reaction")
+		}
+	}
 }
 
 func (pe *PolicyEvaluator) Load(ctx context.Context) {
