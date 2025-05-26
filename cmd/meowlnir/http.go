@@ -30,7 +30,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		hlog.NewHandler(m.Log.With().Str("component", "policy server").Logger()),
 		hlog.RequestIDHandler("request_id", "X-Request-ID"),
 		requestlog.AccessLogger(false),
-		//m.PolicyServer.ServerAuth.AuthenticateMiddleware,
+		m.PolicyServer.ServerAuth.AuthenticateMiddleware,
 	))
 
 	antispamRouter := http.NewServeMux()
