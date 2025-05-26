@@ -516,81 +516,94 @@ var cmdAddUnban = &CommandHandler{
 	},
 }
 
+func doMatch(ce *CommandEvent, target string) {
+	targetUser := id.UserID(target)
+	userIDHash, ok := util.DecodeBase64Hash(target)
+	if ok {
+		targetUser, ok = ce.Meta.getUserIDFromHash(*userIDHash)
+		if !ok {
+			ce.Reply("No user found for hash %s", format.SafeMarkdownCode(target))
+			return
+		}
+		target = targetUser.String()
+		ce.Reply("Matched user %s for hash %s", format.SafeMarkdownCode(targetUser.String()), format.SafeMarkdownCode(target))
+	}
+	entityType, _ := validateEntity(target)
+	var dur time.Duration
+	var match policylist.Match
+	if entityType == policylist.EntityTypeUser {
+		start := time.Now()
+		match = ce.Meta.Store.MatchUser(nil, targetUser)
+		dur = time.Since(start)
+		rooms := ce.Meta.getRoomsUserIsIn(targetUser)
+		if len(rooms) > 0 {
+			formattedRooms := make([]string, len(rooms))
+			ce.Meta.protectedRoomsLock.RLock()
+			for i, roomID := range rooms {
+				name := roomID.String()
+				meta := ce.Meta.protectedRooms[roomID]
+				if meta != nil && meta.Name != "" {
+					name = meta.Name
+				}
+				formattedRooms[i] = fmt.Sprintf("* [%s](%s)", name, roomID.URI().MatrixToURL())
+			}
+			ce.Meta.protectedRoomsLock.RUnlock()
+			ce.Reply("User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
+		}
+	} else if entityType == policylist.EntityTypeRoom {
+		start := time.Now()
+		match = ce.Meta.Store.MatchRoom(nil, id.RoomID(target))
+		dur = time.Since(start)
+	} else if entityType == policylist.EntityTypeServer {
+		start := time.Now()
+		match = ce.Meta.Store.MatchServer(nil, target)
+		dur = time.Since(start)
+	} else {
+		ce.Reply("Invalid entity %s", format.SafeMarkdownCode(target))
+		return
+	}
+	if match != nil {
+		eventStrings := make([]string, len(match))
+		for i, policy := range match {
+			policyRoomName := policy.RoomID.String()
+			if meta := ce.Meta.GetWatchedListMeta(policy.RoomID); meta != nil {
+				policyRoomName = meta.Name
+			}
+			eventStrings[i] = fmt.Sprintf(
+				"* [%s] [%s](%s) set recommendation %s for %s at %s for %s",
+				format.EscapeMarkdown(policyRoomName),
+				policy.Sender,
+				policy.Sender.URI().MatrixToURL(),
+				format.SafeMarkdownCode(policy.Recommendation),
+				format.SafeMarkdownCode(policy.EntityOrHash()),
+				format.EscapeMarkdown(time.UnixMilli(policy.Timestamp).String()),
+				format.SafeMarkdownCode(policy.Reason),
+			)
+		}
+		ce.Reply(
+			"Matched in %s with recommendation %s\n\n%s",
+			dur.String(),
+			format.SafeMarkdownCode(match.Recommendations().String()),
+			strings.Join(eventStrings, "\n"),
+		)
+	} else {
+		ce.Reply("No match for %s in %s", format.SafeMarkdownCode(target), dur)
+	}
+}
+
 var cmdMatch = &CommandHandler{
 	Name: "match",
 	Func: func(ce *CommandEvent) {
-		target := ce.Args[0]
-		targetUser := id.UserID(target)
-		userIDHash, ok := util.DecodeBase64Hash(target)
-		if ok {
-			targetUser, ok = ce.Meta.getUserIDFromHash(*userIDHash)
-			if !ok {
-				ce.Reply("No user found for hash %s", format.SafeMarkdownCode(target))
-				return
-			}
-			target = targetUser.String()
-			ce.Reply("Matched user %s for hash %s", format.SafeMarkdownCode(targetUser.String()), format.SafeMarkdownCode(target))
-		}
-		entityType, _ := validateEntity(target)
-		var dur time.Duration
-		var match policylist.Match
-		if entityType == policylist.EntityTypeUser {
-			start := time.Now()
-			match = ce.Meta.Store.MatchUser(nil, targetUser)
-			dur = time.Since(start)
-			rooms := ce.Meta.getRoomsUserIsIn(targetUser)
-			if len(rooms) > 0 {
-				formattedRooms := make([]string, len(rooms))
-				ce.Meta.protectedRoomsLock.RLock()
-				for i, roomID := range rooms {
-					name := roomID.String()
-					meta := ce.Meta.protectedRooms[roomID]
-					if meta != nil && meta.Name != "" {
-						name = meta.Name
-					}
-					formattedRooms[i] = fmt.Sprintf("* [%s](%s)", name, roomID.URI().MatrixToURL())
-				}
-				ce.Meta.protectedRoomsLock.RUnlock()
-				ce.Reply("User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
-			}
-		} else if entityType == policylist.EntityTypeRoom {
-			start := time.Now()
-			match = ce.Meta.Store.MatchRoom(nil, id.RoomID(target))
-			dur = time.Since(start)
-		} else if entityType == policylist.EntityTypeServer {
-			start := time.Now()
-			match = ce.Meta.Store.MatchServer(nil, target)
-			dur = time.Since(start)
-		} else {
-			ce.Reply("Invalid entity %s", format.SafeMarkdownCode(target))
+		if len(ce.Args) == 0 {
+			ce.Reply("Usage: `!match <entity>...`")
 			return
 		}
-		if match != nil {
-			eventStrings := make([]string, len(match))
-			for i, policy := range match {
-				policyRoomName := policy.RoomID.String()
-				if meta := ce.Meta.GetWatchedListMeta(policy.RoomID); meta != nil {
-					policyRoomName = meta.Name
-				}
-				eventStrings[i] = fmt.Sprintf(
-					"* [%s] [%s](%s) set recommendation %s for %s at %s for %s",
-					format.EscapeMarkdown(policyRoomName),
-					policy.Sender,
-					policy.Sender.URI().MatrixToURL(),
-					format.SafeMarkdownCode(policy.Recommendation),
-					format.SafeMarkdownCode(policy.EntityOrHash()),
-					format.EscapeMarkdown(time.UnixMilli(policy.Timestamp).String()),
-					format.SafeMarkdownCode(policy.Reason),
-				)
-			}
-			ce.Reply(
-				"Matched in %s with recommendation %s\n\n%s",
-				dur.String(),
-				format.SafeMarkdownCode(match.Recommendations().String()),
-				strings.Join(eventStrings, "\n"),
-			)
+		if ce.Args[0] == "--whitespace" {
+			doMatch(ce, strings.TrimPrefix(ce.RawArgs, "--whitespace "))
 		} else {
-			ce.Reply("No match in %s", dur)
+			for _, arg := range ce.Args {
+				doMatch(ce, arg)
+			}
 		}
 	},
 }
@@ -806,7 +819,7 @@ var cmdRoomDelete = &CommandHandler{
 		if err != nil {
 			ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
 		} else {
-			ce.Reply("Successfully deleted room\n\n%s", formatDeleteResult(resp))
+			ce.Reply("Successfully deleted room %s\n\n%s", format.SafeMarkdownCode(roomID), formatDeleteResult(resp))
 		}
 	},
 }
