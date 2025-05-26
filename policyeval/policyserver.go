@@ -27,9 +27,9 @@ type PolicyServer struct {
 	cacheLock  *sync.RWMutex
 }
 
-func NewPolicyServer() *PolicyServer {
+func NewPolicyServer(serverName string) *PolicyServer {
 	inMemCache := federation.NewInMemoryCache()
-	fed := federation.NewClient("meowlnir.localhost", nil, inMemCache)
+	fed := federation.NewClient(serverName, nil, inMemCache)
 	return &PolicyServer{
 		EventCache: make(map[id.EventID]*psCacheEntry),
 		cacheLock:  &sync.RWMutex{},
