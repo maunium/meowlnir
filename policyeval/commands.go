@@ -685,6 +685,15 @@ var cmdSendAsBot = &CommandHandler{
 	},
 }
 
+const roomsHelp = "Available `!rooms` subcommands:\n\n" +
+	"* `!rooms list` - List all protected rooms\n" +
+	"* `!rooms info <room ID or alias>` - Get information about a room using the Synapse admin API\n" +
+	"* `!rooms delete [--async] <room ID>` - Purge a room from the server\n" +
+	"* `!rooms block [--async] <room ID>` - Purge and block a room from the server\n" +
+	"* `!rooms delete-status <delete ID>` - Get the status of a room deletion (if `--async` was used)\n" +
+	"* `!rooms protect <room ID or alias>...` - Start protecting a room.\n" +
+	"* `!rooms unprotect <room ID or alias>...` - Stop protecting a room.\n"
+
 var cmdRooms = &CommandHandler{
 	Name:    "rooms",
 	Aliases: []string{"room"},
@@ -696,7 +705,9 @@ var cmdRooms = &CommandHandler{
 		cmdRoomDeleteStatus,
 		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
 	},
-	Func: cmdListProtectedRooms.Func,
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		ce.Reply(roomsHelp)
+	},
 }
 
 var cmdListProtectedRooms = &CommandHandler{
@@ -959,16 +970,18 @@ var cmdHelp = &CommandHandler{
 				"* `!search <pattern>` - Search for rules by a pattern in all lists\n" +
 				"* `!send-as-bot <room> <message>` - Send a message as the bot\n" +
 				"* `![un]suspend <user ID>` - Suspend or unsuspend a user\n" +
-				"* `!rooms <protect/unprotect> <room ID or alias>...` - Protect or unprotect a room\n" +
-				// "* `!help <command>` - Show detailed help for a command\n" +
+				"* `!rooms <...>` - Manage rooms\n" +
+				"* `!help <command>` - Show detailed help for a command\n" +
 				"* `!help` - Show this help message\n" +
 				"\n" +
 				"All fields that want a room will accept both room IDs and aliases.\n",
 			)
 		} else {
 			switch strings.ToLower(strings.TrimLeft(ce.Args[0], "!")) {
-			case "join":
-				// TODO
+			case "rooms":
+				ce.Reply(roomsHelp)
+			default:
+				ce.Reply("No help page for %s", format.SafeMarkdownCode(ce.Args[0]))
 			}
 		}
 	},
