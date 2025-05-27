@@ -8,6 +8,8 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/id"
 
+	"go.mau.fi/util/exhttp"
+
 	"go.mau.fi/meowlnir/util"
 )
 

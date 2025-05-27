@@ -28,6 +28,18 @@ func (pe *PolicyEvaluator) getRoomsUserIsIn(userID id.UserID) []id.RoomID {
 	return rooms
 }
 
+func (pe *PolicyEvaluator) updateServerCache(userID id.UserID, recommendations policylist.Recommendations) {
+	pe.policyServer.cacheLock.Lock()
+	eventCache := pe.policyServer.EventCache
+	pe.policyServer.cacheLock.Unlock()
+	for evtID, cache := range eventCache {
+		if cache.PDU.Sender == userID && cache.PDU.RoomID == recommendations.BanOrUnban.RoomID {
+			cache.Recommendation = PSRecommendationSpam
+			pe.policyServer.cacheRecommendation(evtID, cache)
+		}
+	}
+}
+
 func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, policy policylist.Match, isNew bool) {
 	if userID == pe.Bot.UserID {
 		return
@@ -47,15 +59,9 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 				Stringer("user_id", userID).
 				Any("matches", policy).
 				Msg("Applying ban recommendation")
+			pe.updateServerCache(userID, recs)
 			for _, room := range rooms {
 				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
-			}
-			// Update relevant cached entries in the policy server
-			for evtID, cache := range pe.policyServer.EventCache {
-				if cache.PDU.Sender == userID && cache.PDU.RoomID == recs.BanOrUnban.RoomID {
-					cache.Recommendation = PSRecommendationSpam
-					pe.policyServer.cacheRecommendation(evtID, cache)
-				}
 			}
 			shouldRedact := recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown
 			if !shouldRedact && recs.BanOrUnban.Reason != "" {
