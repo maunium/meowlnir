@@ -30,7 +30,7 @@ func (m *Meowlnir) PostMSC4284EventCheck(w http.ResponseWriter, r *http.Request)
 		mautrix.MNotFound.WithMessage("Antispam configuration issue: policy list not found").Write(w)
 		return
 	}
-	resp, err := m.PolicyServer.HandleCheck(r.Context(), eventID, &req, eval, m.Config.PolicyServer.AlwaysRedact)
+	resp, err := m.PolicyServer.HandleCheck(r.Context(), eventID, &req, eval, m.Config.Antispam.PolicyServer.AlwaysRedact)
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
 		mautrix.MUnknown.WithMessage("Policy Server error: internal server error").Write(w)
