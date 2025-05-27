@@ -5,19 +5,20 @@ import (
 	"sync"
 	"time"
 
+	"maunium.net/go/mautrix/event"
+
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/policylist"
-	"go.mau.fi/meowlnir/util"
 )
 
 type psCacheEntry struct {
 	Recommendation PSRecommendation
 	Timestamp      time.Time
 	RoomID         id.RoomID
-	PDU            *util.EventPDU
+	PDU            *event.Event
 }
 
 type PolicyServer struct {
@@ -87,7 +88,7 @@ var (
 
 // MSC4284: https://github.com/matrix-org/matrix-spec-proposals/pull/4284
 
-func (ps *PolicyServer) getRecommendation(ctx context.Context, evtID id.EventID, pdu *util.EventPDU, evaluator *PolicyEvaluator) *PolicyServerResponse {
+func (ps *PolicyServer) getRecommendation(ctx context.Context, evtID id.EventID, pdu *event.Event, evaluator *PolicyEvaluator) *PolicyServerResponse {
 	logger := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
@@ -114,7 +115,7 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, evtID id.EventID,
 	return respPSOk
 }
 
-func (ps *PolicyServer) HandleCheck(ctx context.Context, evtID id.EventID, pdu *util.EventPDU, evaluator *PolicyEvaluator, redact bool) (res *PolicyServerResponse, err error) {
+func (ps *PolicyServer) HandleCheck(ctx context.Context, evtID id.EventID, pdu *event.Event, evaluator *PolicyEvaluator, redact bool) (res *PolicyServerResponse, err error) {
 	if r, ok := ps.getCachedRecommendation(evtID); ok {
 		return r, nil
 	}

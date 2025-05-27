@@ -4,18 +4,18 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"maunium.net/go/mautrix/event"
+
 	"github.com/rs/zerolog/hlog"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/util/exhttp"
-
-	"go.mau.fi/meowlnir/util"
 )
 
 func (m *Meowlnir) PostMSC4284EventCheck(w http.ResponseWriter, r *http.Request) {
 	eventID := id.EventID(r.PathValue("event_id"))
-	var req util.EventPDU
+	var req event.Event
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to parse request body")
