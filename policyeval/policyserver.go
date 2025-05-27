@@ -110,7 +110,7 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, evtID id.EventID,
 	// todo, in future, check against protections?
 
 	// Event seems fine.
-	logger.Trace().Msg("event accepted")
+	logger.Trace().Msg("Event accepted")
 	return respPSOk
 }
 
@@ -119,7 +119,7 @@ func (ps *PolicyServer) HandleCheck(ctx context.Context, evtID id.EventID, pdu *
 		return r, nil
 	}
 	logger := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
-	logger.Trace().Interface("event", pdu).Msg("received check for protected room")
+	logger.Trace().Interface("event", pdu).Msg("Received check for protected room")
 	res = ps.getRecommendation(ctx, evtID, pdu, evaluator)
 	ps.cacheRecommendation(evtID, &psCacheEntry{
 		Recommendation: res.Recommendation,
@@ -128,14 +128,14 @@ func (ps *PolicyServer) HandleCheck(ctx context.Context, evtID id.EventID, pdu *
 		PDU:            pdu,
 	})
 	if res.Recommendation == PSRecommendationSpam {
-		logger.Warn().Stringer("recommendations", res.policy.Recommendations()).Msg("event rejected for spam")
+		logger.Warn().Stringer("recommendations", res.policy.Recommendations()).Msg("Event rejected for spam")
 		if redact {
 			if _, err := evaluator.Bot.RedactEvent(ctx, pdu.RoomID, evtID); err != nil {
-				logger.Error().Err(err).Msg("failed to redact event")
+				logger.Error().Err(err).Msg("Failed to redact event")
 			}
 		}
 	} else {
-		logger.Trace().Msg("event accepted")
+		logger.Trace().Msg("Event accepted")
 	}
 	return res, nil
 }
