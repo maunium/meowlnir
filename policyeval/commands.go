@@ -693,6 +693,7 @@ var cmdRooms = &CommandHandler{
 		cmdProtectRoom,
 		cmdRoomInfo,
 		cmdRoomDelete,
+		cmdRoomDeleteStatus,
 		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
 	},
 	Func: cmdListProtectedRooms.Func,
@@ -750,7 +751,7 @@ var cmdRoomInfo = &CommandHandler{
 	},
 }
 
-func formatDeleteResult(resp synapseadmin.RespDeleteRoomStatus) string {
+func formatDeleteResult(resp synapseadmin.RespDeleteRoomResult) string {
 	var parts []string
 	if len(resp.KickedUsers) > 10 {
 		parts = append(parts, fmt.Sprintf("* Kicked %d users", len(resp.KickedUsers)))
@@ -778,12 +779,32 @@ func formatDeleteResult(resp synapseadmin.RespDeleteRoomStatus) string {
 	return strings.Join(parts, "\n")
 }
 
+var cmdRoomDeleteStatus = &CommandHandler{
+	Name: "delete-status",
+	Func: func(ce *CommandEvent) {
+		if len(ce.Args) == 0 {
+			ce.Reply("Usage: `!rooms delete-status <delete ID>`")
+			return
+		}
+		resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoomStatus(ce.Ctx, ce.Args[0])
+		if err != nil {
+			ce.Reply("Failed to get delete status for %s: %v", format.SafeMarkdownCode(ce.Args[0]), err)
+		} else if resp.Status == "complete" {
+			ce.Reply("Deletion is complete:\n\n%s", formatDeleteResult(resp.ShutdownRoom))
+		} else if resp.Status == "failed" {
+			ce.Reply("Deletion failed: %s", resp.Error)
+		} else {
+			ce.Reply("Deletion is still in progress (%s)", resp.Status)
+		}
+	},
+}
+
 var cmdRoomDelete = &CommandHandler{
 	Name:    "delete",
 	Aliases: []string{"purge", "block"},
 	Func: func(ce *CommandEvent) {
 		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!rooms %s <room ID>`", ce.Command)
+			ce.Reply("Usage: `!rooms %s [--async] <room ID>`", ce.Command)
 			return
 		}
 		if ce.Args[0] == "--confirm" {
@@ -810,16 +831,27 @@ var cmdRoomDelete = &CommandHandler{
 			ce.Reply("Would have deleted room %s if dry run wasn't enabled", format.SafeMarkdownCode(roomID))
 			return
 		}
-		reactionID := ce.React("\u23f3\ufe0f")
-		resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoomSync(ce.Ctx, roomID, synapseadmin.ReqDeleteRoom{
+		req := synapseadmin.ReqDeleteRoom{
 			Purge: true,
 			Block: ce.Command == "block",
-		})
-		_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, reactionID)
-		if err != nil {
-			ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
+		}
+		if ce.Args[0] == "--async" {
+			roomID = id.RoomID(strings.TrimPrefix(ce.RawArgs, "--async "))
+			resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoom(ce.Ctx, roomID, req)
+			if err != nil {
+				ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
+			} else {
+				ce.Reply("Successfully initiated deletion of room %s: ID %s", format.SafeMarkdownCode(roomID), format.SafeMarkdownCode(resp.DeleteID))
+			}
 		} else {
-			ce.Reply("Successfully deleted room %s\n\n%s", format.SafeMarkdownCode(roomID), formatDeleteResult(resp))
+			reactionID := ce.React("\u23f3\ufe0f")
+			resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoomSync(ce.Ctx, roomID, req)
+			_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, reactionID)
+			if err != nil {
+				ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
+			} else {
+				ce.Reply("Successfully deleted room %s\n\n%s", format.SafeMarkdownCode(roomID), formatDeleteResult(resp))
+			}
 		}
 	},
 }
