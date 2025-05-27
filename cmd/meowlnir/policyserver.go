@@ -34,11 +34,5 @@ func (m *Meowlnir) PostMSC4284EventCheck(w http.ResponseWriter, r *http.Request)
 		mautrix.MUnknown.WithMessage("Policy Server error: internal server error").Write(w)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(resp)
-	if err != nil {
-		hlog.FromRequest(r).Err(err).Msg("Failed to encode response")
-		mautrix.MNotJSON.WithMessage("Policy Server error: invalid JSON").Write(w)
-		return
-	}
+	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
