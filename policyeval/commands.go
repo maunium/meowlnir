@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -61,7 +62,11 @@ var cmdJoin = &CommandHandler{
 			return
 		}
 		for _, arg := range ce.Args {
-			_, err := ce.Meta.Bot.JoinRoom(ce.Ctx, arg, nil)
+			target, via := resolveRoom(ce, arg)
+
+			_, err := ce.Meta.Bot.JoinRoom(ce.Ctx, target.String(), &mautrix.ReqJoinRoom{
+				Via: via,
+			})
 			if err != nil {
 				ce.Reply("Failed to join room %s: %v", format.SafeMarkdownCode(arg), err)
 			} else {
@@ -80,7 +85,11 @@ var cmdKnock = &CommandHandler{
 			return
 		}
 		for _, arg := range ce.Args {
-			_, err := ce.Meta.Bot.KnockRoom(ce.Ctx, arg, nil)
+			target, via := resolveRoom(ce, arg)
+
+			_, err := ce.Meta.Bot.KnockRoom(ce.Ctx, target.String(), &mautrix.ReqKnockRoom{
+				Via: via,
+			})
 			if err != nil {
 				ce.Reply("Failed to knock on room %s: %v", format.SafeMarkdownCode(arg), err)
 			} else {
@@ -99,7 +108,7 @@ var cmdLeave = &CommandHandler{
 			return
 		}
 		for _, arg := range ce.Args {
-			target := resolveRoom(ce, arg)
+			target, _ := resolveRoom(ce, arg)
 			if target == "" {
 				continue
 			}
@@ -126,7 +135,7 @@ var cmdPowerLevel = &CommandHandler{
 		if ce.Args[0] == "all" {
 			rooms = ce.Meta.GetProtectedRooms()
 		} else {
-			room := resolveRoom(ce, ce.Args[0])
+			room, _ := resolveRoom(ce, ce.Args[0])
 			if room == "" {
 				return
 			}
@@ -255,7 +264,7 @@ var cmdRedactRecent = &CommandHandler{
 			ce.Reply("Usage: `!redact-recent <room ID> <since duration> [reason]`")
 			return
 		}
-		room := resolveRoom(ce, ce.Args[0])
+		room, _ := resolveRoom(ce, ce.Args[0])
 		if room == "" {
 			return
 		}
@@ -669,7 +678,7 @@ var cmdSendAsBot = &CommandHandler{
 			ce.Reply("Usage: `!send-as-bot <room ID> <message>`")
 			return
 		}
-		target := resolveRoom(ce, ce.Args[0])
+		target, _ := resolveRoom(ce, ce.Args[0])
 		if target == "" {
 			return
 		}
@@ -749,7 +758,7 @@ var cmdRoomInfo = &CommandHandler{
 			ce.Reply("Usage: `!rooms info <room ID or alias>`")
 			return
 		}
-		roomID := resolveRoom(ce, ce.RawArgs)
+		roomID, _ := resolveRoom(ce, ce.RawArgs)
 		if roomID == "" {
 			return
 		}
@@ -918,7 +927,7 @@ var cmdProtectRoom = &CommandHandler{
 		ce.Meta.protectedRoomsLock.RUnlock()
 		changed := false
 		for _, room := range ce.Args {
-			roomID := resolveRoom(ce, room)
+			roomID, _ := resolveRoom(ce, room)
 			if roomID == "" {
 				continue
 			}
@@ -987,7 +996,35 @@ var cmdHelp = &CommandHandler{
 	},
 }
 
-func resolveRoom(ce *CommandEvent, room string) id.RoomID {
+func resolveRoom(ce *CommandEvent, room string) (id.RoomID, []string) {
+	var via []string
+
+	u, err := url.Parse(room)
+	if err == nil && u.Host == "matrix.to" {
+		if u.Fragment[0] != '/' {
+			ce.Reply("Invalid matrix.to URL %s", format.SafeMarkdownCode(room))
+			return "", nil
+		}
+
+		if u.Fragment[1] == '!' || (u.Fragment[1] == '#' && !strings.Contains(u.Fragment[1:], "/")) {
+			id, query, hasQuery := strings.Cut(u.Fragment[1:], "?")
+			if hasQuery {
+				query, err := url.ParseQuery(
+					query,
+				)
+
+				if err != nil {
+					ce.Reply("Invalid matrix.to URL %s", format.SafeMarkdownCode(room))
+					return "", nil
+				}
+
+				via = query["via"]
+			}
+
+			room = id
+		}
+	}
+
 	if strings.HasPrefix(room, "#") {
 		resp, err := ce.Meta.Bot.ResolveAlias(ce.Ctx, id.RoomAlias(room))
 		if err != nil {
@@ -995,11 +1032,11 @@ func resolveRoom(ce *CommandEvent, room string) id.RoomID {
 				Str("room_input", room).
 				Msg("Failed to resolve alias")
 			ce.Reply("Failed to resolve alias %s: %v", format.SafeMarkdownCode(room), err)
-			return ""
+			return "", nil
 		}
-		return resp.RoomID
+		return resp.RoomID, via
 	}
-	return id.RoomID(room)
+	return id.RoomID(room), via
 }
 
 var homeserverPatternRegex = regexp.MustCompile(`^[a-zA-Z0-9.*?-]+\.[a-zA-Z0-9*?-]+$`)
