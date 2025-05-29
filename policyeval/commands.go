@@ -222,7 +222,7 @@ var cmdRedact = &CommandHandler{
 		if ce.Args[0][0] == '@' {
 			target = &id.MatrixURI{
 				Sigil1: '@',
-				MXID1:  ce.Args[0],
+				MXID1:  ce.Args[0][1:],
 			}
 		} else {
 			target, err = id.ParseMatrixURIOrMatrixToURL(ce.Args[0])
