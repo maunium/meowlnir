@@ -4,10 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"maunium.net/go/mautrix/event"
-
 	"github.com/rs/zerolog/hlog"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/util/exhttp"
