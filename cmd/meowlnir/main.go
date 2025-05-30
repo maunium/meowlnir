@@ -54,6 +54,7 @@ type Meowlnir struct {
 	CryptoStoreDB  *dbutil.Database
 	AS             *appservice.AppService
 	EventProcessor *appservice.EventProcessor
+	PolicyServer   *policyeval.PolicyServer
 
 	ManagementSecret [32]byte
 	AntispamSecret   [32]byte
@@ -158,6 +159,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to create Matrix appservice")
 		os.Exit(13)
 	}
+	m.PolicyServer = policyeval.NewPolicyServer(m.Config.Homeserver.Domain)
 	m.AS.Log = m.Log.With().Str("component", "matrix").Logger()
 	m.AS.StateStore = m.StateStore
 	m.EventProcessor = appservice.NewEventProcessor(m.AS)
@@ -246,6 +248,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 		m.Config.Antispam.FilterLocalInvites,
 		m.Config.Meowlnir.DryRun,
 		m.HackyAutoRedactPatterns,
+		m.PolicyServer,
 		roomHashes,
 	)
 }
