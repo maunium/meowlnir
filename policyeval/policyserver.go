@@ -2,12 +2,12 @@ package policyeval
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
-	"maunium.net/go/mautrix/event"
-
 	"github.com/rs/zerolog"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
 
@@ -17,56 +17,65 @@ import (
 type psCacheEntry struct {
 	Recommendation PSRecommendation
 	Timestamp      time.Time
-	RoomID         id.RoomID
 	PDU            *event.Event
+	Lock           sync.Mutex
 }
 
 type PolicyServer struct {
 	Federation *federation.Client
 	ServerAuth *federation.ServerAuth
-	EventCache map[id.EventID]*psCacheEntry
-	cacheLock  *sync.RWMutex
+	eventCache map[id.EventID]*psCacheEntry
+	cacheLock  sync.Mutex
+
+	CacheMaxSize   int
+	CacheMaxAge    time.Duration
+	lastCacheClear time.Time
 }
 
 func NewPolicyServer(serverName string) *PolicyServer {
 	inMemCache := federation.NewInMemoryCache()
 	fed := federation.NewClient(serverName, nil, inMemCache)
 	return &PolicyServer{
-		EventCache: make(map[id.EventID]*psCacheEntry),
-		cacheLock:  &sync.RWMutex{},
+		eventCache: make(map[id.EventID]*psCacheEntry),
 		Federation: fed,
 		ServerAuth: federation.NewServerAuth(fed, inMemCache, func(auth federation.XMatrixAuth) string {
 			return auth.Destination
 		}),
+		CacheMaxSize: 1000,
+		CacheMaxAge:  5 * time.Minute,
 	}
 }
 
-func (ps *PolicyServer) getCachedRecommendation(evtID id.EventID) (*PolicyServerResponse, bool) {
-	ps.cacheLock.RLock()
-	resp, ok := ps.EventCache[evtID]
-	ps.cacheLock.RUnlock()
-	if ok {
-		if time.Since(resp.Timestamp) < 5*time.Minute {
-			return &PolicyServerResponse{Recommendation: resp.Recommendation}, true
-		}
-		ps.cacheLock.Lock()
-		delete(ps.EventCache, evtID)
-		ps.cacheLock.Unlock()
-	}
-	return nil, false
-}
-
-func (ps *PolicyServer) cacheRecommendation(evtID id.EventID, entry *psCacheEntry) {
+func (ps *PolicyServer) UpdateRecommendation(userID id.UserID, roomIDs []id.RoomID, rec PSRecommendation) {
 	ps.cacheLock.Lock()
 	defer ps.cacheLock.Unlock()
-	ps.EventCache[evtID] = entry
-	if len(ps.EventCache) > 1000 {
-		// clear out old entries to save space
-		for k := range ps.EventCache {
-			if time.Since(ps.EventCache[k].Timestamp) > 5*time.Minute {
-				delete(ps.EventCache, k)
+	for _, cache := range ps.eventCache {
+		if cache.PDU.Sender == userID && slices.Contains(roomIDs, cache.PDU.RoomID) {
+			cache.Recommendation = rec
+		}
+	}
+}
+
+func (ps *PolicyServer) getCache(evtID id.EventID, pdu *event.Event) *psCacheEntry {
+	ps.cacheLock.Lock()
+	entry, ok := ps.eventCache[evtID]
+	if !ok {
+		ps.unlockedClearCacheIfNeeded()
+		entry = &psCacheEntry{Timestamp: time.Now(), PDU: pdu}
+		ps.eventCache[evtID] = entry
+	}
+	ps.cacheLock.Unlock()
+	return entry
+}
+
+func (ps *PolicyServer) unlockedClearCacheIfNeeded() {
+	if len(ps.eventCache) > ps.CacheMaxSize && time.Since(ps.lastCacheClear) > 1*time.Minute {
+		for evtID, entry := range ps.eventCache {
+			if time.Since(entry.Timestamp) > ps.CacheMaxAge {
+				delete(ps.eventCache, evtID)
 			}
 		}
+		ps.lastCacheClear = time.Now()
 	}
 }
 
@@ -79,64 +88,49 @@ const (
 
 type PolicyServerResponse struct {
 	Recommendation PSRecommendation `json:"recommendation"`
-	policy         *policylist.Match
 }
 
-var (
-	respPSOk = &PolicyServerResponse{Recommendation: PSRecommendationOk}
-)
-
-// MSC4284: https://github.com/matrix-org/matrix-spec-proposals/pull/4284
-
-func (ps *PolicyServer) getRecommendation(ctx context.Context, evtID id.EventID, pdu *event.Event, evaluator *PolicyEvaluator) *PolicyServerResponse {
-	logger := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
+func (ps *PolicyServer) getRecommendation(pdu *event.Event, evaluator *PolicyEvaluator) (PSRecommendation, policylist.Match) {
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
-	res := &PolicyServerResponse{Recommendation: PSRecommendationSpam}
 	if match != nil {
-		res.policy = &match
-		return res
+		return PSRecommendationSpam, match
 	}
 	match = evaluator.Store.MatchServer(watchedLists, pdu.Sender.Homeserver())
 	if match != nil {
-		res.policy = &match
-		return res
+		return PSRecommendationSpam, match
 	}
-	// In theory, if a room is taken down and uses the policy server, we can prevent them sending further events
-	match = evaluator.Store.MatchRoom(watchedLists, pdu.RoomID)
-	if match != nil {
-		res.policy = &match
-		return res
-	}
-	// todo, in future, check against protections?
-
-	// Event seems fine.
-	logger.Trace().Msg("Event accepted")
-	return respPSOk
+	// TODO check protections
+	return PSRecommendationOk, nil
 }
 
-func (ps *PolicyServer) HandleCheck(ctx context.Context, evtID id.EventID, pdu *event.Event, evaluator *PolicyEvaluator, redact bool) (res *PolicyServerResponse, err error) {
-	if r, ok := ps.getCachedRecommendation(evtID); ok {
-		return r, nil
-	}
-	logger := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
-	logger.Trace().Interface("event", pdu).Msg("Received check for protected room")
-	res = ps.getRecommendation(ctx, evtID, pdu, evaluator)
-	ps.cacheRecommendation(evtID, &psCacheEntry{
-		Recommendation: res.Recommendation,
-		Timestamp:      time.Now(),
-		RoomID:         pdu.RoomID,
-		PDU:            pdu,
-	})
-	if res.Recommendation == PSRecommendationSpam {
-		logger.Warn().Stringer("recommendations", res.policy.Recommendations()).Msg("Event rejected for spam")
-		if redact {
-			if _, err := evaluator.Bot.RedactEvent(ctx, pdu.RoomID, evtID); err != nil {
-				logger.Error().Err(err).Msg("Failed to redact event")
+func (ps *PolicyServer) HandleCheck(
+	ctx context.Context,
+	evtID id.EventID,
+	pdu *event.Event,
+	evaluator *PolicyEvaluator,
+	redact bool,
+) (res *PolicyServerResponse, err error) {
+	r := ps.getCache(evtID, pdu)
+	r.Lock.Lock()
+	defer r.Lock.Unlock()
+	if r.Recommendation == "" {
+		log := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
+		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
+		rec, match := ps.getRecommendation(pdu, evaluator)
+		r.Recommendation = rec
+		if rec == PSRecommendationSpam {
+			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
+			if redact {
+				go func() {
+					if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
+						log.Error().Err(err).Msg("Failed to redact event")
+					}
+				}()
 			}
+		} else {
+			log.Trace().Msg("Event accepted")
 		}
-	} else {
-		logger.Trace().Msg("Event accepted")
 	}
-	return res, nil
+	return &PolicyServerResponse{Recommendation: r.Recommendation}, nil
 }

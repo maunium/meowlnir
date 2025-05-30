@@ -28,18 +28,6 @@ func (pe *PolicyEvaluator) getRoomsUserIsIn(userID id.UserID) []id.RoomID {
 	return rooms
 }
 
-func (pe *PolicyEvaluator) updateServerCache(userID id.UserID, recommendations policylist.Recommendations) {
-	pe.policyServer.cacheLock.Lock()
-	eventCache := pe.policyServer.EventCache
-	pe.policyServer.cacheLock.Unlock()
-	for evtID, cache := range eventCache {
-		if cache.PDU.Sender == userID && cache.PDU.RoomID == recommendations.BanOrUnban.RoomID {
-			cache.Recommendation = PSRecommendationSpam
-			pe.policyServer.cacheRecommendation(evtID, cache)
-		}
-	}
-}
-
 func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, policy policylist.Match, isNew bool) {
 	if userID == pe.Bot.UserID {
 		return
@@ -59,7 +47,7 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 				Stringer("user_id", userID).
 				Any("matches", policy).
 				Msg("Applying ban recommendation")
-			pe.updateServerCache(userID, recs)
+			pe.policyServer.UpdateRecommendation(userID, pe.GetProtectedRooms(), PSRecommendationSpam)
 			for _, room := range rooms {
 				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
 			}
