@@ -277,7 +277,7 @@ func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.User
 		zerolog.Ctx(ctx).Debug().
 			Stringer("user_id", userID).
 			Str("reason", reason).
-			Bool("allow_redact", allowReredact).
+			Bool("allow_reredact", allowReredact).
 			Dur("query_duration", dur).
 			Msg("No events found to redact")
 		return
