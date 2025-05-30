@@ -58,13 +58,13 @@ func (ps *PolicyServer) UpdateRecommendation(userID id.UserID, roomIDs []id.Room
 
 func (ps *PolicyServer) getCache(evtID id.EventID, pdu *event.Event) *psCacheEntry {
 	ps.cacheLock.Lock()
+	defer ps.cacheLock.Unlock()
 	entry, ok := ps.eventCache[evtID]
 	if !ok {
 		ps.unlockedClearCacheIfNeeded()
 		entry = &psCacheEntry{Timestamp: time.Now(), PDU: pdu}
 		ps.eventCache[evtID] = entry
 	}
-	ps.cacheLock.Unlock()
 	return entry
 }
 
