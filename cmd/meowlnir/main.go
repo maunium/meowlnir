@@ -89,6 +89,7 @@ func (m *Meowlnir) loadSecret(secret string) [32]byte {
 func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	var err error
 	m.Config = loadConfig(configPath, noSaveConfig)
+
 	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
 	policylist.HackyRuleFilterHashes = exslices.CastFunc(policylist.HackyRuleFilter, func(s string) [32]byte {
 		return util.SHA256String(s)
