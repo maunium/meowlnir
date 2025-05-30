@@ -16,7 +16,7 @@ import (
 
 type psCacheEntry struct {
 	Recommendation PSRecommendation
-	Timestamp      time.Time
+	LastAccessed   time.Time
 	PDU            *event.Event
 	Lock           sync.Mutex
 }
@@ -62,7 +62,7 @@ func (ps *PolicyServer) getCache(evtID id.EventID, pdu *event.Event) *psCacheEnt
 	entry, ok := ps.eventCache[evtID]
 	if !ok {
 		ps.unlockedClearCacheIfNeeded()
-		entry = &psCacheEntry{Timestamp: time.Now(), PDU: pdu}
+		entry = &psCacheEntry{LastAccessed: time.Now(), PDU: pdu}
 		ps.eventCache[evtID] = entry
 	}
 	return entry
@@ -71,7 +71,7 @@ func (ps *PolicyServer) getCache(evtID id.EventID, pdu *event.Event) *psCacheEnt
 func (ps *PolicyServer) unlockedClearCacheIfNeeded() {
 	if len(ps.eventCache) > ps.CacheMaxSize && time.Since(ps.lastCacheClear) > 1*time.Minute {
 		for evtID, entry := range ps.eventCache {
-			if time.Since(entry.Timestamp) > ps.CacheMaxAge {
+			if time.Since(entry.LastAccessed) > ps.CacheMaxAge {
 				delete(ps.eventCache, evtID)
 			}
 		}
@@ -132,5 +132,6 @@ func (ps *PolicyServer) HandleCheck(
 			log.Trace().Msg("Event accepted")
 		}
 	}
+	r.LastAccessed = time.Now()
 	return &PolicyServerResponse{Recommendation: r.Recommendation}, nil
 }
