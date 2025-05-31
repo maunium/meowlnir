@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -1143,14 +1144,18 @@ func validateEntity(entity string) (policylist.EntityType, bool) {
 func (pe *PolicyEvaluator) resolveRoomName(ctx context.Context, roomID id.RoomID) (string, error) {
 	var roomName event.RoomNameEventContent
 	if err := pe.Bot.StateEvent(ctx, roomID, event.StateRoomName, "", &roomName); err != nil {
-		return "", fmt.Errorf("failed to get room name for %s: %w", roomID, err)
+		if !errors.Is(err, mautrix.MNotFound) {
+			return "", fmt.Errorf("failed to get room name for %s: %w", roomID, err)
+		}
 	}
 	if roomName.Name != "" {
 		return roomName.Name, nil
 	}
 	var canonicalAlias event.CanonicalAliasEventContent
 	if err := pe.Bot.StateEvent(ctx, roomID, event.StateCanonicalAlias, "", &canonicalAlias); err != nil {
-		return "", fmt.Errorf("failed to get canonical alias for %s: %w", roomID, err)
+		if !errors.Is(err, mautrix.MNotFound) {
+			return "", fmt.Errorf("failed to get canonical alias for %s: %w", roomID, err)
+		}
 	}
 	return canonicalAlias.Alias.String(), nil
 }
