@@ -248,6 +248,17 @@ Meowlnir will automatically reject pending invites to rooms from banned users.
 Even if this callback is not enabled, Meowlnir will still check whether the
 invites are pending to avoid rejecting already-accepted invites.
 
+### Configuring your reverse proxy to interact with Meowlnir
+To have Meowlnir interact with your server (e.g. receiving reports) it is necessary that your reverse proxy forwards traffic to Meowlnir.
+Add those lines to your proxy:
+```
+^/_matrix/client/v3/rooms/.*/report
+^/_matrix/client/v3/rooms/.*/report/.*
+^/_matrix/client/v3/users/.*/report
+^/_matrix/policy/*
+^/_meowlnir //currently not used bot for future proof
+```
+
 ### Running on a non-Synapse server
 While Meowlnir is designed to be used with Synapse, it can be used with other
 server implementations as well.
