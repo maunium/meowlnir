@@ -1016,7 +1016,14 @@ var cmdListsSubscribe = &CommandHandler{
 				}
 				shortcode = scEvtContent.Shortcode
 			}
-			resolvedName, _ := ce.Meta.resolveRoomName(ce.Ctx, resolvedRoom)
+			resolvedName, err := ce.Meta.resolveRoomName(ce.Ctx, resolvedRoom)
+			if err != nil {
+				zerolog.Ctx(ce.Ctx).Err(err).Stringer("room_id", resolvedRoom).Msg("Failed to resolve room name")
+			}
+			if resolvedName == "" {
+				// the shortcode is a sensible placeholder name
+				resolvedName = shortcode
+			}
 			newList := config.WatchedPolicyList{
 				RoomID:    resolvedRoom,
 				Shortcode: shortcode,
