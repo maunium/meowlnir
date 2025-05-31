@@ -1030,6 +1030,7 @@ var cmdListsSubscribe = &CommandHandler{
 				Shortcode: shortcode,
 				Name:      resolvedName,
 				DontApply: dontApply,
+				AutoUnban: true,
 			}
 			contentCopy.Lists = append(contentCopy.Lists, newList)
 			changed = true
