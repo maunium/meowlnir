@@ -136,6 +136,8 @@ func NewPolicyEvaluator(
 		cmdDeactivate,
 		cmdRooms,
 		cmdProtectRoom,
+		cmdLists,
+		cmdListsSubscribe,
 		cmdHelp,
 	)
 	go pe.aclDeferLoop()
