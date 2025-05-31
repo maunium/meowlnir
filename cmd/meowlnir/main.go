@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -43,6 +44,7 @@ import (
 var configPath = flag.MakeFull("c", "config", "Path to the config file", "config.yaml").String()
 var noSaveConfig = flag.MakeFull("n", "no-update", "Don't update the config file", "false").Bool()
 var version = flag.MakeFull("v", "version", "Print the version and exit", "false").Bool()
+var writeExampleConfig = flag.MakeFull("e", "generate-example-config", "Save the example config to the config path and quit.", "false").Bool()
 var wantHelp, _ = flag.MakeHelpFlag()
 
 type Meowlnir struct {
@@ -394,6 +396,20 @@ func main() {
 		os.Exit(0)
 	} else if *version {
 		fmt.Println(VersionDescription)
+		os.Exit(0)
+	} else if *writeExampleConfig {
+		if *configPath != "-" && *configPath != "/dev/stdout" && *configPath != "/dev/stderr" {
+			if _, err = os.Stat(*configPath); !errors.Is(err, os.ErrNotExist) {
+				_, _ = fmt.Fprintln(os.Stderr, *configPath, "already exists, please remove it if you want to generate a new example")
+				os.Exit(1)
+			}
+		}
+		if *configPath == "-" {
+			fmt.Print(config.ExampleConfig)
+		} else {
+			exerrors.PanicIfNotNil(os.WriteFile(*configPath, []byte(config.ExampleConfig), 0600))
+			fmt.Println("Wrote example config to", *configPath)
+		}
 		os.Exit(0)
 	}
 	var m Meowlnir
