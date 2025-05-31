@@ -256,7 +256,7 @@ Add those lines to your proxy:
 ^/_matrix/client/v3/rooms/.*/report/.*
 ^/_matrix/client/v3/users/.*/report
 ^/_matrix/policy/*
-^/_meowlnir //currently not used bot for future proof
+^/_meowlnir //currently not used but for future proof
 ```
 
 ### Running on a non-Synapse server
