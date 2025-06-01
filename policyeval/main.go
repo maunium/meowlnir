@@ -69,6 +69,7 @@ type PolicyEvaluator struct {
 	FilterLocalInvites bool
 	createPuppetClient func(userID id.UserID) *mautrix.Client
 	autoRedactPatterns []glob.Glob
+	policyServer       *PolicyServer
 
 	protections *config.StateProtectionsEventContent
 }
@@ -83,6 +84,7 @@ func NewPolicyEvaluator(
 	createPuppetClient func(userID id.UserID) *mautrix.Client,
 	autoRejectInvites, filterLocalInvites, dryRun bool,
 	hackyAutoRedactPatterns []glob.Glob,
+	policyServer *PolicyServer,
 	roomHashes *roomhash.Map,
 ) *PolicyEvaluator {
 	pe := &PolicyEvaluator{
@@ -107,6 +109,7 @@ func NewPolicyEvaluator(
 		FilterLocalInvites:   filterLocalInvites,
 		DryRun:               dryRun,
 		autoRedactPatterns:   hackyAutoRedactPatterns,
+		policyServer:         policyServer,
 		RoomHashes:           roomHashes,
 	}
 	pe.commandProcessor.LogArgs = true

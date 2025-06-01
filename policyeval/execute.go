@@ -47,6 +47,7 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 				Stringer("user_id", userID).
 				Any("matches", policy).
 				Msg("Applying ban recommendation")
+			pe.policyServer.UpdateRecommendation(userID, pe.GetProtectedRooms(), PSRecommendationSpam)
 			for _, room := range rooms {
 				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
 			}
@@ -264,7 +265,7 @@ func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.User
 		zerolog.Ctx(ctx).Debug().
 			Stringer("user_id", userID).
 			Str("reason", reason).
-			Bool("allow_redact", allowReredact).
+			Bool("allow_reredact", allowReredact).
 			Dur("query_duration", dur).
 			Msg("No events found to redact")
 		return

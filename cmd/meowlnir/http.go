@@ -23,6 +23,17 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		m.ClientAuth,
 	))
 
+	policyServerRouter := http.NewServeMux()
+	policyServerRouter.HandleFunc("POST /unstable/org.matrix.msc4284/event/{event_id}/check", m.PostMSC4284EventCheck)
+
+	m.AS.Router.PathPrefix("/_matrix/policy").Handler(applyMiddleware(
+		http.StripPrefix("/_matrix/policy", policyServerRouter),
+		hlog.NewHandler(m.Log.With().Str("component", "policy server").Logger()),
+		hlog.RequestIDHandler("request_id", "X-Request-ID"),
+		requestlog.AccessLogger(false),
+		m.PolicyServer.ServerAuth.AuthenticateMiddleware,
+	))
+
 	antispamRouter := http.NewServeMux()
 	antispamRouter.HandleFunc("POST /{policyListID}/{callback}", m.PostCallback)
 	m.AS.Router.PathPrefix("/_meowlnir/antispam").Handler(applyMiddleware(

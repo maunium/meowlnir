@@ -47,6 +47,13 @@ meowlnir:
     hacky_redact_patterns:
     - "spam"
 
+    # If you don't want to or can't give your moderation bot the admin flag in Synapse, but still want
+    # to be able to use admin API features, you can specify a custom admin access token here for each bot.
+    # This is likely required when using MAS, as only special tokens have admin API access there.
+    # If this is not specified, the bot will try to use its own as_token for admin API access.
+    admin_tokens:
+        "@abuse:example.com": admin_token
+
 antispam:
     # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.
     secret: generate
@@ -58,6 +65,12 @@ antispam:
     # appservice set up for bridges, you can reuse that token. If not, just follow the same
     # instructions: https://docs.mau.fi/bridges/general/double-puppeting.html
     auto_reject_invites_token:
+
+# Configuration for the policy server.
+policy_server:
+    # If enabled, always issue redactions for events that are blocked by the policy server.
+    # This is useful to prevent failed events from reaching servers that do not yet respect policy servers.
+    always_redact: true
 
 # Encryption settings.
 encryption:

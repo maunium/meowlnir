@@ -37,6 +37,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Bool, "meowlnir", "load_all_room_hashes")
 	helper.Copy(up.List, "meowlnir", "hacky_rule_filter")
 	helper.Copy(up.List, "meowlnir", "hacky_redact_patterns")
+	helper.Copy(up.Map, "meowlnir", "admin_tokens")
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "antispam_secret"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "antispam", "secret")
@@ -45,6 +46,8 @@ func upgradeConfig(helper up.Helper) {
 	}
 	helper.Copy(up.Str|up.Null, "antispam", "auto_reject_invites_token")
 	helper.Copy(up.Bool, "antispam", "filter_local_invites")
+
+	helper.Copy(up.Bool, "policy_server", "always_redact")
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "pickle_key"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "encryption", "pickle_key")

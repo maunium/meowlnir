@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -43,6 +44,7 @@ import (
 var configPath = flag.MakeFull("c", "config", "Path to the config file", "config.yaml").String()
 var noSaveConfig = flag.MakeFull("n", "no-update", "Don't update the config file", "false").Bool()
 var version = flag.MakeFull("v", "version", "Print the version and exit", "false").Bool()
+var writeExampleConfig = flag.MakeFull("e", "generate-example-config", "Save the example config to the config path and quit.", "false").Bool()
 var wantHelp, _ = flag.MakeHelpFlag()
 
 type Meowlnir struct {
@@ -54,6 +56,7 @@ type Meowlnir struct {
 	CryptoStoreDB  *dbutil.Database
 	AS             *appservice.AppService
 	EventProcessor *appservice.EventProcessor
+	PolicyServer   *policyeval.PolicyServer
 
 	ManagementSecret [32]byte
 	AntispamSecret   [32]byte
@@ -158,6 +161,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to create Matrix appservice")
 		os.Exit(13)
 	}
+	m.PolicyServer = policyeval.NewPolicyServer(m.Config.Homeserver.Domain)
 	m.AS.Log = m.Log.With().Str("component", "matrix").Logger()
 	m.AS.StateStore = m.StateStore
 	m.EventProcessor = appservice.NewEventProcessor(m.AS)
@@ -212,6 +216,7 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	wrapped := bot.NewBot(
 		db, intent, m.Log.With().Str("bot", db.Username).Logger(),
 		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Encryption.PickleKey,
+		m.Config.Meowlnir.AdminTokens[intent.UserID],
 	)
 	wrapped.Init(ctx)
 	if wrapped.CryptoHelper != nil {
@@ -246,6 +251,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 		m.Config.Antispam.FilterLocalInvites,
 		m.Config.Meowlnir.DryRun,
 		m.HackyAutoRedactPatterns,
+		m.PolicyServer,
 		roomHashes,
 	)
 }
@@ -391,6 +397,20 @@ func main() {
 		os.Exit(0)
 	} else if *version {
 		fmt.Println(VersionDescription)
+		os.Exit(0)
+	} else if *writeExampleConfig {
+		if *configPath != "-" && *configPath != "/dev/stdout" && *configPath != "/dev/stderr" {
+			if _, err = os.Stat(*configPath); !errors.Is(err, os.ErrNotExist) {
+				_, _ = fmt.Fprintln(os.Stderr, *configPath, "already exists, please remove it if you want to generate a new example")
+				os.Exit(1)
+			}
+		}
+		if *configPath == "-" {
+			fmt.Print(config.ExampleConfig)
+		} else {
+			exerrors.PanicIfNotNil(os.WriteFile(*configPath, []byte(config.ExampleConfig), 0600))
+			fmt.Println("Wrote example config to", *configPath)
+		}
 		os.Exit(0)
 	}
 	var m Meowlnir

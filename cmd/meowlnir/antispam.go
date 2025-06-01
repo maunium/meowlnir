@@ -37,11 +37,31 @@ func (m *Meowlnir) PostCallback(w http.ResponseWriter, r *http.Request) {
 		m.PostAcceptMakeJoin(w, r)
 	case "user_may_join_room":
 		m.PostUserMayJoinRoom(w, r)
+	case "ping":
+		m.PostAntispamPing(w, r)
 	default:
 		hlog.FromRequest(r).Warn().Str("callback", cbType).Msg("Unknown callback type")
 		// Don't reject unknown callbacks, just ignore them
 		exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 	}
+}
+
+type ReqPing struct {
+	Status string `json:"status"`
+	ID     string `json:"id"`
+}
+
+func (m *Meowlnir) PostAntispamPing(w http.ResponseWriter, r *http.Request) {
+	var req ReqPing
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Msg("Failed to parse request body")
+		mautrix.MNotJSON.WithMessage("Antispam request error: invalid JSON").Write(w)
+		return
+	}
+	req.Status = "ok"
+	exhttp.WriteJSONResponse(w, http.StatusOK, req)
+	hlog.FromRequest(r).Info().Str("ping_id", req.ID).Msg("Received ping from antispam client")
 }
 
 func (m *Meowlnir) PostUserMayJoinRoom(w http.ResponseWriter, r *http.Request) {

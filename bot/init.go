@@ -41,6 +41,7 @@ func NewBot(
 	ep *appservice.EventProcessor,
 	cryptoStoreDB *dbutil.Database,
 	pickleKey string,
+	adminToken string,
 ) *Bot {
 	client := intent.Client
 	client.SetAppServiceDeviceID = true
@@ -60,12 +61,25 @@ func NewBot(
 		helper.LoginAs = &mautrix.ReqLogin{InitialDeviceDisplayName: "Meowlnir"}
 		client.Crypto = helper
 	}
+	adminClient := &synapseadmin.Client{Client: client}
+	if adminToken != "" {
+		adminClient.Client = &mautrix.Client{
+			HomeserverURL:      client.HomeserverURL,
+			AccessToken:        adminToken,
+			UserAgent:          client.UserAgent,
+			Client:             client.Client,
+			Log:                client.Log,
+			DefaultHTTPRetries: client.DefaultHTTPRetries,
+			DefaultHTTPBackoff: client.DefaultHTTPBackoff,
+			IgnoreRateLimit:    client.IgnoreRateLimit,
+		}
+	}
 	return &Bot{
 		Meta:           bot,
 		Client:         client,
 		Intent:         intent,
 		Log:            log,
-		SynapseAdmin:   &synapseadmin.Client{Client: client},
+		SynapseAdmin:   adminClient,
 		ServerName:     client.UserID.Homeserver(),
 		CryptoStore:    cryptoStore,
 		CryptoHelper:   helper,
