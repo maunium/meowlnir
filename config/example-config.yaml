@@ -49,8 +49,13 @@ meowlnir:
 
     # If you don't want to or can't give your moderation bot the admin flag in Synapse, but still want
     # to be able to use admin API features, you can specify a custom admin access token here for each bot.
-    # This is likely required when using MAS, as only special tokens have admin API access there.
+    # This is required when using MAS, as only special tokens have admin API access there.
     # If this is not specified, the bot will try to use its own as_token for admin API access.
+    #
+    # Example command for MAS-CLI how to generate an admin compatibility token:
+    # mas-cli manage issue-compatibility-token <Username_Localpart> --device-id <Device_ID> --yes-i-want-to-grant-synapse-admin-privileges
+    # https://element-hq.github.io/matrix-authentication-service/reference/cli/manage.html#manage-issue-compatibility-token
+
     admin_tokens:
         "@abuse:example.com": admin_token
 
