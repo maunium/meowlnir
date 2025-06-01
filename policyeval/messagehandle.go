@@ -54,7 +54,7 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 			zerolog.Ctx(ctx).Trace().Msg("calling media protection callback")
 			MediaProtectionCallback(ctx, pe.Bot.Client, evt, &cfg.NoMedia)
 		}
-		if cfg.MaxMentions.Enabled {
+		if cfg.MaxMentions != nil && cfg.MaxMentions.Enabled {
 			zerolog.Ctx(ctx).Trace().Msg("calling mention protection callback")
 			MentionProtectionCallback(ctx, pe, evt, cfg.MaxMentions)
 		}
