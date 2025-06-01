@@ -55,7 +55,6 @@ meowlnir:
     # Example command for MAS-CLI how to generate an admin compatibility token:
     # mas-cli manage issue-compatibility-token <Username_Localpart> --device-id <Device_ID> --yes-i-want-to-grant-synapse-admin-privileges
     # https://element-hq.github.io/matrix-authentication-service/reference/cli/manage.html#manage-issue-compatibility-token
-
     admin_tokens:
         "@abuse:example.com": admin_token
 
