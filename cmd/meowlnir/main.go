@@ -216,6 +216,7 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	wrapped := bot.NewBot(
 		db, intent, m.Log.With().Str("bot", db.Username).Logger(),
 		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Encryption.PickleKey,
+		m.Config.Meowlnir.AdminTokens[intent.UserID],
 	)
 	wrapped.Init(ctx)
 	if wrapped.CryptoHelper != nil {

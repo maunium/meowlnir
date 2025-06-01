@@ -33,6 +33,8 @@ type MeowlnirConfig struct {
 	LoadAllRoomHashes   bool      `yaml:"load_all_room_hashes"`
 	HackyRuleFilter     []string  `yaml:"hacky_rule_filter"`
 	HackyRedactPatterns []string  `yaml:"hacky_redact_patterns"`
+
+	AdminTokens map[id.UserID]string `yaml:"admin_tokens"`
 }
 
 type PolicyServerConfig struct {
