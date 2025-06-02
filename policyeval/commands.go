@@ -61,7 +61,13 @@ var cmdJoin = &CommandHandler{
 			return
 		}
 		for _, arg := range ce.Args {
-			_, err := ce.Meta.Bot.JoinRoom(ce.Ctx, arg, nil)
+			joinIdentifier, via := resolveRoomIDOrAlias(ce, arg)
+			if joinIdentifier == "" {
+				continue
+			}
+			_, err := ce.Meta.Bot.JoinRoom(ce.Ctx, joinIdentifier, &mautrix.ReqJoinRoom{
+				Via: via,
+			})
 			if err != nil {
 				ce.Reply("Failed to join room %s: %v", format.SafeMarkdownCode(arg), err)
 			} else {
@@ -80,7 +86,13 @@ var cmdKnock = &CommandHandler{
 			return
 		}
 		for _, arg := range ce.Args {
-			_, err := ce.Meta.Bot.KnockRoom(ce.Ctx, arg, nil)
+			joinIdentifier, via := resolveRoomIDOrAlias(ce, arg)
+			if joinIdentifier == "" {
+				continue
+			}
+			_, err := ce.Meta.Bot.KnockRoom(ce.Ctx, joinIdentifier, &mautrix.ReqKnockRoom{
+				Via: via,
+			})
 			if err != nil {
 				ce.Reply("Failed to knock on room %s: %v", format.SafeMarkdownCode(arg), err)
 			} else {
@@ -987,19 +999,54 @@ var cmdHelp = &CommandHandler{
 	},
 }
 
-func resolveRoom(ce *CommandEvent, room string) id.RoomID {
+func resolveRoomFull(ce *CommandEvent, room string) (roomID id.RoomID, roomAlias id.RoomAlias, via []string) {
+	if strings.HasPrefix(room, "matrix:") || strings.HasPrefix(room, "https") {
+		uri, err := id.ParseMatrixURIOrMatrixToURL(room)
+		if err != nil {
+			ce.Reply(err.Error())
+			return
+		}
+		switch uri.Sigil1 {
+		case '#':
+			room = uri.RoomAlias().String()
+		case '!':
+			room = uri.RoomID().String()
+			via = uri.Via
+		default:
+			ce.Reply("%s is not a room ID or alias", format.SafeMarkdownCode(uri.PrimaryIdentifier()))
+			return
+		}
+	}
+
 	if strings.HasPrefix(room, "#") {
-		resp, err := ce.Meta.Bot.ResolveAlias(ce.Ctx, id.RoomAlias(room))
+		roomAlias = id.RoomAlias(room)
+		resp, err := ce.Meta.Bot.ResolveAlias(ce.Ctx, roomAlias)
 		if err != nil {
 			ce.Log.Warn().Err(err).
 				Str("room_input", room).
 				Msg("Failed to resolve alias")
 			ce.Reply("Failed to resolve alias %s: %v", format.SafeMarkdownCode(room), err)
-			return ""
+			return
 		}
-		return resp.RoomID
+		roomID = resp.RoomID
+		via = resp.Servers[:5]
+	} else {
+		roomID = id.RoomID(room)
 	}
-	return id.RoomID(room)
+	return
+}
+
+func resolveRoomIDOrAlias(ce *CommandEvent, room string) (string, []string) {
+	roomID, roomAlias, via := resolveRoomFull(ce, room)
+	if roomAlias != "" {
+		return roomAlias.String(), nil
+	}
+	return roomID.String(), via
+}
+
+func resolveRoom(ce *CommandEvent, room string) id.RoomID {
+	roomID, _, _ := resolveRoomFull(ce, room)
+	return roomID
 }
 
 var homeserverPatternRegex = regexp.MustCompile(`^[a-zA-Z0-9.*?-]+\.[a-zA-Z0-9*?-]+$`)
