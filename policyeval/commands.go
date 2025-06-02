@@ -1033,7 +1033,7 @@ func resolveRoomFull(ce *CommandEvent, room string) (roomID id.RoomID, roomAlias
 			return
 		}
 		roomID = resp.RoomID
-		via = resp.Servers[:5]
+		via = resp.Servers[:min(5, len(resp.Servers))]
 	} else {
 		roomID = id.RoomID(room)
 	}
