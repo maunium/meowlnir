@@ -388,6 +388,10 @@ func loadConfig(path string, noSave bool) *config.Config {
 
 func main() {
 	initVersion()
+	flag.SetHelpTitles(
+		"meowlnir - An opinionated Matrix moderation bot.",
+		"meowlnir [-hnve] [-c <path>]",
+	)
 	err := flag.Parse()
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
