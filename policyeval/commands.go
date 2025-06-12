@@ -57,7 +57,13 @@ var cmdJoin = &CommandHandler{
 			return
 		}
 		for _, arg := range ce.Args {
-			_, err := ce.Meta.Bot.JoinRoom(ce.Ctx, arg, nil)
+			joinIdentifier, via := resolveRoomIDOrAlias(ce, arg)
+			if joinIdentifier == "" {
+				continue
+			}
+			_, err := ce.Meta.Bot.JoinRoom(ce.Ctx, joinIdentifier, &mautrix.ReqJoinRoom{
+				Via: via,
+			})
 			if err != nil {
 				ce.Reply("Failed to join room %s: %v", format.SafeMarkdownCode(arg), err)
 			} else {
@@ -76,7 +82,13 @@ var cmdKnock = &CommandHandler{
 			return
 		}
 		for _, arg := range ce.Args {
-			_, err := ce.Meta.Bot.KnockRoom(ce.Ctx, arg, nil)
+			joinIdentifier, via := resolveRoomIDOrAlias(ce, arg)
+			if joinIdentifier == "" {
+				continue
+			}
+			_, err := ce.Meta.Bot.KnockRoom(ce.Ctx, joinIdentifier, &mautrix.ReqKnockRoom{
+				Via: via,
+			})
 			if err != nil {
 				ce.Reply("Failed to knock on room %s: %v", format.SafeMarkdownCode(arg), err)
 			} else {
@@ -326,16 +338,12 @@ func (pe *PolicyEvaluator) deduplicatePolicy(
 	ce *CommandEvent,
 	list *config.WatchedPolicyList,
 	policy *event.ModPolicyContent,
-) (entityType policylist.EntityType, existingStateKey string, ok bool) {
-	entityType, ok = validateEntity(policy.Entity)
-	if !ok {
-		ce.Reply("Invalid entity %s", format.SafeMarkdownCode(policy.Entity))
-		return
-	}
+	entityType policylist.EntityType,
+) (existingStateKey string, ok bool) {
 	match := ce.Meta.Store.MatchExact([]id.RoomID{list.RoomID}, entityType, policy.Entity)
 	rec := match.Recommendations().BanOrUnban
 	if rec == nil {
-		return entityType, "", true
+		return "", true
 	} else if rec.Recommendation == policy.Recommendation && rec.EntityOrHash() == policy.EntityOrHash() {
 		if rec.Reason == policy.Reason {
 			ce.Reply(
@@ -349,9 +357,9 @@ func (pe *PolicyEvaluator) deduplicatePolicy(
 				rec.Sender.URI().MatrixToURL(),
 				time.UnixMilli(rec.Timestamp).String(),
 			)
-			return entityType, "", false
+			return "", false
 		} else {
-			return entityType, rec.StateKey, true
+			return rec.StateKey, true
 		}
 	} else if (policy.Recommendation != event.PolicyRecommendationUnban && rec.Recommendation == event.PolicyRecommendationUnban) ||
 		(policy.Recommendation == event.PolicyRecommendationUnban && rec.Recommendation != event.PolicyRecommendationUnban) {
@@ -364,9 +372,9 @@ func (pe *PolicyEvaluator) deduplicatePolicy(
 			rec.Sender.URI().MatrixToURL(),
 			time.UnixMilli(rec.Timestamp).String(),
 		)
-		return entityType, "", false
+		return "", false
 	} else {
-		return entityType, "", true
+		return "", true
 	}
 }
 
@@ -387,8 +395,12 @@ var cmdBan = &CommandHandler{
 			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
+		entity, entityType, ok := resolveEntity(ce, ce.Args[1])
+		if !ok {
+			return
+		}
 		policy := &event.ModPolicyContent{
-			Entity:         ce.Args[1],
+			Entity:         entity,
 			Reason:         strings.Join(ce.Args[2:], " "),
 			Recommendation: event.PolicyRecommendationBan,
 		}
@@ -401,7 +413,7 @@ var cmdBan = &CommandHandler{
 		if ce.Command == "takedown" {
 			policy.Recommendation = event.PolicyRecommendationUnstableTakedown
 		}
-		entityType, existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy)
+		existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy, entityType)
 		if !ok {
 			return
 		}
@@ -436,10 +448,8 @@ var cmdRemovePolicy = &CommandHandler{
 			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
-		target := ce.Args[1]
-		entityType, ok := validateEntity(target)
+		target, entityType, ok := resolveEntity(ce, ce.Args[1])
 		if !ok {
-			ce.Reply("Invalid entity %s", format.SafeMarkdownCode(target))
 			return
 		}
 		var existingStateKey string
@@ -489,12 +499,16 @@ var cmdAddUnban = &CommandHandler{
 			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
 			return
 		}
+		entity, entityType, ok := resolveEntity(ce, ce.Args[1])
+		if !ok {
+			return
+		}
 		policy := &event.ModPolicyContent{
-			Entity:         ce.Args[1],
+			Entity:         entity,
 			Reason:         strings.Join(ce.Args[2:], " "),
 			Recommendation: event.PolicyRecommendationUnban,
 		}
-		entityType, existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy)
+		existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy, entityType)
 		if !ok {
 			return
 		}
@@ -513,10 +527,9 @@ var cmdAddUnban = &CommandHandler{
 }
 
 func doMatch(ce *CommandEvent, target string) {
-	targetUser := id.UserID(target)
 	userIDHash, ok := util.DecodeBase64Hash(target)
 	if ok {
-		targetUser, ok = ce.Meta.getUserIDFromHash(*userIDHash)
+		targetUser, ok := ce.Meta.getUserIDFromHash(*userIDHash)
 		if !ok {
 			ce.Reply("No user found for hash %s", format.SafeMarkdownCode(target))
 			return
@@ -524,14 +537,17 @@ func doMatch(ce *CommandEvent, target string) {
 		target = targetUser.String()
 		ce.Reply("Matched user %s for hash %s", format.SafeMarkdownCode(targetUser.String()), format.SafeMarkdownCode(target))
 	}
-	entityType, _ := validateEntity(target)
+	target, entityType, ok := resolveEntity(ce, target)
+	if !ok {
+		return
+	}
 	var dur time.Duration
 	var match policylist.Match
 	if entityType == policylist.EntityTypeUser {
 		start := time.Now()
-		match = ce.Meta.Store.MatchUser(nil, targetUser)
+		match = ce.Meta.Store.MatchUser(nil, id.UserID(target))
 		dur = time.Since(start)
-		rooms := ce.Meta.getRoomsUserIsIn(targetUser)
+		rooms := ce.Meta.getRoomsUserIsIn(id.UserID(target))
 		if len(rooms) > 0 {
 			formattedRooms := make([]string, len(rooms))
 			ce.Meta.protectedRoomsLock.RLock()
@@ -583,7 +599,7 @@ func doMatch(ce *CommandEvent, target string) {
 			strings.Join(eventStrings, "\n"),
 		)
 	} else {
-		ce.Reply("No match for %s in %s", format.SafeMarkdownCode(target), dur)
+		ce.Reply("No match for %s %s in %s", entityType, format.SafeMarkdownCode(target), dur)
 	}
 }
 
@@ -983,35 +999,88 @@ var cmdHelp = &CommandHandler{
 	},
 }
 
-func resolveRoom(ce *CommandEvent, room string) id.RoomID {
+func resolveRoomFull(ce *CommandEvent, room string) (roomID id.RoomID, roomAlias id.RoomAlias, via []string) {
+	if strings.HasPrefix(room, "matrix:") || strings.HasPrefix(room, "https") {
+		uri, err := id.ParseMatrixURIOrMatrixToURL(room)
+		if err != nil {
+			ce.Reply(err.Error())
+			return
+		}
+		switch uri.Sigil1 {
+		case '#':
+			room = uri.RoomAlias().String()
+		case '!':
+			room = uri.RoomID().String()
+			via = uri.Via
+		default:
+			ce.Reply("%s is not a room ID or alias", format.SafeMarkdownCode(uri.PrimaryIdentifier()))
+			return
+		}
+	}
+
 	if strings.HasPrefix(room, "#") {
-		resp, err := ce.Meta.Bot.ResolveAlias(ce.Ctx, id.RoomAlias(room))
+		roomAlias = id.RoomAlias(room)
+		resp, err := ce.Meta.Bot.ResolveAlias(ce.Ctx, roomAlias)
 		if err != nil {
 			ce.Log.Warn().Err(err).
 				Str("room_input", room).
 				Msg("Failed to resolve alias")
 			ce.Reply("Failed to resolve alias %s: %v", format.SafeMarkdownCode(room), err)
-			return ""
+			return
 		}
-		return resp.RoomID
+		roomID = resp.RoomID
+		via = resp.Servers[:min(5, len(resp.Servers))]
+	} else {
+		roomID = id.RoomID(room)
 	}
-	return id.RoomID(room)
+	return
+}
+
+func resolveRoomIDOrAlias(ce *CommandEvent, room string) (string, []string) {
+	roomID, roomAlias, via := resolveRoomFull(ce, room)
+	if roomAlias != "" {
+		return roomAlias.String(), nil
+	}
+	return roomID.String(), via
+}
+
+func resolveRoom(ce *CommandEvent, room string) id.RoomID {
+	roomID, _, _ := resolveRoomFull(ce, room)
+	return roomID
 }
 
 var homeserverPatternRegex = regexp.MustCompile(`^[a-zA-Z0-9.*?-]+\.[a-zA-Z0-9*?-]+$`)
 
-func validateEntity(entity string) (policylist.EntityType, bool) {
+func resolveEntity(ce *CommandEvent, entity string) (string, policylist.EntityType, bool) {
 	if len(entity) == 0 {
-		return "", false
+		ce.Reply("No entity provided?")
+		return "", "", false
+	}
+	if strings.HasPrefix(entity, "matrix:") || strings.HasPrefix(entity, "https") {
+		uri, err := id.ParseMatrixURIOrMatrixToURL(entity)
+		if err != nil {
+			ce.Reply(err.Error())
+			return "", "", false
+		}
+		switch uri.Sigil1 {
+		case '!':
+			entity = uri.RoomID().String()
+		case '@':
+			entity = uri.UserID().String()
+		default:
+			ce.Reply("%s is not a room or user ID", format.SafeMarkdownCode(uri.PrimaryIdentifier()))
+			return "", "", false
+		}
 	}
 	if entity[0] == '@' {
-		return policylist.EntityTypeUser, true
+		return entity, policylist.EntityTypeUser, true
 	} else if entity[0] == '!' {
-		return policylist.EntityTypeRoom, true
+		return entity, policylist.EntityTypeRoom, true
 	} else if homeserverPatternRegex.MatchString(entity) {
-		return policylist.EntityTypeServer, true
+		return entity, policylist.EntityTypeServer, true
 	}
-	return "", false
+	ce.Reply("Invalid entity %s", format.SafeMarkdownCode(entity))
+	return "", "", false
 }
 
 func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, stateKey, rawEntity string, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {

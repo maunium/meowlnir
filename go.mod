@@ -12,7 +12,7 @@ require (
 	go.mau.fi/zeroconfig v0.1.3
 	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mauflag v1.0.0
-	maunium.net/go/mautrix v0.24.1-0.20250527150456-f5746ee0f68d
+	maunium.net/go/mautrix v0.24.1-0.20250611161019-b8921397b82f
 )
 
 require (

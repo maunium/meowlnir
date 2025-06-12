@@ -48,9 +48,6 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 				Any("matches", policy).
 				Msg("Applying ban recommendation")
 			pe.policyServer.UpdateRecommendation(userID, pe.GetProtectedRooms(), PSRecommendationSpam)
-			for _, room := range rooms {
-				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban)
-			}
 			shouldRedact := recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown
 			if !shouldRedact && recs.BanOrUnban.Reason != "" {
 				for _, pattern := range pe.autoRedactPatterns {
@@ -59,6 +56,9 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 						break
 					}
 				}
+			}
+			for _, room := range rooms {
+				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban, shouldRedact)
 			}
 			if shouldRedact {
 				go pe.RedactUser(context.WithoutCancel(ctx), userID, recs.BanOrUnban.Reason, true)
@@ -149,7 +149,13 @@ func (pe *PolicyEvaluator) maybeApplySuspend(ctx context.Context, userID id.User
 	}
 }
 
-func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomID id.RoomID, policy *policylist.Policy) {
+func (pe *PolicyEvaluator) ApplyBan(
+	ctx context.Context,
+	userID id.UserID,
+	roomID id.RoomID,
+	policy *policylist.Policy,
+	shouldRedact bool,
+) {
 	ta := &database.TakenAction{
 		TargetUser: userID,
 		InRoomID:   roomID,
@@ -164,6 +170,8 @@ func (pe *PolicyEvaluator) ApplyBan(ctx context.Context, userID id.UserID, roomI
 		_, err = pe.Bot.BanUser(ctx, roomID, &mautrix.ReqBanUser{
 			Reason: filterReason(policy.Reason),
 			UserID: userID,
+
+			MSC4293RedactEvents: shouldRedact,
 		})
 	}
 	if err != nil {

@@ -232,13 +232,18 @@ func (pe *PolicyEvaluator) RejectPendingInvites(ctx context.Context, inviter id.
 				successfullyRejected++
 			}
 		}
-		pe.sendNotice(
+		pe.Bot.SendNoticeOpts(
 			ctx,
-			"Rejected %d/%d invites to [%s](%s) from ||[%s](%s)|| due to policy banning ||`%s`|| for `%s`",
-			successfullyRejected, len(rooms),
-			userID, userID.URI().MatrixToURL(),
-			inviter, inviter.URI().MatrixToURL(),
-			rec.EntityOrHash(), rec.Reason,
+			pe.ManagementRoom,
+			fmt.Sprintf(
+				"Rejected %d/%d invites to [%s](%s) from ||[%s](%s)|| due to policy banning ||`%s`|| for `%s`",
+				successfullyRejected, len(rooms),
+				userID, userID.URI().MatrixToURL(),
+				inviter, inviter.URI().MatrixToURL(),
+				rec.EntityOrHash(), rec.Reason,
+			),
+			// Don't mention users
+			&bot.SendNoticeOpts{Mentions: &event.Mentions{}},
 		)
 	}
 }
