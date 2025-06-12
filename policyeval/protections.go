@@ -14,7 +14,7 @@ import (
 	"maunium.net/go/mautrix/event"
 )
 
-func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *event.Event, p *config.NoMediaProtection) {
+func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *event.Event, p *config.NoMediaProtection, dry bool) bool {
 	// The room constraints and enabled-ness of the protection are already checked before this callback is called.
 	protectionLog := zerolog.Ctx(ctx).With().
 		Str("protection", "no_media").
@@ -28,7 +28,7 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 	}
 	if p.UserCanBypass(evt.Sender, powerLevels) {
 		protectionLog.Trace().Msg("sender can bypass protection")
-		return
+		return false
 	}
 
 	shouldRedact := false
@@ -67,13 +67,14 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 		shouldRedact = true
 	}
 
-	if shouldRedact {
+	if shouldRedact && !dry {
 		if _, err := client.RedactEvent(ctx, evt.RoomID, evt.ID); err != nil {
 			protectionLog.Err(err).Msg("Failed to redact message")
 		} else {
 			protectionLog.Info().Msg("Redacted message")
 		}
 	}
+	return shouldRedact
 }
 
 type eventWithMentions struct {

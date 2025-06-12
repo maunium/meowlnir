@@ -90,7 +90,7 @@ type PolicyServerResponse struct {
 	Recommendation PSRecommendation `json:"recommendation"`
 }
 
-func (ps *PolicyServer) getRecommendation(pdu *event.Event, evaluator *PolicyEvaluator) (PSRecommendation, policylist.Match) {
+func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event, evaluator *PolicyEvaluator) (PSRecommendation, policylist.Match) {
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {
@@ -101,6 +101,21 @@ func (ps *PolicyServer) getRecommendation(pdu *event.Event, evaluator *PolicyEva
 		return PSRecommendationSpam, match
 	}
 	// TODO check protections
+	// TODO: unify protections calling, because this is duplicated and inefficient
+	if evaluator.protections != nil {
+		protections := evaluator.protections.GetProtectionsForRoom(pdu.RoomID)
+		if protections != nil {
+			if pdu.Type == event.EventMessage {
+				content := pdu.Content.AsMessage()
+				if content.MsgType == event.MsgImage && protections.NoMedia.Enabled {
+					ok := MediaProtectionCallback(ctx, evaluator.Bot.Client, pdu, &protections.NoMedia, true)
+					if !ok {
+						return PSRecommendationSpam, nil
+					}
+				}
+			}
+		}
+	}
 	return PSRecommendationOk, nil
 }
 
@@ -117,7 +132,7 @@ func (ps *PolicyServer) HandleCheck(
 	if r.Recommendation == "" {
 		log := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
 		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
-		rec, match := ps.getRecommendation(pdu, evaluator)
+		rec, match := ps.getRecommendation(ctx, pdu, evaluator)
 		r.Recommendation = rec
 		if rec == PSRecommendationSpam {
 			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")

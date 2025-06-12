@@ -52,7 +52,7 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 		}
 		if cfg.NoMedia.Enabled {
 			zerolog.Ctx(ctx).Trace().Msg("calling media protection callback")
-			MediaProtectionCallback(ctx, pe.Bot.Client, evt, &cfg.NoMedia)
+			MediaProtectionCallback(ctx, pe.Bot.Client, evt, &cfg.NoMedia, false)
 		}
 		if cfg.MaxMentions != nil && cfg.MaxMentions.Enabled {
 			zerolog.Ctx(ctx).Trace().Msg("calling mention protection callback")
@@ -72,7 +72,7 @@ func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event)
 			cfg = override
 		}
 		if cfg.NoMedia.Enabled {
-			MediaProtectionCallback(ctx, pe.Bot.Client, evt, &cfg.NoMedia)
+			MediaProtectionCallback(ctx, pe.Bot.Client, evt, &cfg.NoMedia, false)
 		}
 	}
 	pe.commandProcessor.Process(ctx, evt)
