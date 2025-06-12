@@ -56,7 +56,7 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 		}
 		if cfg.MaxMentions != nil && cfg.MaxMentions.Enabled {
 			zerolog.Ctx(ctx).Trace().Msg("calling mention protection callback")
-			MentionProtectionCallback(ctx, pe, evt, cfg.MaxMentions)
+			MentionProtectionCallback(ctx, pe, evt, cfg.MaxMentions, false)
 		}
 	}
 }

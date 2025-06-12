@@ -81,7 +81,7 @@ type eventWithMentions struct {
 	Mentions *event.Mentions `json:"m.mentions"`
 }
 
-func MentionProtectionCallback(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, p *config.MaxMentionsProtection) {
+func MentionProtectionCallback(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, p *config.MaxMentionsProtection, dry bool) bool {
 	protectionLog := zerolog.Ctx(ctx).With().
 		Str("protection", "max_mentions").
 		Stringer("room", evt.RoomID).
@@ -90,13 +90,13 @@ func MentionProtectionCallback(ctx context.Context, pe *PolicyEvaluator, evt *ev
 		Logger()
 	if p.MaxMentions <= 0 {
 		protectionLog.Trace().Msg("protection disabled")
-		return
+		return false
 	}
 	userMentions := 0
 	var content eventWithMentions
 	if err := json.Unmarshal(evt.Content.VeryRaw, &content); err != nil {
 		protectionLog.Trace().Err(err).Msg("failed to parse event to check for mentions")
-		return
+		return false
 	}
 	if content.Mentions != nil {
 		userMentions = len(content.Mentions.UserIDs)
@@ -108,17 +108,21 @@ func MentionProtectionCallback(ctx context.Context, pe *PolicyEvaluator, evt *ev
 	}
 	if p.UserCanBypass(evt.Sender, powerLevels) {
 		protectionLog.Trace().Msg("sender can bypass protection")
-		return
+		return false
 	}
 
+	spam := false
 	if p.Period <= 0 {
 		// Only check the event itself
 		if userMentions >= p.MaxMentions {
-			if _, err := pe.Bot.Client.RedactEvent(ctx, evt.RoomID, evt.ID); err != nil {
-				protectionLog.Err(err).Msg("Failed to redact message")
-			} else {
-				protectionLog.Info().Msg("Redacted message")
+			if !dry {
+				if _, err := pe.Bot.Client.RedactEvent(ctx, evt.RoomID, evt.ID); err != nil {
+					protectionLog.Err(err).Msg("Failed to redact message")
+				} else {
+					protectionLog.Info().Msg("Redacted message")
+				}
 			}
+			spam = true
 		}
 	} else {
 		u := p.IncrementUser(evt.Sender, userMentions)
@@ -139,11 +143,14 @@ func MentionProtectionCallback(ctx context.Context, pe *PolicyEvaluator, evt *ev
 				evt.RoomID,
 				evt.RoomID.URI().MatrixToURL(),
 				evt.RoomID.EventURI(evt.ID).MatrixToURL())
-			if _, err := pe.Bot.Client.RedactEvent(ctx, evt.RoomID, evt.ID); err != nil {
-				protectionLog.Err(err).Msg("Failed to redact message")
-			} else {
-				protectionLog.Info().Msg("Redacted message")
+			if !dry {
+				if _, err := pe.Bot.Client.RedactEvent(ctx, evt.RoomID, evt.ID); err != nil {
+					protectionLog.Err(err).Msg("Failed to redact message")
+				} else {
+					protectionLog.Info().Msg("Redacted message")
+				}
 			}
+			spam = true
 		}
 		if p.MaxInfractions != nil && u.Infractions >= *p.MaxInfractions {
 			pe.sendNotice(ctx,
@@ -152,6 +159,7 @@ func MentionProtectionCallback(ctx context.Context, pe *PolicyEvaluator, evt *ev
 				evt.Sender.URI().MatrixToURL(),
 				evt.RoomID,
 				evt.RoomID.URI().MatrixToURL())
+			// Note: always ban even when `dry` is true. Dry is intended to prevent double redactions.
 			_, banErr := pe.Bot.Client.BanUser(ctx, evt.RoomID, &mautrix.ReqBanUser{UserID: evt.Sender, Reason: "too many mentions"})
 			if banErr != nil {
 				protectionLog.Err(banErr).Msg("Failed to ban user")
@@ -165,8 +173,10 @@ func MentionProtectionCallback(ctx context.Context, pe *PolicyEvaluator, evt *ev
 			} else {
 				protectionLog.Info().Msg("Banned user")
 			}
+			spam = true
 		}
 	}
+	return spam
 }
 
 func ServerRequirementsProtectionCallback(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, p *config.ServerRequirementsProtection) {

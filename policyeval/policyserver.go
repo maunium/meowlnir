@@ -107,10 +107,18 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event,
 		if protections != nil {
 			if pdu.Type == event.EventMessage {
 				content := pdu.Content.AsMessage()
-				if content.MsgType == event.MsgImage && protections.NoMedia.Enabled {
-					ok := MediaProtectionCallback(ctx, evaluator.Bot.Client, pdu, &protections.NoMedia, true)
-					if !ok {
-						return PSRecommendationSpam, nil
+				if content.MsgType == event.MsgImage {
+					if protections.NoMedia.Enabled {
+						spam := MediaProtectionCallback(ctx, evaluator.Bot.Client, pdu, &protections.NoMedia, true)
+						if spam {
+							return PSRecommendationSpam, nil
+						}
+					}
+					if protections.MaxMentions != nil && protections.MaxMentions.Enabled {
+						spam := MentionProtectionCallback(ctx, evaluator, pdu, protections.MaxMentions, true)
+						if spam {
+							return PSRecommendationSpam, nil
+						}
 					}
 				}
 			}
