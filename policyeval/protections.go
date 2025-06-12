@@ -32,7 +32,7 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 	}
 
 	shouldRedact := false
-	allowedTypes := []string{"m.text", "m.notice", "m.emote"}
+	allowedTypes := []string{"m.text", "m.notice", "m.emote", "m.reaction"}
 	if p.AllowedTypes != nil {
 		allowedTypes = *p.AllowedTypes // text-only by default
 	}
