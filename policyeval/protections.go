@@ -54,7 +54,7 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 			msgType = string(msgContent.MsgType)
 		}
 
-		shouldRedact = !slices.Contains(allowedTypes, msgType)
+		shouldRedact = len(allowedTypes) > 0 && !slices.Contains(allowedTypes, msgType)
 		if msgContent != nil && !p.AllowInlineImages {
 			// Lazy, but check for <img> tags in the body.
 			if strings.Contains(msgContent.FormattedBody, "<img") {
