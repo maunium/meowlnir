@@ -69,6 +69,7 @@ type Protections struct {
 // NoMediaProtection will automatically redact the messages if they have a message type not contained in AllowedTypes.
 // Enabled - whether the protection is enabled
 // IgnoreHomeServers - a list of homeservers to ignore for this protection
+// ForbidHomeservers - a list of homeservers to always forbid for this protection. IgnoreHomeServers takes precedence.
 // IgnoreAbovePowerLevel - a power level above which to ignore this protection (gt, not gte)
 // AllowedTypes - a list of message types to allow. If nil, defaults to ["m.text", "m.notice", "m.emote"]
 // AllowInlineImages - whether to allow inline images in messages, like emojis.
@@ -76,6 +77,7 @@ type Protections struct {
 type NoMediaProtection struct {
 	Enabled               bool      `json:"enabled"`
 	IgnoreHomeServers     []string  `json:"ignore_home_servers"`
+	ForbidHomeservers     []string  `json:"forbid_homeservers"`
 	IgnoreAbovePowerLevel *int64    `json:"ignore_power_level_above"`
 	AllowedTypes          *[]string `json:"allowed_types"`
 	AllowInlineImages     bool      `json:"allow_inline_images"`

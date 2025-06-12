@@ -63,6 +63,10 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 		}
 	}
 
+	if len(p.ForbidHomeservers) > 0 && slices.Contains(p.ForbidHomeservers, evt.Sender.Homeserver()) {
+		shouldRedact = true
+	}
+
 	if shouldRedact {
 		if _, err := client.RedactEvent(ctx, evt.RoomID, evt.ID); err != nil {
 			protectionLog.Err(err).Msg("Failed to redact message")
