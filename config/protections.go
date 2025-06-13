@@ -100,10 +100,11 @@ func (p *MaxMentionsProtection) GetUser(user id.UserID) *MentionCounter {
 }
 
 // IncrementUser increments the mention counter for a user by n, creating it if it doesn't exist
-func (p *MaxMentionsProtection) IncrementUser(user id.UserID, n int) *MentionCounter {
+func (p *MaxMentionsProtection) IncrementUser(user id.UserID, n int, originTS int64) *MentionCounter {
 	c := p.GetUser(user)
+	originTime := time.UnixMilli(originTS)
 	if c == nil {
-		c = &MentionCounter{Hits: 0, Expires: time.Now().Add(time.Duration(p.Period) * time.Second), Start: time.Now()}
+		c = &MentionCounter{Hits: 0, Expires: originTime.Add(time.Duration(p.Period) * time.Second), Start: originTime}
 	}
 	c.Hits += n
 	p.users[user] = c
@@ -111,10 +112,11 @@ func (p *MaxMentionsProtection) IncrementUser(user id.UserID, n int) *MentionCou
 }
 
 // IncrementInfractions increments the infractions for a user by 1, creating it if it doesn't exist
-func (p *MaxMentionsProtection) IncrementInfractions(user id.UserID, n int) *MentionCounter {
+func (p *MaxMentionsProtection) IncrementInfractions(user id.UserID, n int, originTS int64) *MentionCounter {
 	c := p.GetUser(user)
+	originTime := time.UnixMilli(originTS)
 	if c == nil {
-		c = &MentionCounter{Hits: 0, Expires: time.Now().Add(time.Duration(p.Period) * time.Second), Start: time.Now()}
+		c = &MentionCounter{Hits: 0, Expires: originTime.Add(time.Duration(p.Period) * time.Second), Start: originTime}
 	}
 	if p.MaxInfractions != nil {
 		c.Infractions += n

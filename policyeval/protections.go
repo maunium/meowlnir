@@ -174,7 +174,7 @@ func MentionProtectionCallback(ctx context.Context, pe *PolicyEvaluator, evt *ev
 			spam = true
 		}
 	} else {
-		u := p.IncrementUser(evt.Sender, userMentions)
+		u := p.IncrementUser(evt.Sender, userMentions, evt.Timestamp)
 		protectionLog.Trace().
 			Int("mentions", u.Hits).
 			Int("max", p.MaxMentions).
@@ -182,7 +182,7 @@ func MentionProtectionCallback(ctx context.Context, pe *PolicyEvaluator, evt *ev
 			Msg("sender has sent total mentions")
 		if u.Hits >= p.MaxMentions && time.Now().Before(u.Expires) {
 			infractionsToAdd := userMentions / p.MaxMentions
-			u = p.IncrementInfractions(evt.Sender, infractionsToAdd)
+			u = p.IncrementInfractions(evt.Sender, infractionsToAdd, evt.Timestamp)
 			pe.sendNotice(ctx,
 				"User [%s](%s) has sent too many mentions (%d in the past %s) in room [%s](%s) - redacting their [message](%s).",
 				evt.Sender,
