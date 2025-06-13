@@ -143,13 +143,19 @@ func (ps *PolicyServer) HandleCheck(
 	evaluator *PolicyEvaluator,
 	redact bool,
 ) (res *PolicyServerResponse, err error) {
+	log := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
+	rs := time.Now()
 	r := ps.getCache(evtID, pdu)
+	log.Trace().Dur("duration", time.Since(rs)).Interface("recommendation", r).Msg("fetched recommendation from cache")
+	la := time.Now()
 	r.Lock.Lock()
+	log.Trace().Dur("duration", time.Since(la)).Msg("locked cache entry for event")
 	defer r.Lock.Unlock()
 	if r.Recommendation == "" {
-		log := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
 		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
+		rst := time.Now()
 		rec, match := ps.getRecommendation(ctx, pdu, evaluator)
+		log.Trace().Dur("duration", time.Since(rst)).Msg("Recommendation check completed")
 		r.Recommendation = rec
 		if rec == PSRecommendationSpam {
 			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
@@ -165,5 +171,6 @@ func (ps *PolicyServer) HandleCheck(
 		}
 	}
 	r.LastAccessed = time.Now()
+	log.Trace().Dur("duration", time.Since(rs)).Interface("event", pdu).Msg("Checked event")
 	return &PolicyServerResponse{Recommendation: r.Recommendation}, nil
 }
