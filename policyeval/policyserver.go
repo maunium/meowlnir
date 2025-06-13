@@ -110,28 +110,43 @@ func (ps *PolicyServer) HandleCheck(
 	pdu *event.Event,
 	evaluator *PolicyEvaluator,
 	redact bool,
+	caller string,
 ) (res *PolicyServerResponse, err error) {
+	log := zerolog.Ctx(ctx).With().
+		Stringer("room_id", pdu.RoomID).
+		Stringer("event_id", evtID).
+		Str("caller", caller).
+		Logger()
 	r := ps.getCache(evtID, pdu)
+	finalRec := r.Recommendation
 	r.Lock.Lock()
-	defer r.Lock.Unlock()
-	if r.Recommendation == "" {
-		log := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
-		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
-		rec, match := ps.getRecommendation(pdu, evaluator)
-		r.Recommendation = rec
-		if rec == PSRecommendationSpam {
-			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
-			if redact {
+	defer func() {
+		defer r.Lock.Unlock()
+		if caller != pdu.Sender.Homeserver() {
+			r.LastAccessed = time.Now()
+			if r.Recommendation == "" {
+				r.Recommendation = finalRec // only cache if the requesting server is not the sender
+			}
+			if redact && finalRec == PSRecommendationSpam {
 				go func() {
 					if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
 						log.Error().Err(err).Msg("Failed to redact event")
 					}
 				}()
 			}
+		}
+		// Don't send redactions nor cache when the origin server has requested a check and failed it locally.
+	}()
+
+	if r.Recommendation == "" {
+		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
+		rec, match := ps.getRecommendation(pdu, evaluator)
+		finalRec = rec
+		if rec == PSRecommendationSpam {
+			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
 		} else {
 			log.Trace().Msg("Event accepted")
 		}
 	}
-	r.LastAccessed = time.Now()
 	return &PolicyServerResponse{Recommendation: r.Recommendation}, nil
 }
