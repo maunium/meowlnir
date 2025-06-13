@@ -102,24 +102,33 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event,
 	}
 	// TODO check protections
 	// TODO: unify protections calling, because this is duplicated and inefficient
+	logger := zerolog.Ctx(ctx).With().
+		Stringer("room_id", pdu.RoomID).
+		Stringer("event_id", pdu.ID).
+		Stringer("sender", pdu.Sender).
+		Logger()
 	if evaluator.protections != nil {
 		protections := evaluator.protections.GetProtectionsForRoom(pdu.RoomID)
 		if protections != nil {
+			logger.Trace().Interface("protections", protections).Msg("found protections for room")
 			if pdu.Type == event.EventMessage {
-				content := pdu.Content.AsMessage()
-				if content.MsgType == event.MsgImage {
-					if protections.NoMedia.Enabled {
-						spam := MediaProtectionCallback(ctx, evaluator.Bot.Client, pdu, &protections.NoMedia, true)
-						if spam {
-							return PSRecommendationSpam, nil
-						}
+				if protections.MaxMentions != nil && protections.MaxMentions.Enabled {
+					logger.Trace().Msg("calling mention protection callback")
+					spam := MentionProtectionCallback(ctx, evaluator, pdu, protections.MaxMentions, true)
+					if spam {
+						logger.Debug().Msg("Event rejected for max mentions")
+						return PSRecommendationSpam, nil
 					}
-					if protections.MaxMentions != nil && protections.MaxMentions.Enabled {
-						spam := MentionProtectionCallback(ctx, evaluator, pdu, protections.MaxMentions, true)
-						if spam {
-							return PSRecommendationSpam, nil
-						}
+					logger.Debug().Msg("event passed max mentions check")
+				}
+				if protections.NoMedia.Enabled {
+					logger.Trace().Msg("calling media protection callback")
+					spam := MediaProtectionCallback(ctx, evaluator.Bot.Client, pdu, &protections.NoMedia, true)
+					if spam {
+						logger.Debug().Msg("Event rejected for media protection")
+						return PSRecommendationSpam, nil
 					}
+					logger.Debug().Msg("event passed media protection check")
 				}
 			}
 		}

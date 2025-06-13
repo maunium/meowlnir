@@ -14,6 +14,11 @@ import (
 	"maunium.net/go/mautrix/event"
 )
 
+var (
+	imageTypes = []string{"m.image", "m.sticker", "m.video", "m.file"}
+	textTypes  = []string{"m.text", "m.notice", "m.emote", "m.reaction"}
+)
+
 func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *event.Event, p *config.NoMediaProtection, dry bool) bool {
 	// The room constraints and enabled-ness of the protection are already checked before this callback is called.
 	protectionLog := zerolog.Ctx(ctx).With().
@@ -32,7 +37,7 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 	}
 
 	shouldRedact := false
-	allowedTypes := []string{"m.text", "m.notice", "m.emote", "m.reaction"}
+	allowedTypes := textTypes
 	if p.AllowedTypes != nil {
 		allowedTypes = *p.AllowedTypes // text-only by default
 	}
@@ -40,6 +45,14 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 	if evt.Type == event.EventReaction && !p.AllowCustomReactions {
 		if strings.HasPrefix(evt.Content.AsReaction().GetRelatesTo().Key, "mxc://") {
 			shouldRedact = true
+			protectionLog.Debug().
+				Str("reaction", evt.Content.AsReaction().GetRelatesTo().Key).
+				Msg("Reaction is an image, which is forbidden by no_media protection")
+		} else {
+			// Custom reactions are allowed, so we don't redact
+			protectionLog.Trace().
+				Str("reaction", evt.Content.AsReaction().GetRelatesTo().Key).
+				Msg("Reaction is a custom emoji, which is allowed by no_media protection")
 		}
 	} else {
 		var msgType string
@@ -50,21 +63,57 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 			// m.sticker is actually an event type, not message type. But, for all intents
 			// and purposes, it's basically just m.image, and here we'll treat it as such
 		} else {
+			if evt.Content.Parsed == nil {
+				err = evt.Content.ParseRaw(evt.Type)
+				if err != nil {
+					protectionLog.Warn().Err(err).Msg("Failed to parse event content for no_media protection")
+				}
+				// Not the end of the world if this fails, but some checks will fail (i.e. type comparisons)
+			}
 			msgContent = evt.Content.AsMessage()
 			msgType = string(msgContent.MsgType)
 		}
 
-		shouldRedact = len(allowedTypes) > 0 && !slices.Contains(allowedTypes, msgType)
+		shouldRedact = false
+		if len(allowedTypes) > 0 && !slices.Contains(allowedTypes, msgType) {
+			shouldRedact = true
+			protectionLog.Debug().
+				Str("type", msgType).
+				Interface("allowed_types", allowedTypes).
+				Msg("Message type is not allowed by no_media protection")
+		} else {
+			protectionLog.Trace().
+				Str("type", msgType).
+				Interface("allowed_types", allowedTypes).
+				Msg("Message type is allowed by no_media protection")
+		}
 		if msgContent != nil && !p.AllowInlineImages {
 			// Lazy, but check for <img> tags in the body.
 			if strings.Contains(msgContent.FormattedBody, "<img") {
 				shouldRedact = true
+				protectionLog.Debug().
+					Str("body", msgContent.FormattedBody).
+					Msg("Message body contains inline images, which are forbidden by no_media protection")
+			} else {
+				protectionLog.Trace().
+					Str("body", msgContent.FormattedBody).
+					Msg("Message body does not contain inline images, which is allowed by no_media protection")
 			}
 		}
-	}
-
-	if len(p.ForbidHomeservers) > 0 && slices.Contains(p.ForbidHomeservers, evt.Sender.Homeserver()) {
-		shouldRedact = true
+		if len(p.ForbidHomeservers) > 0 && slices.Contains(p.ForbidHomeservers, evt.Sender.Homeserver()) {
+			if slices.Contains(imageTypes, msgType) {
+				shouldRedact = true
+				protectionLog.Debug().
+					Str("homeserver", evt.Sender.Homeserver()).
+					Str("type", msgType).
+					Msg("Sender's homeserver is forbidden by no_media protection, and they sent an image")
+			} else {
+				protectionLog.Trace().
+					Str("homeserver", evt.Sender.Homeserver()).
+					Str("type", msgType).
+					Msg("Sender's homeserver is forbidden by no_media protection, but they did not send an image")
+			}
+		}
 	}
 
 	if shouldRedact && !dry {
