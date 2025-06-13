@@ -54,7 +54,7 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 				Str("reaction", evt.Content.AsReaction().GetRelatesTo().Key).
 				Msg("Reaction is a custom emoji, which is allowed by no_media protection")
 		}
-	} else if evt.Type == event.EventMessage {
+	} else if evt.Type == event.EventMessage || evt.Type == event.EventSticker {
 		var msgType string
 		var msgContent *event.MessageEventContent
 
