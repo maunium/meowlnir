@@ -54,7 +54,7 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 				Str("reaction", evt.Content.AsReaction().GetRelatesTo().Key).
 				Msg("Reaction is a custom emoji, which is allowed by no_media protection")
 		}
-	} else {
+	} else if evt.Type == event.EventMessage {
 		var msgType string
 		var msgContent *event.MessageEventContent
 
@@ -114,6 +114,11 @@ func MediaProtectionCallback(ctx context.Context, client *mautrix.Client, evt *e
 					Msg("Sender's homeserver is forbidden by no_media protection, but they did not send an image")
 			}
 		}
+	} else {
+		// Not a message or reaction, so we don't redact
+		protectionLog.Trace().
+			Str("type", evt.Type.Type).
+			Msg("Event type is not a message or reaction, so no media protection applies")
 	}
 
 	if shouldRedact && !dry {
