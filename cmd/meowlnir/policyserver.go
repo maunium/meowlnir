@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"go.mau.fi/meowlnir/policyeval"
+
 	"maunium.net/go/mautrix/federation"
 
 	"github.com/rs/zerolog/hlog"
@@ -42,6 +44,10 @@ func (m *Meowlnir) PostMSC4284EventCheck(w http.ResponseWriter, r *http.Request)
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
 		mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
 		return
+	}
+	if resp.Recommendation == "spam" && m.Config.Meowlnir.DryRun {
+		hlog.FromRequest(r).Warn().Msg("Event would have been marked as spam, but dry run is enabled")
+		resp = &policyeval.PolicyServerResponse{Recommendation: "ok"}
 	}
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
