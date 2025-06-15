@@ -36,7 +36,7 @@ func (m *Meowlnir) PostMSC4284EventCheck(w http.ResponseWriter, r *http.Request)
 		eventID,
 		&req,
 		eval,
-		m.Config.PolicyServer.AlwaysRedact,
+		m.Config.PolicyServer.AlwaysRedact && !m.Config.Meowlnir.DryRun,
 		federation.OriginServerNameFromRequest(r))
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")

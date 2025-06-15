@@ -122,20 +122,13 @@ func (ps *PolicyServer) HandleCheck(
 	r.Lock.Lock()
 	defer func() {
 		defer r.Lock.Unlock()
-		if caller != pdu.Sender.Homeserver() {
-			r.LastAccessed = time.Now()
-			if r.Recommendation == "" {
-				r.Recommendation = finalRec // only cache if the requesting server is not the sender
-			}
-			if redact && finalRec == PSRecommendationSpam {
-				go func() {
-					if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
-						log.Error().Err(err).Msg("Failed to redact event")
-					}
-				}()
-			}
+		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact {
+			go func() {
+				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
+					log.Error().Err(err).Msg("Failed to redact event")
+				}
+			}()
 		}
-		// Don't send redactions nor cache when the origin server has requested a check and failed it locally.
 	}()
 
 	if r.Recommendation == "" {
@@ -144,9 +137,11 @@ func (ps *PolicyServer) HandleCheck(
 		finalRec = rec
 		if rec == PSRecommendationSpam {
 			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
+			r.Recommendation = rec
 		} else {
 			log.Trace().Msg("Event accepted")
 		}
 	}
+	r.LastAccessed = time.Now()
 	return &PolicyServerResponse{Recommendation: r.Recommendation}, nil
 }
