@@ -19,7 +19,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		hlog.NewHandler(m.Log.With().Str("component", "reporting api").Logger()),
 		hlog.RequestIDHandler("request_id", "X-Request-ID"),
 		exhttp.CORSMiddleware,
-		requestlog.AccessLogger(false),
+		requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
 		m.ClientAuth,
 	))
 
@@ -30,7 +30,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		http.StripPrefix("/_matrix/policy", policyServerRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "policy server").Logger()),
 		hlog.RequestIDHandler("request_id", "X-Request-ID"),
-		requestlog.AccessLogger(false),
+		requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
 		m.PolicyServer.ServerAuth.AuthenticateMiddleware,
 	))
 
@@ -40,7 +40,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		http.StripPrefix("/_meowlnir/antispam", antispamRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "antispam api").Logger()),
 		hlog.RequestIDHandler("request_id", "X-Request-ID"),
-		requestlog.AccessLogger(false),
+		requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
 		m.AntispamAuth,
 	))
 
@@ -54,7 +54,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		hlog.NewHandler(m.Log.With().Str("component", "management api").Logger()),
 		hlog.RequestIDHandler("request_id", "X-Request-ID"),
 		exhttp.CORSMiddleware,
-		requestlog.AccessLogger(false),
+		requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
 		m.ManagementAuth,
 	))
 }
