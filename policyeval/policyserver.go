@@ -94,11 +94,17 @@ func (ps *PolicyServer) getRecommendation(pdu *event.Event, evaluator *PolicyEva
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {
-		return PSRecommendationSpam, match
+		rec := match.Recommendations().BanOrUnban
+		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+			return PSRecommendationSpam, match
+		}
 	}
 	match = evaluator.Store.MatchServer(watchedLists, pdu.Sender.Homeserver())
 	if match != nil {
-		return PSRecommendationSpam, match
+		rec := match.Recommendations().BanOrUnban
+		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+			return PSRecommendationSpam, match
+		}
 	}
 	// TODO check protections
 	return PSRecommendationOk, nil
