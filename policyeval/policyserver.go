@@ -94,14 +94,20 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event,
 	logger := zerolog.Ctx(ctx).With().Stringer("sender", pdu.Sender).Logger()
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
-	if match != nil && match.Recommendations().BanOrUnban.Recommendation != event.PolicyRecommendationUnban {
-		logger.Info().Stringer("recommendation", match.Recommendations()).Msg("Event rejected for user ban")
-		return PSRecommendationSpam, match
+	if match != nil {
+		rec := match.Recommendations().BanOrUnban
+		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+			logger.Info().Stringer("recommendation", match.Recommendations()).Msg("Event rejected for user ban")
+			return PSRecommendationSpam, match
+		}
 	}
 	match = evaluator.Store.MatchServer(watchedLists, pdu.Sender.Homeserver())
-	if match != nil && match.Recommendations().BanOrUnban.Recommendation != event.PolicyRecommendationUnban {
-		logger.Info().Stringer("recommendation", match.Recommendations()).Msg("Event rejected for server ban")
-		return PSRecommendationSpam, match
+	if match != nil {
+		rec := match.Recommendations().BanOrUnban
+		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+			logger.Info().Stringer("recommendation", match.Recommendations()).Msg("Event rejected for server ban")
+			return PSRecommendationSpam, match
+		}
 	}
 	// TODO check protections
 	// TODO: unify protections calling, because this is duplicated and inefficient
