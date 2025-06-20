@@ -91,22 +91,20 @@ type PolicyServerResponse struct {
 }
 
 func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event, evaluator *PolicyEvaluator) (PSRecommendation, policylist.Match) {
+	logger := zerolog.Ctx(ctx).With().Stringer("sender", pdu.Sender).Logger()
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
-	if match != nil {
+	if match != nil && match.Recommendations().BanOrUnban.Recommendation != event.PolicyRecommendationUnban {
+		logger.Info().Stringer("recommendation", match.Recommendations()).Msg("Event rejected for user ban")
 		return PSRecommendationSpam, match
 	}
 	match = evaluator.Store.MatchServer(watchedLists, pdu.Sender.Homeserver())
-	if match != nil {
+	if match != nil && match.Recommendations().BanOrUnban.Recommendation != event.PolicyRecommendationUnban {
+		logger.Info().Stringer("recommendation", match.Recommendations()).Msg("Event rejected for server ban")
 		return PSRecommendationSpam, match
 	}
 	// TODO check protections
 	// TODO: unify protections calling, because this is duplicated and inefficient
-	logger := zerolog.Ctx(ctx).With().
-		Stringer("room_id", pdu.RoomID).
-		Stringer("event_id", pdu.ID).
-		Stringer("sender", pdu.Sender).
-		Logger()
 	if evaluator.protections != nil {
 		protections := evaluator.protections.GetProtectionsForRoom(pdu.RoomID)
 		if protections != nil {
@@ -116,7 +114,7 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event,
 					logger.Trace().Msg("calling mention protection callback")
 					spam := MentionProtectionCallback(ctx, evaluator, pdu, protections.MaxMentions, true)
 					if spam {
-						logger.Debug().Msg("Event rejected for max mentions")
+						logger.Info().Msg("Event rejected for max mentions")
 						return PSRecommendationSpam, nil
 					}
 					logger.Debug().Msg("event passed max mentions check")
@@ -125,7 +123,7 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event,
 					logger.Trace().Msg("calling media protection callback")
 					spam := MediaProtectionCallback(ctx, evaluator.Bot.Client, pdu, &protections.NoMedia, true)
 					if spam {
-						logger.Debug().Msg("Event rejected for media protection")
+						logger.Info().Msg("Event rejected for media protection")
 						return PSRecommendationSpam, nil
 					}
 					logger.Debug().Msg("event passed media protection check")
@@ -133,6 +131,7 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event,
 			}
 		}
 	}
+	logger.Debug().Msg("Event passed all checks, returning OK recommendation")
 	return PSRecommendationOk, nil
 }
 
@@ -143,7 +142,12 @@ func (ps *PolicyServer) HandleCheck(
 	evaluator *PolicyEvaluator,
 	redact bool,
 ) (res *PolicyServerResponse, err error) {
-	log := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
+	ctx = zerolog.Ctx(ctx).With().
+		Stringer("room_id", pdu.RoomID).
+		Stringer("event_id", evtID).
+		Logger().
+		WithContext(ctx)
+	log := zerolog.Ctx(ctx)
 	rs := time.Now()
 	r := ps.getCache(evtID, pdu)
 	log.Trace().Dur("duration", time.Since(rs)).Interface("recommendation", r).Msg("fetched recommendation from cache")
@@ -154,11 +158,10 @@ func (ps *PolicyServer) HandleCheck(
 	if r.Recommendation == "" {
 		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
 		rst := time.Now()
-		rec, match := ps.getRecommendation(ctx, pdu, evaluator)
+		rec, _ := ps.getRecommendation(ctx, pdu, evaluator)
 		log.Trace().Dur("duration", time.Since(rst)).Msg("Recommendation check completed")
 		r.Recommendation = rec
 		if rec == PSRecommendationSpam {
-			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
 			if redact {
 				go func() {
 					if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
@@ -166,8 +169,6 @@ func (ps *PolicyServer) HandleCheck(
 					}
 				}()
 			}
-		} else {
-			log.Trace().Msg("Event accepted")
 		}
 	}
 	r.LastAccessed = time.Now()
