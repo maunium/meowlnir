@@ -116,24 +116,34 @@ func (ps *PolicyServer) HandleCheck(
 	pdu *event.Event,
 	evaluator *PolicyEvaluator,
 	redact bool,
+	caller string,
 ) (res *PolicyServerResponse, err error) {
+	log := zerolog.Ctx(ctx).With().
+		Stringer("room_id", pdu.RoomID).
+		Stringer("event_id", evtID).
+		Str("caller", caller).
+		Logger()
 	r := ps.getCache(evtID, pdu)
+	finalRec := r.Recommendation
 	r.Lock.Lock()
-	defer r.Lock.Unlock()
+	defer func() {
+		defer r.Lock.Unlock()
+		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact {
+			go func() {
+				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
+					log.Error().Err(err).Msg("Failed to redact event")
+				}
+			}()
+		}
+	}()
+
 	if r.Recommendation == "" {
-		log := zerolog.Ctx(ctx).With().Stringer("room_id", pdu.RoomID).Stringer("event_id", evtID).Logger()
 		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
 		rec, match := ps.getRecommendation(pdu, evaluator)
-		r.Recommendation = rec
+		finalRec = rec
 		if rec == PSRecommendationSpam {
 			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
-			if redact {
-				go func() {
-					if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
-						log.Error().Err(err).Msg("Failed to redact event")
-					}
-				}()
-			}
+			r.Recommendation = rec
 		} else {
 			log.Trace().Msg("Event accepted")
 		}
