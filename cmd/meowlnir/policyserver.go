@@ -4,16 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"go.mau.fi/meowlnir/policyeval"
-
-	"maunium.net/go/mautrix/federation"
-
 	"github.com/rs/zerolog/hlog"
+	"go.mau.fi/util/exhttp"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
 
-	"go.mau.fi/util/exhttp"
+	"go.mau.fi/meowlnir/policyeval"
 )
 
 func (m *Meowlnir) PostMSC4284EventCheck(w http.ResponseWriter, r *http.Request) {
