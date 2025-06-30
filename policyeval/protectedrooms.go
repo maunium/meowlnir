@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/dbutil"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -200,7 +201,7 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 			continue
 		}
 		wg.Add(1)
-		go func() {
+		doLoad := func() {
 			defer wg.Done()
 			members, errMsg := pe.tryProtectingRoom(ctx, joinedRooms, roomID, false)
 			outLock.Lock()
@@ -214,7 +215,13 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 				}
 				output = append(output, fmt.Sprintf("* Started protecting room [%s](%s)", roomID, roomID.URI().MatrixToURL()))
 			}
-		}()
+		}
+		if pe.DB.Dialect == dbutil.SQLite {
+			// Load rooms synchronously on SQLite to avoid lots of things trying to write at once
+			doLoad()
+		} else {
+			go doLoad()
+		}
 	}
 	wg.Wait()
 	if len(reevalMembers) > 0 {

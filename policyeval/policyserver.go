@@ -110,34 +110,6 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event,
 		}
 	}
 	// TODO check protections
-	// TODO: unify protections calling, because this is duplicated and inefficient
-	if evaluator.protections != nil {
-		protections := evaluator.protections.GetProtectionsForRoom(pdu.RoomID)
-		if protections != nil {
-			logger.Trace().Interface("protections", protections).Msg("found protections for room")
-			if pdu.Type == event.EventMessage {
-				if protections.MaxMentions != nil && protections.MaxMentions.Enabled {
-					logger.Trace().Msg("calling mention protection callback")
-					spam := MentionProtectionCallback(ctx, evaluator, pdu, protections.MaxMentions, true)
-					if spam {
-						logger.Info().Msg("Event rejected for max mentions")
-						return PSRecommendationSpam, nil
-					}
-					logger.Debug().Msg("event passed max mentions check")
-				}
-				if protections.NoMedia.Enabled {
-					logger.Trace().Msg("calling media protection callback")
-					spam := MediaProtectionCallback(ctx, evaluator.Bot.Client, pdu, &protections.NoMedia, true)
-					if spam {
-						logger.Info().Msg("Event rejected for media protection")
-						return PSRecommendationSpam, nil
-					}
-					logger.Debug().Msg("event passed media protection check")
-				}
-			}
-		}
-	}
-	logger.Debug().Msg("Event passed all checks, returning OK recommendation")
 	return PSRecommendationOk, nil
 }
 
@@ -147,37 +119,38 @@ func (ps *PolicyServer) HandleCheck(
 	pdu *event.Event,
 	evaluator *PolicyEvaluator,
 	redact bool,
+	caller string,
 ) (res *PolicyServerResponse, err error) {
-	ctx = zerolog.Ctx(ctx).With().
+	log := zerolog.Ctx(ctx).With().
 		Stringer("room_id", pdu.RoomID).
 		Stringer("event_id", evtID).
-		Logger().
-		WithContext(ctx)
-	log := zerolog.Ctx(ctx)
-	rs := time.Now()
+		Str("caller", caller).
+		Logger()
 	r := ps.getCache(evtID, pdu)
-	log.Trace().Dur("duration", time.Since(rs)).Interface("recommendation", r).Msg("fetched recommendation from cache")
-	la := time.Now()
+	finalRec := r.Recommendation
 	r.Lock.Lock()
-	log.Trace().Dur("duration", time.Since(la)).Msg("locked cache entry for event")
-	defer r.Lock.Unlock()
+	defer func() {
+		defer r.Lock.Unlock()
+		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact {
+			go func() {
+				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
+					log.Error().Err(err).Msg("Failed to redact event")
+				}
+			}()
+		}
+	}()
+
 	if r.Recommendation == "" {
 		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
-		rst := time.Now()
-		rec, _ := ps.getRecommendation(ctx, pdu, evaluator)
-		log.Trace().Dur("duration", time.Since(rst)).Msg("Recommendation check completed")
-		r.Recommendation = rec
+		rec, match := ps.getRecommendation(ctx, pdu, evaluator)
+		finalRec = rec
 		if rec == PSRecommendationSpam {
-			if redact {
-				go func() {
-					if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
-						log.Error().Err(err).Msg("Failed to redact event")
-					}
-				}()
-			}
+			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
+			r.Recommendation = rec
+		} else {
+			log.Trace().Msg("Event accepted")
 		}
 	}
 	r.LastAccessed = time.Now()
-	log.Trace().Dur("duration", time.Since(rs)).Interface("event", pdu).Msg("Checked event")
 	return &PolicyServerResponse{Recommendation: r.Recommendation}, nil
 }

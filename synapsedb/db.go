@@ -49,7 +49,10 @@ const getUnredactedEventsBySenderInRoomQuery = `
 	SELECT events.room_id, events.event_id, events.origin_server_ts
 	FROM events
 	LEFT JOIN redactions ON events.event_id=redactions.redacts
-	WHERE events.sender = $1 AND events.room_id = ANY($2) AND redactions.redacts IS NULL
+	LEFT JOIN events redaction_evt ON redaction_evt.event_id=redactions.event_id
+	WHERE events.sender = $1
+	  AND events.room_id = ANY($2)
+	  AND (redactions.redacts IS NULL OR redaction_evt.type='m.room.member')
 `
 
 const getEventQuery = `
