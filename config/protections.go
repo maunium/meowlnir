@@ -82,10 +82,13 @@ type MaxMentionsProtection struct {
 	IgnoreAbovePowerLevel *int64   `json:"ignore_power_level_above"`
 	IgnoreHomeServers     []string `json:"ignore_home_servers"`
 	users                 map[id.UserID]*MentionCounter
+	usersLock             sync.Mutex
 }
 
 // GetUser fetches the mention counter for a user, deleting it if it is expired
 func (p *MaxMentionsProtection) GetUser(user id.UserID) *MentionCounter {
+	p.usersLock.Lock()
+	defer p.usersLock.Unlock()
 	if p.users == nil {
 		p.users = make(map[id.UserID]*MentionCounter)
 	}
