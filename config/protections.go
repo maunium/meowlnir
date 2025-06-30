@@ -82,7 +82,6 @@ type MaxMentionsProtection struct {
 	IgnoreAbovePowerLevel *int64   `json:"ignore_power_level_above"`
 	IgnoreHomeServers     []string `json:"ignore_home_servers"`
 	users                 map[id.UserID]*MentionCounter
-	usersLock             sync.RWMutex
 }
 
 // GetUser fetches the mention counter for a user, deleting it if it is expired
@@ -90,16 +89,12 @@ func (p *MaxMentionsProtection) GetUser(user id.UserID) *MentionCounter {
 	if p.users == nil {
 		p.users = make(map[id.UserID]*MentionCounter)
 	}
-	p.usersLock.RLock()
-	defer p.usersLock.RUnlock()
 	userCounter, ok := p.users[user]
-	if ok && time.Now().After(userCounter.Expires) {
-		defer func() {
-			p.usersLock.Lock()
-			defer p.usersLock.Unlock()
+	if ok {
+		if time.Now().After(userCounter.Expires) {
 			delete(p.users, user)
 			userCounter = nil
-		}()
+		}
 	}
 	return userCounter
 }
@@ -110,11 +105,9 @@ func (p *MaxMentionsProtection) IncrementUser(user id.UserID, n int, originTS in
 	originTime := time.UnixMilli(originTS)
 	if c == nil {
 		c = &MentionCounter{Hits: 0, Expires: originTime.Add(time.Duration(p.Period) * time.Second), Start: originTime}
-		p.usersLock.Lock()
-		p.users[user] = c
-		p.usersLock.Unlock()
 	}
 	c.Hits += n
+	p.users[user] = c
 	return c
 }
 
@@ -124,13 +117,11 @@ func (p *MaxMentionsProtection) IncrementInfractions(user id.UserID, n int, orig
 	originTime := time.UnixMilli(originTS)
 	if c == nil {
 		c = &MentionCounter{Hits: 0, Expires: originTime.Add(time.Duration(p.Period) * time.Second), Start: originTime}
-		p.usersLock.Lock()
-		p.users[user] = c
-		p.usersLock.Unlock()
 	}
 	if p.MaxInfractions != nil {
 		c.Infractions += n
 	}
+	p.users[user] = c
 	return c
 }
 
