@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/dbutil"
 	"go.mau.fi/util/exslices"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -63,7 +64,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	var outLock sync.Mutex
 	wg.Add(len(content.Lists))
 	for _, listInfo := range content.Lists {
-		go func() {
+		doLoad := func() {
 			defer wg.Done()
 			if !pe.Store.Contains(listInfo.RoomID) {
 				state, err := pe.Bot.State(ctx, listInfo.RoomID)
@@ -76,7 +77,13 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 				}
 				pe.Store.Add(listInfo.RoomID, state)
 			}
-		}()
+		}
+		if pe.DB.Dialect == dbutil.SQLite {
+			// Load rooms synchronously on SQLite to avoid lots of things trying to write at once
+			doLoad()
+		} else {
+			go doLoad()
+		}
 	}
 	wg.Wait()
 	watchedList := make([]id.RoomID, 0, len(content.Lists))
