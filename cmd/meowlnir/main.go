@@ -68,6 +68,8 @@ type Meowlnir struct {
 	EvaluatorByManagementRoom map[id.RoomID]*policyeval.PolicyEvaluator
 	HackyAutoRedactPatterns   []glob.Glob
 
+	appservicePingOnce sync.Once
+
 	RoomHashes *roomhash.Map
 }
 
@@ -213,6 +215,9 @@ func (m *Meowlnir) createPuppetClient(userID id.UserID) *mautrix.Client {
 
 func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	intent := m.AS.Intent(id.NewUserID(db.Username, m.AS.HomeserverDomain))
+	m.appservicePingOnce.Do(func() {
+		intent.EnsureAppserviceConnection(ctx)
+	})
 	wrapped := bot.NewBot(
 		db, intent, m.Log.With().Str("bot", db.Username).Logger(),
 		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Encryption.PickleKey,
