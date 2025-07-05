@@ -308,6 +308,8 @@ func (m *Meowlnir) Run(ctx context.Context) {
 		}
 	}
 
+	go m.AS.Start()
+
 	bots, err := m.DB.Bot.GetAll(ctx)
 	if err != nil {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to get bot list")
@@ -318,7 +320,6 @@ func (m *Meowlnir) Run(ctx context.Context) {
 	}
 
 	m.EventProcessor.Start(ctx)
-	go m.AS.Start()
 
 	var wg sync.WaitGroup
 	m.MapLock.Lock()
