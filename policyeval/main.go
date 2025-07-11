@@ -183,7 +183,7 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 	var errors []string
 	if evt, ok := state[event.StatePowerLevels][""]; !ok {
 		return fmt.Errorf("no power level event found in management room")
-	} else if errMsg := pe.handlePowerLevels(evt); errMsg != "" {
+	} else if errMsg := pe.handlePowerLevels(ctx, evt); errMsg != "" {
 		errors = append(errors, errMsg)
 	}
 	if evt, ok := state[config.StateWatchedLists][""]; !ok {
@@ -225,13 +225,25 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 	return nil
 }
 
-func (pe *PolicyEvaluator) handlePowerLevels(evt *event.Event) string {
+func (pe *PolicyEvaluator) handlePowerLevels(ctx context.Context, evt *event.Event) string {
 	content, ok := evt.Content.Parsed.(*event.PowerLevelsEventContent)
 	if !ok {
 		return "* Failed to parse power level event"
 	}
+	err := pe.Bot.Intent.FillPowerLevelCreateEvent(ctx, evt.RoomID, content)
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).
+			Stringer("room_id", evt.RoomID).
+			Msg("Failed to get create event for power levels in management room power level handler")
+	}
 	adminLevel := content.GetEventLevel(config.StateWatchedLists)
 	admins := exsync.NewSet[id.UserID]()
+	if content.CreateEvent != nil && content.CreateEvent.Content.AsCreate().SupportsCreatorPower() {
+		admins.Add(content.CreateEvent.Sender)
+		for _, creator := range content.CreateEvent.Content.AsCreate().AdditionalCreators {
+			admins.Add(creator)
+		}
+	}
 	for user, level := range content.Users {
 		if level >= adminLevel {
 			admins.Add(user)

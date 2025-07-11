@@ -63,6 +63,12 @@ func (pe *PolicyEvaluator) HandleProtectedRoomMeta(ctx context.Context, evt *eve
 
 func (pe *PolicyEvaluator) handleProtectedRoomPowerLevels(ctx context.Context, evt *event.Event) {
 	powerLevels := evt.Content.AsPowerLevels()
+	err := pe.Bot.Intent.FillPowerLevelCreateEvent(ctx, evt.RoomID, powerLevels)
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).
+			Stringer("room_id", evt.RoomID).
+			Msg("Failed to get create event for power levels in protected room power level handler")
+	}
 	ownLevel := powerLevels.GetUserLevel(pe.Bot.UserID)
 	minLevel := max(powerLevels.Ban(), powerLevels.Redact())
 	pe.protectedRoomsLock.RLock()
@@ -140,6 +146,10 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 	err = pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &powerLevels)
 	if err != nil {
 		return nil, fmt.Sprintf("* Failed to get power levels for [%s](%s): %v", roomID, roomID.URI().MatrixToURL(), err)
+	}
+	powerLevels.CreateEvent, err = pe.Bot.FullStateEvent(ctx, roomID, event.StateCreate, "")
+	if err != nil {
+		return nil, fmt.Sprintf("* Failed to get creation content for [%s](%s): %v", roomID, roomID.URI().MatrixToURL(), err)
 	}
 	ownLevel := powerLevels.GetUserLevel(pe.Bot.UserID)
 	minLevel := max(powerLevels.Ban(), powerLevels.Redact())
