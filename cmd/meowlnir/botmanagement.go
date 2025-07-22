@@ -39,26 +39,24 @@ type RespGetBots struct {
 	Bots []*RespBot `json:"bots"`
 }
 
-func (m *Meowlnir) ManagementAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if !hmac.Equal(authHash[:], m.ManagementSecret[:]) {
-			mautrix.MUnknownToken.WithMessage("Invalid management secret").Write(w)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+func disabledAPI(w http.ResponseWriter, r *http.Request) {
+	mautrix.MUnknownToken.WithMessage("This API is disabled").Write(w)
 }
 
-func (m *Meowlnir) AntispamAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if !hmac.Equal(authHash[:], m.AntispamSecret[:]) {
-			mautrix.MUnknown.WithMessage("Invalid antispam secret").Write(w)
-			return
+func SecretAuth(secret *[32]byte) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if secret == nil {
+			return http.HandlerFunc(disabledAPI)
 		}
-		next.ServeHTTP(w, r)
-	})
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+			if !hmac.Equal(authHash[:], secret[:]) {
+				mautrix.MUnknownToken.WithMessage("Invalid authorization token").Write(w)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {

@@ -41,7 +41,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		hlog.NewHandler(m.Log.With().Str("component", "antispam api").Logger()),
 		hlog.RequestIDHandler("request_id", "X-Request-ID"),
 		requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
-		m.AntispamAuth,
+		SecretAuth(m.loadSecret(m.Config.Antispam.Secret)),
 	))
 
 	managementRouter := http.NewServeMux()
@@ -55,7 +55,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		hlog.RequestIDHandler("request_id", "X-Request-ID"),
 		exhttp.CORSMiddleware,
 		requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
-		m.ManagementAuth,
+		SecretAuth(m.loadSecret(m.Config.Meowlnir.ManagementSecret)),
 	))
 }
 

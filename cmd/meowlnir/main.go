@@ -58,9 +58,6 @@ type Meowlnir struct {
 	EventProcessor *appservice.EventProcessor
 	PolicyServer   *policyeval.PolicyServer
 
-	ManagementSecret [32]byte
-	AntispamSecret   [32]byte
-
 	PolicyStore               *policylist.Store
 	MapLock                   sync.RWMutex
 	Bots                      map[id.UserID]*bot.Bot
@@ -73,7 +70,10 @@ type Meowlnir struct {
 	RoomHashes *roomhash.Map
 }
 
-func (m *Meowlnir) loadSecret(secret string) [32]byte {
+func (m *Meowlnir) loadSecret(secret string) *[32]byte {
+	if len(secret) == 0 || (strings.Contains(secret, "disable") && len(secret) < 10) {
+		return nil
+	}
 	if strings.HasPrefix(secret, "sha256:") {
 		var decoded []byte
 		var err error
@@ -85,9 +85,9 @@ func (m *Meowlnir) loadSecret(secret string) [32]byte {
 			m.Log.WithLevel(zerolog.FatalLevel).Msg("Secret hash is not 32 bytes long")
 			os.Exit(10)
 		}
-		return [32]byte(decoded)
+		return (*[32]byte)(decoded)
 	}
-	return util.SHA256String(secret)
+	return ptr.Ptr(util.SHA256String(secret))
 }
 
 func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
@@ -111,9 +111,6 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		Time("built_at", ParsedBuildTime).
 		Str("go_version", runtime.Version()).
 		Msg("Initializing Meowlnir")
-
-	m.ManagementSecret = m.loadSecret(m.Config.Meowlnir.ManagementSecret)
-	m.AntispamSecret = m.loadSecret(m.Config.Antispam.Secret)
 
 	var mainDB, synapseDB *dbutil.Database
 	mainDB, err = dbutil.NewFromConfig("meowlnir", m.Config.Database, dbutil.ZeroLogger(m.Log.With().Str("db_section", "main").Logger()))
