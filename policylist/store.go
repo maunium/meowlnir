@@ -29,13 +29,13 @@ func NewStore() *Store {
 
 // MatchUser finds all matching policies for the given user ID in the given policy rooms.
 func (s *Store) MatchUser(listIDs []id.RoomID, userID id.UserID) Match {
-	return s.match(listIDs, string(userID), (*Room).GetUserRules)
+	return s.Match(listIDs, EntityTypeUser, string(userID))
 }
 
 // MatchRoom finds all matching policies for the given room ID in the given policy rooms.
 // If no matches are found, nil is returned.
 func (s *Store) MatchRoom(listIDs []id.RoomID, roomID id.RoomID) Match {
-	return s.match(listIDs, string(roomID), (*Room).GetRoomRules)
+	return s.Match(listIDs, EntityTypeRoom, string(roomID))
 }
 
 var portRegex = regexp.MustCompile(`:\d+$`)
@@ -59,11 +59,7 @@ func IsIPLiteral(serverName string) bool {
 
 // MatchServer finds all matching policies for the given server name in the given policy rooms.
 func (s *Store) MatchServer(listIDs []id.RoomID, serverName string) Match {
-	serverName = CleanupServerNameForMatch(serverName)
-	if IsIPLiteral(serverName) {
-		return Match{fakeBanForIPLiterals}
-	}
-	return s.match(listIDs, serverName, (*Room).GetServerRules)
+	return s.Match(listIDs, EntityTypeServer, serverName)
 }
 
 func (s *Store) ListServerRules(listIDs []id.RoomID) map[string]*Policy {
@@ -115,26 +111,7 @@ func (s *Store) Contains(roomID id.RoomID) bool {
 	return ok
 }
 
-func (s *Store) match(listIDs []id.RoomID, entity string, listGetter func(*Room) *List) (output Match) {
-	if listIDs == nil {
-		s.roomsLock.Lock()
-		listIDs = slices.Collect(maps.Keys(s.rooms))
-		s.roomsLock.Unlock()
-	}
-	for _, roomID := range listIDs {
-		s.roomsLock.RLock()
-		list, ok := s.rooms[roomID]
-		s.roomsLock.RUnlock()
-		if !ok {
-			continue
-		}
-		rules := listGetter(list)
-		output = append(output, rules.Match(entity)...)
-	}
-	return
-}
-
-func (s *Store) matchExactFunc(listIDs []id.RoomID, entityType EntityType, fn func(*List) Match) (output Match) {
+func (s *Store) matchFunc(listIDs []id.RoomID, entityType EntityType, fn func(*List) Match) (output Match) {
 	if listIDs == nil {
 		s.roomsLock.Lock()
 		listIDs = slices.Collect(maps.Keys(s.rooms))
@@ -161,14 +138,26 @@ func (s *Store) matchExactFunc(listIDs []id.RoomID, entityType EntityType, fn fu
 	return
 }
 
+func (s *Store) Match(listIDs []id.RoomID, entityType EntityType, entity string) Match {
+	if entityType == EntityTypeServer {
+		entity = CleanupServerNameForMatch(entity)
+		if IsIPLiteral(entity) {
+			return Match{fakeBanForIPLiterals}
+		}
+	}
+	return s.matchFunc(listIDs, entityType, func(list *List) Match {
+		return list.Match(entity)
+	})
+}
+
 func (s *Store) MatchExact(listIDs []id.RoomID, entityType EntityType, entity string) (output Match) {
-	return s.matchExactFunc(listIDs, entityType, func(list *List) Match {
+	return s.matchFunc(listIDs, entityType, func(list *List) Match {
 		return list.MatchExact(entity)
 	})
 }
 
 func (s *Store) MatchHash(listIDs []id.RoomID, entityType EntityType, entity [util.HashSize]byte) (output Match) {
-	return s.matchExactFunc(listIDs, entityType, func(list *List) Match {
+	return s.matchFunc(listIDs, entityType, func(list *List) Match {
 		return list.MatchHash(entity)
 	})
 }
@@ -195,6 +184,11 @@ func (s *Store) Search(listIDs []id.RoomID, entity string) (output Match) {
 }
 
 func (s *Store) compileList(listIDs []id.RoomID, listGetter func(*Room) *List) (output map[string]*Policy) {
+	if listIDs == nil {
+		s.roomsLock.Lock()
+		listIDs = slices.Collect(maps.Keys(s.rooms))
+		s.roomsLock.Unlock()
+	}
 	output = make(map[string]*Policy)
 	// Iterate the list backwards so that entries in higher priority lists overwrite lower priority ones
 	for _, roomID := range slices.Backward(listIDs) {
