@@ -26,6 +26,7 @@ type MeowlnirConfig struct {
 	Port     uint16 `yaml:"port"`
 
 	ManagementSecret string `yaml:"management_secret"`
+	DataSecret       string `yaml:"data_secret"`
 	DryRun           bool   `yaml:"dry_run"`
 
 	ReportRoom          id.RoomID `yaml:"report_room"`

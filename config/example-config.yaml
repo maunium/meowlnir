@@ -23,6 +23,8 @@ meowlnir:
     # If prefixed with sha256:, the rest of the string will be hex-decoded and used as the hash of the secret.
     # Can also be set to `disable` to disable the API entirely.
     management_secret: generate
+    # Secret used for the /_meowlnir/data API. Same rules apply as for management_secret.
+    data_secret: generate
     # If dry run is set to true, meowlnir won't take any actual actions,
     # but will do everything else as if it was going to take actions.
     dry_run: false

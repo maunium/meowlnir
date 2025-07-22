@@ -63,6 +63,14 @@ func (et EntityType) EventType() event.Type {
 	return event.Type{}
 }
 
+func (et EntityType) IsValid() bool {
+	switch et {
+	case EntityTypeUser, EntityTypeRoom, EntityTypeServer:
+		return true
+	}
+	return false
+}
+
 const (
 	EntityTypeUser   EntityType = "user"
 	EntityTypeRoom   EntityType = "room"

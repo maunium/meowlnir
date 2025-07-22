@@ -31,6 +31,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Int, "meowlnir", "port")
 
 	generateOrCopy(helper, "meowlnir", "management_secret")
+	generateOrCopy(helper, "meowlnir", "data_secret")
 	helper.Copy(up.Bool, "meowlnir", "dry_run")
 	helper.Copy(up.Str|up.Null, "meowlnir", "report_room")
 	helper.Copy(up.Str|up.Null, "meowlnir", "room_ban_room")

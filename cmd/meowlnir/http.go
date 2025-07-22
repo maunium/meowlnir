@@ -44,6 +44,18 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		SecretAuth(m.loadSecret(m.Config.Antispam.Secret)),
 	))
 
+	dataRouter := http.NewServeMux()
+	dataRouter.HandleFunc("GET /v1/match/{entityType}/{entity}", m.MatchPolicy)
+	dataRouter.HandleFunc("GET /v1/list/{entityType}", m.ListPolicies)
+	m.AS.Router.PathPrefix("/_meowlnir/data").Handler(applyMiddleware(
+		http.StripPrefix("/_meowlnir/data", dataRouter),
+		hlog.NewHandler(m.Log.With().Str("component", "data api").Logger()),
+		hlog.RequestIDHandler("request_id", "X-Request-ID"),
+		exhttp.CORSMiddleware,
+		requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
+		SecretAuth(m.loadSecret(m.Config.Meowlnir.DataSecret)),
+	))
+
 	managementRouter := http.NewServeMux()
 	managementRouter.HandleFunc("GET /v1/bots", m.GetBots)
 	managementRouter.HandleFunc("PUT /v1/bot/{username}", m.PutBot)
