@@ -380,12 +380,23 @@ func loadConfig(path string, noSave bool) *config.Config {
 		_, _ = fmt.Fprintln(os.Stderr, "Failed to upgrade config:", err)
 		os.Exit(10)
 	}
+	// empty config
 	var cfg config.Config
+
+	// Load from config.yaml file
 	err = yaml.Unmarshal(configData, &cfg)
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "Failed to parse config:", err)
 		os.Exit(10)
 	}
+
+	// Load from environment variables
+	err = envconfig.Process("", &cfg)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "Failed to environment variables for config:", err)
+		os.Exit(10)
+	}
+
 	return &cfg
 }
 
