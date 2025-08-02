@@ -61,6 +61,9 @@ func (ps *PolicyServer) getCache(evtID id.EventID, pdu *event.Event) *psCacheEnt
 	defer ps.cacheLock.Unlock()
 	entry, ok := ps.eventCache[evtID]
 	if !ok {
+		if pdu == nil {
+			return nil
+		}
 		ps.unlockedClearCacheIfNeeded()
 		entry = &psCacheEntry{LastAccessed: time.Now(), PDU: pdu}
 		ps.eventCache[evtID] = entry
@@ -110,6 +113,20 @@ func (ps *PolicyServer) getRecommendation(pdu *event.Event, evaluator *PolicyEva
 	return PSRecommendationOk, nil
 }
 
+func (ps *PolicyServer) HandleCachedCheck(evtID id.EventID) *PolicyServerResponse {
+	r := ps.getCache(evtID, nil)
+	if r == nil {
+		return nil
+	}
+	r.Lock.Lock()
+	defer r.Lock.Unlock()
+	if r.Recommendation == "" {
+		return nil
+	}
+	r.LastAccessed = time.Now()
+	return &PolicyServerResponse{Recommendation: r.Recommendation}
+}
+
 func (ps *PolicyServer) HandleCheck(
 	ctx context.Context,
 	evtID id.EventID,
@@ -127,7 +144,7 @@ func (ps *PolicyServer) HandleCheck(
 	finalRec := r.Recommendation
 	r.Lock.Lock()
 	defer func() {
-		defer r.Lock.Unlock()
+		r.Lock.Unlock()
 		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact {
 			go func() {
 				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
