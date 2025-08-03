@@ -221,6 +221,7 @@ func checkOpenRegistration(serverName string) (string, RegMode) {
 		writeOutput("Registration flows:\n%s", registerData)
 	}
 	if registerData == nil {
+		guessed := false
 		for _, serverURL := range guessURLs(serverName) {
 			log.Debug().Stringer("guessed_url", serverURL).Msg("Trying to guess working homeserver URL")
 			cli = newClientWithURL(serverURL)
@@ -233,10 +234,13 @@ func checkOpenRegistration(serverName string) (string, RegMode) {
 				writeOutput("Successfully guessed URL: %s", serverURL)
 				log.Debug().Stringer("guessed_url", serverURL).Msg("Fetched registration flows")
 				writeOutput("Registration flows:\n%s", registerData)
+				guessed = true
 				break
 			}
 		}
-		addError("* Failed to guess working homeserver URL")
+		if !guessed {
+			addError("* Failed to guess working homeserver URL")
+		}
 	}
 
 	var regMode RegMode
