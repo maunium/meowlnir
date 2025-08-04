@@ -251,6 +251,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 		m.createPuppetClient,
 		m.Config.Antispam.AutoRejectInvitesToken != "",
 		m.Config.Antispam.FilterLocalInvites,
+		m.Config.Antispam.NotifyManagementRoom,
 		m.Config.Meowlnir.DryRun,
 		m.HackyAutoRedactPatterns,
 		m.PolicyServer,

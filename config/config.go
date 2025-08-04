@@ -46,6 +46,7 @@ type AntispamConfig struct {
 	Secret                 string `yaml:"secret"`
 	FilterLocalInvites     bool   `yaml:"filter_local_invites"`
 	AutoRejectInvitesToken string `yaml:"auto_reject_invites_token"`
+	NotifyManagementRoom   bool   `yaml:"notify_management_room"`
 }
 
 type EncryptionConfig struct {

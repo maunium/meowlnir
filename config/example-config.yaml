@@ -72,6 +72,8 @@ antispam:
     # appservice set up for bridges, you can reuse that token. If not, just follow the same
     # instructions: https://docs.mau.fi/bridges/general/double-puppeting.html
     auto_reject_invites_token:
+    # Should the management room receive a notice about blocked invites?
+    notify_management_room: false
 
 # Configuration for the policy server.
 policy_server:
