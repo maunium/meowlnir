@@ -1,3 +1,16 @@
+# v0.7.0 (unreleased)
+
+* Added support for creator power in room v12.
+* Added appservice ping at startup to ensure homeserver -> meowlnir connection
+  works similar to what bridges do.
+* Added support for `federated_user_may_invite` callback and [MSC4311].
+* Added custom API for querying policy lists that Meowlnir has cached.
+* Fixed various bugs in experimental built-in policy server.
+  * Note that the policy server is not considered stable yet, so it should
+    not be used in production.
+
+[MSC4311]: https://github.com/matrix-org/matrix-spec-proposals/pull/4311
+
 # v0.6.0 (2025-06-16)
 
 * Added experimental built-in policy server as per [MSC4284]
