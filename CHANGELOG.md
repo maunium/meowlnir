@@ -1,5 +1,6 @@
-# v0.7.0 (unreleased)
+# v0.7.0 (2025-08-16)
 
+* Bumped minimum Go version to 1.24.
 * Added support for creator power in room v12.
 * Added appservice ping at startup to ensure homeserver -> meowlnir connection
   works similar to what bridges do.
