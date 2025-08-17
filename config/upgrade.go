@@ -47,6 +47,7 @@ func upgradeConfig(helper up.Helper) {
 	}
 	helper.Copy(up.Str|up.Null, "antispam", "auto_reject_invites_token")
 	helper.Copy(up.Bool, "antispam", "filter_local_invites")
+	helper.Copy(up.Bool, "antispam", "notify_management_room")
 
 	helper.Copy(up.Bool, "policy_server", "always_redact")
 
@@ -80,6 +81,7 @@ var SpacedBlocks = [][]string{
 	{"meowlnir", "management_secret"},
 	{"meowlnir", "report_room"},
 	{"antispam"},
+	{"policy_server"},
 	{"encryption"},
 	{"database"},
 	{"synapse_db"},

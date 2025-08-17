@@ -212,9 +212,6 @@ func (m *Meowlnir) createPuppetClient(userID id.UserID) *mautrix.Client {
 
 func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	intent := m.AS.Intent(id.NewUserID(db.Username, m.AS.HomeserverDomain))
-	m.appservicePingOnce.Do(func() {
-		intent.EnsureAppserviceConnection(ctx)
-	})
 	wrapped := bot.NewBot(
 		db, intent, m.Log.With().Str("bot", db.Username).Logger(),
 		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Encryption.PickleKey,
@@ -224,6 +221,9 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	if wrapped.CryptoHelper != nil {
 		wrapped.CryptoHelper.CustomPostDecrypt = m.HandleMessage
 	}
+	m.appservicePingOnce.Do(func() {
+		intent.EnsureAppserviceConnection(ctx)
+	})
 	m.Bots[wrapped.Client.UserID] = wrapped
 
 	managementRooms, err := m.DB.ManagementRoom.GetAll(ctx, db.Username)
@@ -251,6 +251,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 		m.createPuppetClient,
 		m.Config.Antispam.AutoRejectInvitesToken != "",
 		m.Config.Antispam.FilterLocalInvites,
+		m.Config.Antispam.NotifyManagementRoom,
 		m.Config.Meowlnir.DryRun,
 		m.HackyAutoRedactPatterns,
 		m.PolicyServer,

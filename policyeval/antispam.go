@@ -47,10 +47,9 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		Stringer("invitee", invitee).
 		Stringer("room_id", roomID).
 		Logger()
-	if invitee.Homeserver() != pe.Bot.ServerName {
-		// This shouldn't happen
-		// TODO this check should be removed if multi-server support is added
-		log.Warn().Msg("Ignoring invite to non-local user")
+	if invitee.Homeserver() != pe.Bot.ServerName && inviterServer != pe.Bot.ServerName {
+		// This should never happen
+		log.Warn().Msg("Ignoring non-local invite")
 		return nil
 	}
 	lists := pe.GetWatchedLists()
@@ -58,7 +57,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 	var rec *policylist.Policy
 
 	defer func() {
-		if rec != nil {
+		if rec != nil && pe.AntispamNotifyRoom {
 			go pe.Bot.SendNoticeOpts(
 				context.WithoutCancel(ctx),
 				pe.ManagementRoom,
