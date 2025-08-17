@@ -26,6 +26,7 @@ import (
 type protectedRoomMeta struct {
 	Name     string
 	ACL      *event.ServerACLEventContent
+	Create   *event.CreateEventContent
 	ApplyACL bool
 }
 

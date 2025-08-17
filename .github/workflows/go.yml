@@ -32,5 +32,9 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@latest
           export PATH="$HOME/go/bin:$PATH"
 
+      - name: Enable jsonv2
+        run: export GOEXPERIMENT=jsonv2
+        if: matrix.go-version == '1.25'
+
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
