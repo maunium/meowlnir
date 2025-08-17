@@ -138,7 +138,6 @@ func (ps *PolicyServer) HandleCheck(
 	log := zerolog.Ctx(ctx).With().
 		Stringer("room_id", pdu.RoomID).
 		Stringer("event_id", evtID).
-		Str("caller", caller).
 		Logger()
 	r := ps.getCache(evtID, pdu)
 	finalRec := r.Recommendation
