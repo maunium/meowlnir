@@ -64,7 +64,11 @@ func (m *Meowlnir) PostMSC4284EventCheck(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	expectedEventID, err := parsedPDU.CalculateEventID(createEvt.RoomVersion)
-	if expectedEventID != eventID {
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Msg("Failed to calculate event ID from PDU")
+		mautrix.MUnknown.WithMessage("Failed to calculate event ID from PDU").Write(w)
+		return
+	} else if expectedEventID != eventID {
 		mautrix.MInvalidParam.WithMessage("Event ID does not match hash of request body").Write(w)
 		return
 	}
