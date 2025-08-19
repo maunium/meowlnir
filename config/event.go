@@ -13,13 +13,13 @@ var (
 )
 
 type WatchedPolicyList struct {
-	RoomID       id.RoomID `json:"room_id"`
-	Name         string    `json:"name"`
-	Shortcode    string    `json:"shortcode"`
-	DontApply    bool      `json:"dont_apply"`
-	DontApplyACL bool      `json:"dont_apply_acl"`
-	AutoUnban    bool      `json:"auto_unban"`
-	AutoSuspend  bool      `json:"auto_suspend"`
+	RoomID            id.RoomID `json:"room_id"`
+	Name              string    `json:"name"`
+	Shortcode         string    `json:"shortcode"`
+	DontApply         bool      `json:"dont_apply"`
+	DontApplyACL      bool      `json:"dont_apply_acl"`
+	AutoUnban         bool      `json:"auto_unban"`
+	AutoSuspendPrefix *string   `json:"auto_suspend_prefix,omitempty"`
 
 	DontNotifyOnChange bool `json:"dont_notify_on_change"`
 }
