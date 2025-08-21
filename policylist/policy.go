@@ -11,17 +11,17 @@ import (
 // Policy represents a single moderation policy event with the relevant data parsed out.
 type Policy struct {
 	*event.ModPolicyContent
-	Pattern    glob.Glob
-	EntityHash *[util.HashSize]byte
+	Pattern    glob.Glob            `json:"-"`
+	EntityHash *[util.HashSize]byte `json:"-"`
 
-	EntityType EntityType
-	RoomID     id.RoomID
-	StateKey   string
-	Sender     id.UserID
-	Type       event.Type
-	Timestamp  int64
-	ID         id.EventID
-	Ignored    bool
+	EntityType EntityType `json:"entity_type"`
+	RoomID     id.RoomID  `json:"room_id"`
+	StateKey   string     `json:"state_key"`
+	Sender     id.UserID  `json:"sender"`
+	Type       event.Type `json:"type"`
+	Timestamp  int64      `json:"timestamp"`
+	ID         id.EventID `json:"event_id"`
+	Ignored    bool       `json:"ignored"`
 }
 
 // Match represent a list of policies that matched a specific entity.

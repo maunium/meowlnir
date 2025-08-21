@@ -31,6 +31,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Int, "meowlnir", "port")
 
 	generateOrCopy(helper, "meowlnir", "management_secret")
+	generateOrCopy(helper, "meowlnir", "data_secret")
 	helper.Copy(up.Bool, "meowlnir", "dry_run")
 	helper.Copy(up.Str|up.Null, "meowlnir", "report_room")
 	helper.Copy(up.Str|up.Null, "meowlnir", "room_ban_room")
@@ -46,6 +47,7 @@ func upgradeConfig(helper up.Helper) {
 	}
 	helper.Copy(up.Str|up.Null, "antispam", "auto_reject_invites_token")
 	helper.Copy(up.Bool, "antispam", "filter_local_invites")
+	helper.Copy(up.Bool, "antispam", "notify_management_room")
 
 	helper.Copy(up.Bool, "policy_server", "always_redact")
 
@@ -79,6 +81,7 @@ var SpacedBlocks = [][]string{
 	{"meowlnir", "management_secret"},
 	{"meowlnir", "report_room"},
 	{"antispam"},
+	{"policy_server"},
 	{"encryption"},
 	{"database"},
 	{"synapse_db"},

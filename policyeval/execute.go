@@ -378,8 +378,7 @@ func (pe *PolicyEvaluator) redactEventsInRoom(ctx context.Context, userID id.Use
 }
 
 func (pe *PolicyEvaluator) redactRecentMessages(ctx context.Context, roomID id.RoomID, sender id.UserID, maxAge time.Duration, redactState bool, reason string) (int, error) {
-	var pls event.PowerLevelsEventContent
-	err := pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &pls)
+	pls, err := pe.Bot.Intent.PowerLevels(ctx, roomID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get power levels: %w", err)
 	}

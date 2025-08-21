@@ -63,6 +63,14 @@ func (et EntityType) EventType() event.Type {
 	return event.Type{}
 }
 
+func (et EntityType) IsValid() bool {
+	switch et {
+	case EntityTypeUser, EntityTypeRoom, EntityTypeServer:
+		return true
+	}
+	return false
+}
+
 const (
 	EntityTypeUser   EntityType = "user"
 	EntityTypeRoom   EntityType = "room"
@@ -104,6 +112,7 @@ func (r *Room) Update(evt *event.Event) (added, removed *Policy) {
 	}
 	if added != removed && removed != nil {
 		removed.Sender = evt.Sender
+		removed.Timestamp = evt.Timestamp
 	}
 	return
 }

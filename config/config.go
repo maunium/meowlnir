@@ -26,6 +26,7 @@ type MeowlnirConfig struct {
 	Port     uint16 `yaml:"port"`
 
 	ManagementSecret string `yaml:"management_secret"`
+	DataSecret       string `yaml:"data_secret"`
 	DryRun           bool   `yaml:"dry_run"`
 
 	ReportRoom          id.RoomID `yaml:"report_room"`
@@ -45,6 +46,7 @@ type AntispamConfig struct {
 	Secret                 string `yaml:"secret"`
 	FilterLocalInvites     bool   `yaml:"filter_local_invites"`
 	AutoRejectInvitesToken string `yaml:"auto_reject_invites_token"`
+	NotifyManagementRoom   bool   `yaml:"notify_management_room"`
 }
 
 type EncryptionConfig struct {

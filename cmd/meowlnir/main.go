@@ -58,9 +58,6 @@ type Meowlnir struct {
 	EventProcessor *appservice.EventProcessor
 	PolicyServer   *policyeval.PolicyServer
 
-	ManagementSecret [32]byte
-	AntispamSecret   [32]byte
-
 	PolicyStore               *policylist.Store
 	MapLock                   sync.RWMutex
 	Bots                      map[id.UserID]*bot.Bot
@@ -68,10 +65,15 @@ type Meowlnir struct {
 	EvaluatorByManagementRoom map[id.RoomID]*policyeval.PolicyEvaluator
 	HackyAutoRedactPatterns   []glob.Glob
 
+	appservicePingOnce sync.Once
+
 	RoomHashes *roomhash.Map
 }
 
-func (m *Meowlnir) loadSecret(secret string) [32]byte {
+func (m *Meowlnir) loadSecret(secret string) *[32]byte {
+	if len(secret) == 0 || (strings.Contains(secret, "disable") && len(secret) < 10) {
+		return nil
+	}
 	if strings.HasPrefix(secret, "sha256:") {
 		var decoded []byte
 		var err error
@@ -83,9 +85,9 @@ func (m *Meowlnir) loadSecret(secret string) [32]byte {
 			m.Log.WithLevel(zerolog.FatalLevel).Msg("Secret hash is not 32 bytes long")
 			os.Exit(10)
 		}
-		return [32]byte(decoded)
+		return (*[32]byte)(decoded)
 	}
-	return util.SHA256String(secret)
+	return ptr.Ptr(util.SHA256String(secret))
 }
 
 func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
@@ -109,9 +111,6 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		Time("built_at", ParsedBuildTime).
 		Str("go_version", runtime.Version()).
 		Msg("Initializing Meowlnir")
-
-	m.ManagementSecret = m.loadSecret(m.Config.Meowlnir.ManagementSecret)
-	m.AntispamSecret = m.loadSecret(m.Config.Antispam.Secret)
 
 	var mainDB, synapseDB *dbutil.Database
 	mainDB, err = dbutil.NewFromConfig("meowlnir", m.Config.Database, dbutil.ZeroLogger(m.Log.With().Str("db_section", "main").Logger()))
@@ -222,6 +221,9 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 	if wrapped.CryptoHelper != nil {
 		wrapped.CryptoHelper.CustomPostDecrypt = m.HandleMessage
 	}
+	m.appservicePingOnce.Do(func() {
+		intent.EnsureAppserviceConnection(ctx)
+	})
 	m.Bots[wrapped.Client.UserID] = wrapped
 
 	managementRooms, err := m.DB.ManagementRoom.GetAll(ctx, db.Username)
@@ -249,6 +251,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 		m.createPuppetClient,
 		m.Config.Antispam.AutoRejectInvitesToken != "",
 		m.Config.Antispam.FilterLocalInvites,
+		m.Config.Antispam.NotifyManagementRoom,
 		m.Config.Meowlnir.DryRun,
 		m.HackyAutoRedactPatterns,
 		m.PolicyServer,
@@ -303,6 +306,8 @@ func (m *Meowlnir) Run(ctx context.Context) {
 		}
 	}
 
+	go m.AS.Start()
+
 	bots, err := m.DB.Bot.GetAll(ctx)
 	if err != nil {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to get bot list")
@@ -313,7 +318,6 @@ func (m *Meowlnir) Run(ctx context.Context) {
 	}
 
 	m.EventProcessor.Start(ctx)
-	go m.AS.Start()
 
 	var wg sync.WaitGroup
 	m.MapLock.Lock()

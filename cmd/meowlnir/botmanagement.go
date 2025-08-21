@@ -11,11 +11,13 @@ import (
 
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
+	"go.mau.fi/util/exslices"
 	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/database"
+	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/util"
 )
 
@@ -39,26 +41,24 @@ type RespGetBots struct {
 	Bots []*RespBot `json:"bots"`
 }
 
-func (m *Meowlnir) ManagementAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if !hmac.Equal(authHash[:], m.ManagementSecret[:]) {
-			mautrix.MUnknownToken.WithMessage("Invalid management secret").Write(w)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+func disabledAPI(w http.ResponseWriter, r *http.Request) {
+	mautrix.MUnknownToken.WithMessage("This API is disabled").Write(w)
 }
 
-func (m *Meowlnir) AntispamAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if !hmac.Equal(authHash[:], m.AntispamSecret[:]) {
-			mautrix.MUnknown.WithMessage("Invalid antispam secret").Write(w)
-			return
+func SecretAuth(secret *[32]byte) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if secret == nil {
+			return http.HandlerFunc(disabledAPI)
 		}
-		next.ServeHTTP(w, r)
-	})
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+			if !hmac.Equal(authHash[:], secret[:]) {
+				mautrix.MUnknownToken.WithMessage("Invalid authorization token").Write(w)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
@@ -272,4 +272,38 @@ func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
 	} else {
 		exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 	}
+}
+
+func getPolicyListIDs(r *http.Request) []id.RoomID {
+	listIDs := exslices.CastFuncFilter(r.URL.Query()["list_id"], func(s string) (id.RoomID, bool) {
+		return id.RoomID(s), strings.HasPrefix(s, "!")
+	})
+	if len(listIDs) == 0 {
+		listIDs = nil
+	}
+	return listIDs
+}
+
+func (m *Meowlnir) MatchPolicy(w http.ResponseWriter, r *http.Request) {
+	entityType := policylist.EntityType(r.PathValue("entityType"))
+	entity := r.PathValue("entity")
+	if !entityType.IsValid() {
+		mautrix.MInvalidParam.WithMessage("Invalid entity type").Write(w)
+		return
+	}
+	match := m.PolicyStore.Match(getPolicyListIDs(r), entityType, entity)
+	exhttp.WriteJSONResponse(w, http.StatusOK, match)
+}
+
+func (m *Meowlnir) ListPolicies(w http.ResponseWriter, r *http.Request) {
+	entityType := policylist.EntityType(r.PathValue("entityType"))
+	if !entityType.IsValid() {
+		mautrix.MInvalidParam.WithMessage("Invalid entity type").Write(w)
+		return
+	} else if entityType != policylist.EntityTypeServer {
+		mautrix.MInvalidParam.WithMessage("Only server policies can be listed").Write(w)
+		return
+	}
+	rules := m.PolicyStore.ListServerRules(getPolicyListIDs(r))
+	exhttp.WriteJSONResponse(w, http.StatusOK, rules)
 }

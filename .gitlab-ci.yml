@@ -4,3 +4,4 @@ include:
 
 variables:
   BINARY_NAME: meowlnir
+  GOEXPERIMENT: jsonv2
