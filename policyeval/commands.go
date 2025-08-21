@@ -991,7 +991,7 @@ var cmdHelp = &CommandHandler{
 				"* `!powerlevel <room|all> <key> <level>` - Set a power level\n" +
 				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n" +
 				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n" +
-				"* `!kick <user ID> [reason]` - Kick a user from all rooms\n" +
+				"* `!kick [--force] [--room <room ID>] <user ID> [reason]` - Kick a user from all rooms\n" +
 				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n" +
 				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n" +
 				"* `!remove-ban <list shortcode> <entity>` - Remove a ban policy\n" +
