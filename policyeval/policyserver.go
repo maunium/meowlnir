@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/exsync"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
@@ -22,10 +23,11 @@ type psCacheEntry struct {
 }
 
 type PolicyServer struct {
-	Federation *federation.Client
-	ServerAuth *federation.ServerAuth
-	eventCache map[id.EventID]*psCacheEntry
-	cacheLock  sync.Mutex
+	Federation     *federation.Client
+	ServerAuth     *federation.ServerAuth
+	eventCache     map[id.EventID]*psCacheEntry
+	redactionCache *exsync.Set[id.EventID]
+	cacheLock      sync.Mutex
 
 	CacheMaxSize   int
 	CacheMaxAge    time.Duration
@@ -36,8 +38,9 @@ func NewPolicyServer(serverName string) *PolicyServer {
 	inMemCache := federation.NewInMemoryCache()
 	fed := federation.NewClient(serverName, nil, inMemCache)
 	return &PolicyServer{
-		eventCache: make(map[id.EventID]*psCacheEntry),
-		Federation: fed,
+		eventCache:     make(map[id.EventID]*psCacheEntry),
+		redactionCache: exsync.NewSet[id.EventID](),
+		Federation:     fed,
 		ServerAuth: federation.NewServerAuth(fed, inMemCache, func(auth federation.XMatrixAuth) string {
 			return auth.Destination
 		}),
@@ -144,7 +147,8 @@ func (ps *PolicyServer) HandleCheck(
 	r.Lock.Lock()
 	defer func() {
 		r.Lock.Unlock()
-		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact {
+		// TODO if event is older than when the process was started, check if it was already redacted on the server
+		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact && ps.redactionCache.Add(pdu.ID) {
 			go func() {
 				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
 					log.Error().Err(err).Msg("Failed to redact event")
