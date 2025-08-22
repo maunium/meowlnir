@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
@@ -149,7 +150,8 @@ func (ps *PolicyServer) HandleCheck(
 		r.Lock.Unlock()
 		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact {
 			go func() {
-				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
+				extra := mautrix.ReqRedact{Reason: "event has been marked as spam."}
+				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID, extra); err != nil {
 					log.Error().Err(err).Msg("Failed to redact event")
 				}
 			}()
