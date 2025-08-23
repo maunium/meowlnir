@@ -12,6 +12,7 @@ import (
 	"go.mau.fi/util/dbutil"
 	"go.mau.fi/util/exslices"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/config"
@@ -71,7 +72,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 				if err != nil {
 					zerolog.Ctx(ctx).Err(err).Stringer("room_id", listInfo.RoomID).Msg("Failed to load state of watched list")
 					outLock.Lock()
-					errors = append(errors, fmt.Sprintf("* Failed to get room state for [%s](%s): %v", listInfo.Name, listInfo.RoomID.URI().MatrixToURL(), err))
+					errors = append(errors, fmt.Sprintf("* Failed to get room state for %s: %v", format.MarkdownMentionRoomID(listInfo.Name, listInfo.RoomID), err))
 					outLock.Unlock()
 					return
 				}
@@ -91,7 +92,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	watchedMap := make(map[id.RoomID]*config.WatchedPolicyList, len(content.Lists))
 	for _, listInfo := range content.Lists {
 		if _, alreadyWatched := watchedMap[listInfo.RoomID]; alreadyWatched {
-			errors = append(errors, fmt.Sprintf("* Duplicate watched list [%s](%s)", listInfo.Name, listInfo.RoomID.URI().MatrixToURL()))
+			errors = append(errors, fmt.Sprintf("* Duplicate watched list %s", format.MarkdownMentionRoomID(listInfo.Name, listInfo.RoomID)))
 		} else {
 			watchedMap[listInfo.RoomID] = &listInfo
 			if !listInfo.DontApply {
@@ -115,30 +116,30 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 		unsubscribed, subscribed := exslices.Diff(oldWatchedList, watchedList)
 		noApplyUnsubscribed, noApplySubscribed := exslices.Diff(oldFullWatchedList, slices.Collect(maps.Keys(pe.watchedListsMap)))
 		for _, roomID := range subscribed {
-			output = append(output, fmt.Sprintf("* Subscribed to %s [%s](%s)", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
+			output = append(output, fmt.Sprintf("* Subscribed to %s", format.MarkdownMentionRoomID(pe.GetWatchedListMeta(roomID).Name, roomID)))
 		}
 		for _, roomID := range noApplySubscribed {
 			if !slices.Contains(subscribed, roomID) {
-				output = append(output, fmt.Sprintf("* Subscribed to %s [%s](%s) without applying policies", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
+				output = append(output, fmt.Sprintf("* Subscribed to %s without applying policies", format.MarkdownMentionRoomID(pe.GetWatchedListMeta(roomID).Name, roomID)))
 			}
 		}
 		for _, roomID := range unsubscribed {
-			output = append(output, fmt.Sprintf("* Unsubscribed from [%s](%s)", roomID, roomID.URI().MatrixToURL()))
+			output = append(output, fmt.Sprintf("* Unsubscribed from %s", format.MarkdownMentionRoomID("", roomID)))
 		}
 		for _, roomID := range noApplyUnsubscribed {
 			if !slices.Contains(unsubscribed, roomID) {
-				output = append(output, fmt.Sprintf("* Unsubscribed from [%s](%s) (policies weren't being applied)", roomID, roomID.URI().MatrixToURL()))
+				output = append(output, fmt.Sprintf("* Unsubscribed from %s (policies weren't being applied)", format.MarkdownMentionRoomID("", roomID)))
 			}
 		}
 		aclUnsubscribed, aclSubscribed := exslices.Diff(oldACLWatchedList, aclWatchedList)
 		for _, roomID := range aclSubscribed {
 			if !slices.Contains(subscribed, roomID) {
-				output = append(output, fmt.Sprintf("* Subscribed to server ACLs in %s [%s](%s)", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
+				output = append(output, fmt.Sprintf("* Subscribed to server ACLs in %s", format.MarkdownMentionRoomID(pe.GetWatchedListMeta(roomID).Name, roomID)))
 			}
 		}
 		for _, roomID := range aclUnsubscribed {
 			if !slices.Contains(unsubscribed, roomID) {
-				output = append(output, fmt.Sprintf("* Unsubscribed from server ACLs in %s [%s](%s)", pe.GetWatchedListMeta(roomID).Name, roomID, roomID.URI().MatrixToURL()))
+				output = append(output, fmt.Sprintf("* Unsubscribed from server ACLs in %s", format.MarkdownMentionRoomID(pe.GetWatchedListMeta(roomID).Name, roomID)))
 			}
 		}
 		go func(ctx context.Context) {

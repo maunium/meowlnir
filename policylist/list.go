@@ -1,6 +1,7 @@
 package policylist
 
 import (
+	"slices"
 	"sync"
 	"time"
 
@@ -26,8 +27,8 @@ type dplNode struct {
 type List struct {
 	matchDuration prometheus.Observer
 	byStateKey    map[string]*dplNode
-	byEntity      map[string]*dplNode
-	byEntityHash  map[[util.HashSize]byte]*dplNode
+	byEntity      map[string][]*Policy
+	byEntityHash  map[[util.HashSize]byte][]*Policy
 	dynamicHead   *dplNode
 	lock          sync.RWMutex
 }
@@ -36,8 +37,8 @@ func NewList(roomID id.RoomID, entityType string) *List {
 	return &List{
 		matchDuration: matchDuration.WithLabelValues(roomID.String(), entityType),
 		byStateKey:    make(map[string]*dplNode),
-		byEntity:      make(map[string]*dplNode),
-		byEntityHash:  make(map[[util.HashSize]byte]*dplNode),
+		byEntity:      make(map[string][]*Policy),
+		byEntityHash:  make(map[[util.HashSize]byte][]*Policy),
 	}
 }
 
@@ -66,6 +67,29 @@ func (l *List) removeFromLinkedList(node *dplNode) {
 	}
 }
 
+func deletePolicyFromStaticMap[T comparable](m map[T][]*Policy, key T, policy *Policy) {
+	existing, ok := m[key]
+	if ok {
+		modified := slices.DeleteFunc(existing, func(item *Policy) bool {
+			return item == policy
+		})
+		if len(modified) == 0 {
+			delete(m, key)
+		} else if len(existing) != len(modified) {
+			m[key] = modified
+		}
+	}
+}
+
+func (l *List) removeFromStaticMaps(policy *Policy) {
+	if policy.Entity != "" {
+		deletePolicyFromStaticMap(l.byEntity, policy.Entity, policy)
+	}
+	if policy.EntityHash != nil {
+		deletePolicyFromStaticMap(l.byEntityHash, *policy.EntityHash, policy)
+	}
+}
+
 func (l *List) Add(value *Policy) (*Policy, bool) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
@@ -82,21 +106,16 @@ func (l *List) Add(value *Policy) (*Policy, bool) {
 		}
 		// There's an existing event with the same state key, but the entity changed, remove the old node.
 		l.removeFromLinkedList(existing)
-		if existing.Entity != "" {
-			delete(l.byEntity, existing.Entity)
-		}
-		if existing.EntityHash != nil {
-			delete(l.byEntityHash, *existing.EntityHash)
-		}
+		l.removeFromStaticMaps(existing.Policy)
 	}
 	node := &dplNode{Policy: value}
 	l.byStateKey[value.StateKey] = node
 	if !value.Ignored {
 		if value.Entity != "" {
-			l.byEntity[value.Entity] = node
+			l.byEntity[value.Entity] = append(l.byEntity[value.Entity], value)
 		}
 		if value.EntityHash != nil {
-			l.byEntityHash[*value.EntityHash] = node
+			l.byEntityHash[*value.EntityHash] = append(l.byEntityHash[*value.EntityHash], value)
 		}
 	}
 	if _, isStatic := value.Pattern.(glob.ExactGlob); value.Entity != "" && !isStatic && !value.Ignored {
@@ -117,14 +136,7 @@ func (l *List) Remove(eventType event.Type, stateKey string) *Policy {
 	defer l.lock.Unlock()
 	if value, ok := l.byStateKey[stateKey]; ok && eventType == value.Type {
 		l.removeFromLinkedList(value)
-		if entValue, ok := l.byEntity[value.Entity]; ok && entValue == value && value.Entity != "" {
-			delete(l.byEntity, value.Entity)
-		}
-		if value.EntityHash != nil {
-			if entHashValue, ok := l.byEntityHash[*value.EntityHash]; ok && entHashValue == value {
-				delete(l.byEntityHash, *value.EntityHash)
-			}
-		}
+		l.removeFromStaticMaps(value.Policy)
 		delete(l.byStateKey, stateKey)
 		return value.Policy
 	}
@@ -151,13 +163,13 @@ func (l *List) Match(entity string) (output Match) {
 	start := time.Now()
 	exactMatch, ok := l.byEntity[entity]
 	if ok {
-		output = Match{exactMatch.Policy}
+		output = append(output, exactMatch...)
 	}
 	if value, ok := l.byEntityHash[util.SHA256String(entity)]; ok {
-		output = append(output, value.Policy)
+		output = append(output, value...)
 	}
 	for item := l.dynamicHead; item != nil; item = item.next {
-		if !item.Ignored && item.Pattern.Match(entity) && item != exactMatch {
+		if !item.Ignored && item.Pattern.Match(entity) && !slices.Contains(output, item.Policy) {
 			output = append(output, item.Policy)
 		}
 	}
@@ -172,10 +184,10 @@ func (l *List) MatchExact(entity string) (output Match) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 	if value, ok := l.byEntity[entity]; ok {
-		output = Match{value.Policy}
+		output = append(output, value...)
 	}
 	if value, ok := l.byEntityHash[util.SHA256String(entity)]; ok {
-		output = append(output, value.Policy)
+		output = append(output, value...)
 	}
 	return
 }
@@ -183,10 +195,7 @@ func (l *List) MatchExact(entity string) (output Match) {
 func (l *List) MatchHash(hash [util.HashSize]byte) (output Match) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
-	if value, ok := l.byEntityHash[hash]; ok {
-		output = Match{value.Policy}
-	}
-	return
+	return slices.Clone(l.byEntityHash[hash])
 }
 
 func (l *List) Search(patternString string, pattern glob.Glob) (output Match) {

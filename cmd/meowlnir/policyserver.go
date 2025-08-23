@@ -63,7 +63,7 @@ func (m *Meowlnir) PostMSC4284EventCheck(w http.ResponseWriter, r *http.Request)
 		mautrix.MNotFound.WithMessage("Policy server error: room create event not found").Write(w)
 		return
 	}
-	expectedEventID, err := parsedPDU.CalculateEventID(createEvt.RoomVersion)
+	expectedEventID, err := parsedPDU.GetEventID(createEvt.RoomVersion)
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to calculate event ID from PDU")
 		mautrix.MUnknown.WithMessage("Failed to calculate event ID from PDU").Write(w)

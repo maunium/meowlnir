@@ -10,6 +10,7 @@ import (
 	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/bot"
@@ -62,10 +63,10 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 				context.WithoutCancel(ctx),
 				pe.ManagementRoom,
 				fmt.Sprintf(
-					"Blocked ||[%s](%s)|| from inviting [%s](%s) to [%s](%s) due to policy banning ||`%s`|| for `%s`",
-					inviter, inviter.URI().MatrixToURL(),
-					invitee, invitee.URI().MatrixToURL(),
-					roomID, roomID.URI().MatrixToURL(),
+					"Blocked ||%s|| from inviting %s to %s due to policy banning ||`%s`|| for `%s`",
+					format.MarkdownMention(inviter),
+					format.MarkdownMention(invitee),
+					format.MarkdownMentionRoomID("", roomID),
 					rec.EntityOrHash(), rec.Reason,
 				),
 				// Don't mention users
@@ -152,9 +153,9 @@ func (pe *PolicyEvaluator) HandleAcceptMakeJoin(ctx context.Context, roomID id.R
 			Msg("Blocking restricted join from banned user")
 		go pe.sendNotice(
 			context.WithoutCancel(ctx),
-			"Blocked ||[%s](%s)|| from joining [%s](%s) due to policy banning ||`%s`|| for `%s`",
-			userID, userID.URI().MatrixToURL(),
-			roomID, roomID.URI().MatrixToURL(),
+			"Blocked ||%s|| from joining %s due to policy banning ||`%s`|| for `%s`",
+			format.MarkdownMention(userID),
+			format.MarkdownMentionRoomID("", roomID),
 			rec.EntityOrHash(), rec.Reason,
 		)
 		return ptr.Ptr(mautrix.MForbidden.WithMessage("You're banned from this room"))
@@ -253,10 +254,10 @@ func (pe *PolicyEvaluator) RejectPendingInvites(ctx context.Context, inviter id.
 			ctx,
 			pe.ManagementRoom,
 			fmt.Sprintf(
-				"Rejected %d/%d invites to [%s](%s) from ||[%s](%s)|| due to policy banning ||`%s`|| for `%s`",
+				"Rejected %d/%d invites to %s from ||%s|| due to policy banning ||`%s`|| for `%s`",
 				successfullyRejected, len(rooms),
-				userID, userID.URI().MatrixToURL(),
-				inviter, inviter.URI().MatrixToURL(),
+				format.MarkdownMention(userID),
+				format.MarkdownMention(inviter),
 				rec.EntityOrHash(), rec.Reason,
 			),
 			// Don't mention users
