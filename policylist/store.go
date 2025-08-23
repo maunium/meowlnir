@@ -201,7 +201,7 @@ func (s *Store) compileList(listIDs []id.RoomID, listGetter func(*Room) *List) (
 		rules := listGetter(list)
 		rules.lock.RLock()
 		for _, policy := range rules.byEntity {
-			output[policy.Entity] = policy.Policy
+			output[policy[0].Entity] = policy[0]
 		}
 		rules.lock.RUnlock()
 	}
