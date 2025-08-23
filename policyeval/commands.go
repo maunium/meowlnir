@@ -315,7 +315,7 @@ var cmdKick = &CommandHandler{
 			}
 			roomStrings := make([]string, len(rooms))
 			for i, room := range rooms {
-				roomStrings[i] = fmt.Sprintf("[%s](%s)", room, room.URI().MatrixToURL())
+				roomStrings[i] = format.MarkdownMentionRoomID("", room)
 				var err error
 				if !ce.Meta.DryRun {
 					_, err = ce.Meta.Bot.KickUser(ce.Ctx, room, &mautrix.ReqKickUser{
@@ -352,14 +352,12 @@ func (pe *PolicyEvaluator) deduplicatePolicy(
 	} else if rec.Recommendation == policy.Recommendation && rec.EntityOrHash() == policy.EntityOrHash() {
 		if rec.Reason == policy.Reason {
 			ce.Reply(
-				"%s already has a %s recommendation in [%s](%s) for %s (sent by [%s](%s) at %s)",
+				"%s already has a %s recommendation in %s for %s (sent by %s at %s)",
 				format.SafeMarkdownCode(policy.EntityOrHash()),
 				format.SafeMarkdownCode(rec.Recommendation),
-				format.EscapeMarkdown(list.Name),
-				list.RoomID.URI(ce.Meta.Bot.ServerName).MatrixToURL(),
+				format.MarkdownMentionRoomID(list.Name, list.RoomID, ce.Meta.Bot.ServerName),
 				format.SafeMarkdownCode(rec.Reason),
-				format.EscapeMarkdown(rec.Sender.String()),
-				rec.Sender.URI().MatrixToURL(),
+				format.MarkdownMention(rec.Sender),
 				time.UnixMilli(rec.Timestamp).String(),
 			)
 			return "", false
@@ -369,12 +367,11 @@ func (pe *PolicyEvaluator) deduplicatePolicy(
 	} else if (policy.Recommendation != event.PolicyRecommendationUnban && rec.Recommendation == event.PolicyRecommendationUnban) ||
 		(policy.Recommendation == event.PolicyRecommendationUnban && rec.Recommendation != event.PolicyRecommendationUnban) {
 		ce.Reply(
-			"%s has a conflicting %s recommendation for %s (sent by [%s](%s) at %s)",
+			"%s has a conflicting %s recommendation for %s (sent by %s at %s)",
 			format.SafeMarkdownCode(policy.EntityOrHash()),
 			format.SafeMarkdownCode(rec.Recommendation),
 			format.SafeMarkdownCode(rec.Reason),
-			format.EscapeMarkdown(rec.Sender.String()),
-			rec.Sender.URI().MatrixToURL(),
+			format.MarkdownMention(rec.Sender),
 			time.UnixMilli(rec.Timestamp).String(),
 		)
 		return "", false
@@ -465,7 +462,7 @@ var cmdRemovePolicy = &CommandHandler{
 			match = ce.Meta.Store.MatchExact([]id.RoomID{list.RoomID}, entityType, target)
 		}
 		if len(match) == 0 {
-			ce.Reply("No rule banning %s found in [%s](%s)", format.SafeMarkdownCode(target), format.EscapeMarkdown(list.Name), list.RoomID.URI().MatrixToURL())
+			ce.Reply("No rule banning %s found in %s", format.SafeMarkdownCode(target), format.MarkdownMentionRoomID(list.Name, list.RoomID))
 			return
 		}
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
@@ -562,7 +559,7 @@ func doMatch(ce *CommandEvent, target string) {
 				if meta != nil && meta.Name != "" {
 					name = meta.Name
 				}
-				formattedRooms[i] = fmt.Sprintf("* [%s](%s)", name, roomID.URI().MatrixToURL())
+				formattedRooms[i] = fmt.Sprintf("* %s", format.MarkdownMentionRoomID(name, roomID))
 			}
 			ce.Meta.protectedRoomsLock.RUnlock()
 			ce.Reply("User is in %d protected rooms:\n\n%s", len(rooms), strings.Join(formattedRooms, "\n"))
@@ -587,10 +584,9 @@ func doMatch(ce *CommandEvent, target string) {
 				policyRoomName = meta.Name
 			}
 			eventStrings[i] = fmt.Sprintf(
-				"* [%s] [%s](%s) set recommendation %s for %s at %s for %s",
+				"* [%s] %s set recommendation %s for %s at %s for %s",
 				format.EscapeMarkdown(policyRoomName),
-				policy.Sender,
-				policy.Sender.URI().MatrixToURL(),
+				format.MarkdownMention(policy.Sender),
 				format.SafeMarkdownCode(policy.Recommendation),
 				format.SafeMarkdownCode(policy.EntityOrHash()),
 				format.EscapeMarkdown(time.UnixMilli(policy.Timestamp).String()),
@@ -642,10 +638,9 @@ var cmdSearch = &CommandHandler{
 					policyRoomName = meta.Name
 				}
 				eventStrings[i] = fmt.Sprintf(
-					"* [%s] [%s](%s) set recommendation %s for %ss matching %s at %s for %s",
+					"* [%s] %s set recommendation %s for %ss matching %s at %s for %s",
 					format.EscapeMarkdown(policyRoomName),
-					policy.Sender,
-					policy.Sender.URI().MatrixToURL(),
+					format.MarkdownMention(policy.Sender),
 					format.SafeMarkdownCode(policy.Recommendation),
 					policy.EntityType,
 					format.SafeMarkdownCode(policy.EntityOrHash()),
@@ -664,7 +659,7 @@ var cmdSearch = &CommandHandler{
 			} else if len(users) > 0 {
 				userStrings := make([]string, len(users))
 				for i, user := range users {
-					userStrings[i] = fmt.Sprintf("* [%s](%s)", user, user.URI().MatrixToURL())
+					userStrings[i] = fmt.Sprintf("* %s", format.MarkdownMention(user))
 				}
 				ce.Meta.sendNotice(
 					ce.Ctx, "Found %d users matching %s in protected rooms:\n\n%s",
@@ -695,9 +690,9 @@ var cmdSendAsBot = &CommandHandler{
 			Body:    strings.Join(ce.Args[1:], " "),
 		})
 		if err != nil {
-			ce.Reply("Failed to send message to [%s](%s): %v", target, target.URI().MatrixToURL(), err)
+			ce.Reply("Failed to send message to %s: %v", format.MarkdownMentionRoomID("", target), err)
 		} else {
-			ce.Reply("Sent message to [%s](%s): [%s](%s)", target, target.URI().MatrixToURL(), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
+			ce.Reply("Sent message to %s: [%s](%s)", format.MarkdownMentionRoomID("", target), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
 		}
 	},
 }
@@ -734,7 +729,7 @@ var cmdListProtectedRooms = &CommandHandler{
 		buf.WriteString("Protected rooms:\n\n")
 		ce.Meta.protectedRoomsLock.RLock()
 		for roomID, meta := range ce.Meta.protectedRooms {
-			_, _ = fmt.Fprintf(&buf, "* [%s](%s) (%s)\n", format.EscapeMarkdown(meta.Name), roomID.URI(ce.Meta.Bot.ServerName).MatrixToURL(), format.SafeMarkdownCode(roomID))
+			_, _ = fmt.Fprintf(&buf, "* %s (%s)\n", format.MarkdownMentionRoomID(meta.Name, roomID, ce.Meta.Bot.ServerName), format.SafeMarkdownCode(roomID))
 		}
 		ce.Meta.protectedRoomsLock.RUnlock()
 		ce.Reply(buf.String())

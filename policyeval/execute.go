@@ -142,10 +142,10 @@ func (pe *PolicyEvaluator) maybeApplySuspend(ctx context.Context, userID id.User
 	err := pe.Bot.SynapseAdmin.SuspendAccount(ctx, userID, synapseadmin.ReqSuspendUser{Suspend: true})
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Stringer("user_id", userID).Msg("Failed to suspend user")
-		pe.sendNotice(ctx, "Failed to suspend [%s](%s): %v", userID, userID.URI().MatrixToURL(), err)
+		pe.sendNotice(ctx, "Failed to suspend %s: %v", format.MarkdownMention(userID), err)
 	} else {
 		zerolog.Ctx(ctx).Info().Stringer("user_id", userID).Msg("Suspended user")
-		pe.sendNotice(ctx, "Suspended [%s](%s) due to received ban policy", userID, userID.URI().MatrixToURL())
+		pe.sendNotice(ctx, "Suspended %s due to received ban policy", format.MarkdownMention(userID))
 	}
 }
 
@@ -180,16 +180,16 @@ func (pe *PolicyEvaluator) ApplyBan(
 			err = respErr
 		}
 		zerolog.Ctx(ctx).Err(err).Any("attempted_action", ta).Msg("Failed to ban user")
-		pe.sendNotice(ctx, "Failed to ban ||[%s](%s)|| in [%s](%s) for %s: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
+		pe.sendNotice(ctx, "Failed to ban ||%s|| in %s for %s: %v", format.MarkdownMention(userID), format.MarkdownMentionRoomID("", roomID), policy.Reason, err)
 		return
 	}
 	err = pe.DB.TakenAction.Put(ctx, ta)
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Any("taken_action", ta).Msg("Failed to save taken action")
-		pe.sendNotice(ctx, "Banned ||[%s](%s)|| in [%s](%s) for %s, but failed to save to database: %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason, err)
+		pe.sendNotice(ctx, "Banned ||%s|| in %s for %s, but failed to save to database: %v", format.MarkdownMention(userID), format.MarkdownMentionRoomID("", roomID), policy.Reason, err)
 	} else {
 		zerolog.Ctx(ctx).Info().Any("taken_action", ta).Msg("Took action")
-		pe.sendNotice(ctx, "Banned ||[%s](%s)|| in [%s](%s) for %s", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), policy.Reason)
+		pe.sendNotice(ctx, "Banned ||%s|| in %s for %s", format.MarkdownMention(userID), format.MarkdownMentionRoomID("", roomID), policy.Reason)
 	}
 }
 
@@ -211,11 +211,11 @@ func (pe *PolicyEvaluator) UndoBan(ctx context.Context, userID id.UserID, roomID
 			err = respErr
 		}
 		zerolog.Ctx(ctx).Err(err).Msg("Failed to unban user")
-		pe.sendNotice(ctx, "Failed to unban [%s](%s) in [%s](%s): %v", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), err)
+		pe.sendNotice(ctx, "Failed to unban %s in %s: %v", format.MarkdownMention(userID), format.MarkdownMentionRoomID("", roomID), err)
 		return false
 	}
 	zerolog.Ctx(ctx).Debug().Msg("Unbanned user")
-	pe.sendNotice(ctx, "Unbanned [%s](%s) in [%s](%s)", userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL())
+	pe.sendNotice(ctx, "Unbanned %s in %s", format.MarkdownMention(userID), format.MarkdownMentionRoomID("", roomID))
 	return true
 }
 
@@ -239,8 +239,8 @@ Outer:
 			if err != nil {
 				zerolog.Ctx(ctx).Err(err).Stringer("room_id", roomID).Msg("Failed to redact messages")
 				errorMessages = append(errorMessages, fmt.Sprintf(
-					"* Failed to redact events from [%s](%s) in [%s](%s): %v",
-					userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL(), err))
+					"* Failed to redact events from %s in %s: %v",
+					format.MarkdownMention(userID), format.MarkdownMentionRoomID("", roomID), err))
 				continue Outer
 			}
 			hasMore = resp.IsMoreEvents
@@ -266,8 +266,8 @@ func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.User
 			Dur("query_duration", dur).
 			Msg("Failed to get events to redact")
 		pe.sendNotice(ctx,
-			"Failed to get events to redact for [%s](%s): %v",
-			userID, userID.URI().MatrixToURL(), err)
+			"Failed to get events to redact for %s: %v",
+			format.MarkdownMention(userID), err)
 		return
 	} else if len(events) == 0 {
 		zerolog.Ctx(ctx).Debug().
@@ -294,8 +294,8 @@ func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.User
 		successCount, failedCount := pe.redactEventsInRoom(ctx, userID, roomID, roomEvents, reason)
 		if failedCount > 0 {
 			errorMessages = append(errorMessages, fmt.Sprintf(
-				"* Failed to redact %d/%d events from [%s](%s) in [%s](%s)",
-				failedCount, failedCount+successCount, userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL()))
+				"* Failed to redact %d/%d events from %s in %s",
+				failedCount, failedCount+successCount, format.MarkdownMention(userID), format.MarkdownMentionRoomID("", roomID)))
 		}
 		redactedCount += successCount
 	}
@@ -314,9 +314,9 @@ func (pe *PolicyEvaluator) sendRedactResult(ctx context.Context, events, rooms i
 		// Skip sending a message if no events were redacted and there were no errors
 		return
 	}
-	output := fmt.Sprintf("Redacted %s across %s from [%s](%s)",
+	output := fmt.Sprintf("Redacted %s across %s from %s",
 		pluralize(events, "event"), pluralize(rooms, "room"),
-		userID, userID.URI().MatrixToURL())
+		format.MarkdownMention(userID))
 	if len(errorMessages) > 0 {
 		output += "\n\n" + strings.Join(errorMessages, "\n")
 	}
@@ -342,7 +342,7 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 				continue
 			}
 			if redactedCount > 0 {
-				pe.sendNotice(ctx, "Redacted %d events from [%s](%s) in [%s](%s)", redactedCount, userID, userID.URI().MatrixToURL(), roomID, roomID.URI().MatrixToURL())
+				pe.sendNotice(ctx, "Redacted %d events from %s in %s", redactedCount, format.MarkdownMention(userID), format.MarkdownMentionRoomID("", roomID))
 			}
 		}
 	}
