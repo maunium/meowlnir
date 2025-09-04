@@ -292,12 +292,20 @@ var cmdKick = &CommandHandler{
 	Name: "kick",
 	Func: func(ce *CommandEvent) {
 		if len(ce.Args) < 1 {
-			ce.Reply("Usage: `!kick <user ID> [reason]`")
+			ce.Reply("Usage: `!kick [--force] [--room <room ID>] <user ID> [reason]`")
 			return
 		}
 		ignoreUserLimit := ce.Args[0] == "--force"
 		if ignoreUserLimit {
 			ce.Args = ce.Args[1:]
+		}
+		var targetRoom id.RoomID
+		if ce.Args[0] == "--room" && len(ce.Args) >= 2 {
+			targetRoom = resolveRoom(ce, ce.Args[1])
+			if targetRoom == "" {
+				return
+			}
+			ce.Args = ce.Args[2:]
 		}
 		pattern := glob.Compile(ce.Args[0])
 		reason := strings.Join(ce.Args[1:], " ")
@@ -309,9 +317,14 @@ var cmdKick = &CommandHandler{
 		}
 		for _, userID := range users {
 			successCount := 0
-			rooms := ce.Meta.getRoomsUserIsIn(userID)
-			if len(rooms) == 0 {
-				continue
+			var rooms []id.RoomID
+			if targetRoom != "" {
+				rooms = ce.Meta.getRoomsUserIsIn(userID)
+				if len(rooms) == 0 {
+					continue
+				}
+			} else {
+				rooms = []id.RoomID{targetRoom}
 			}
 			roomStrings := make([]string, len(rooms))
 			for i, room := range rooms {
@@ -973,7 +986,7 @@ var cmdHelp = &CommandHandler{
 				"* `!powerlevel <room|all> <key> <level>` - Set a power level\n" +
 				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n" +
 				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n" +
-				"* `!kick <user ID> [reason]` - Kick a user from all rooms\n" +
+				"* `!kick [--force] [--room <room ID>] <user ID> [reason]` - Kick a user from all rooms\n" +
 				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n" +
 				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n" +
 				"* `!remove-ban <list shortcode> <entity>` - Remove a ban policy\n" +
