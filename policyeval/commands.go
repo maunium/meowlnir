@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -1101,5 +1102,6 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 		stateKeyHash := sha256.Sum256(append([]byte(rawEntity), []byte(content.Recommendation)...))
 		stateKey = base64.StdEncoding.EncodeToString(stateKeyHash[:])
 	}
+	stateKey = url.PathEscape(stateKey)
 	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), stateKey, content)
 }
