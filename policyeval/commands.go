@@ -896,9 +896,14 @@ var cmdSuspend = &CommandHandler{
 	Name:    "suspend",
 	Aliases: []string{"unsuspend"},
 	Func: func(ce *CommandEvent) {
-		err := ce.Meta.Bot.SynapseAdmin.SuspendAccount(ce.Ctx, id.UserID(ce.Args[0]), synapseadmin.ReqSuspendUser{
-			Suspend: ce.Command != "unsuspend",
-		})
+		var err error
+		if ce.Meta.Bot.SpecVersions.Supports(mautrix.FeatureAccountModeration) {
+			_, err = ce.Meta.Bot.UnstableSetSuspendedStatus(ce.Ctx, id.UserID(ce.Args[0]), ce.Command == "suspend")
+		} else {
+			err = ce.Meta.Bot.SynapseAdmin.SuspendAccount(ce.Ctx, id.UserID(ce.Args[0]), synapseadmin.ReqSuspendUser{
+				Suspend: ce.Command != "unsuspend",
+			})
+		}
 		if err != nil {
 			ce.Reply("Failed to %s: %v", ce.Command, err)
 		} else {
