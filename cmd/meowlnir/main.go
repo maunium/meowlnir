@@ -231,13 +231,13 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 		wrapped.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to get management room list")
 		os.Exit(15)
 	}
-	for _, roomID := range managementRooms {
-		m.EvaluatorByManagementRoom[roomID] = m.newPolicyEvaluator(wrapped, roomID)
+	for _, mr := range managementRooms {
+		m.EvaluatorByManagementRoom[mr.RoomID] = m.newPolicyEvaluator(wrapped, mr.RoomID, mr.Encrypted)
 	}
 	return wrapped
 }
 
-func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeval.PolicyEvaluator {
+func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID, encrypted bool) *policyeval.PolicyEvaluator {
 	var roomHashes *roomhash.Map
 	if m.Config.Meowlnir.RoomBanRoom == roomID {
 		roomHashes = m.RoomHashes
@@ -245,6 +245,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 	return policyeval.NewPolicyEvaluator(
 		bot, m.PolicyStore,
 		roomID,
+		encrypted,
 		m.DB,
 		m.SynapseDB,
 		m.claimProtectedRoom,
@@ -259,7 +260,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID) *policyeva
 	)
 }
 
-func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot *bot.Bot) bool {
+func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot *bot.Bot, encrypted bool) bool {
 	m.MapLock.Lock()
 	defer m.MapLock.Unlock()
 	eval, ok := m.EvaluatorByManagementRoom[roomID]
@@ -274,7 +275,7 @@ func (m *Meowlnir) loadManagementRoom(ctx context.Context, roomID id.RoomID, bot
 			}
 		}
 	}
-	eval = m.newPolicyEvaluator(bot, roomID)
+	eval = m.newPolicyEvaluator(bot, roomID, encrypted)
 	m.EvaluatorByManagementRoom[roomID] = eval
 	go eval.Load(ctx)
 	return true

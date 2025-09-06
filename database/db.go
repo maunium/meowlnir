@@ -28,7 +28,9 @@ func New(db *dbutil.Database) *Database {
 			}),
 		},
 		ManagementRoom: &ManagementRoomQuery{
-			Database: db,
+			QueryHelper: dbutil.MakeQueryHelper(db, func(qh *dbutil.QueryHelper[*ManagementRoom]) *ManagementRoom {
+				return &ManagementRoom{}
+			}),
 		},
 	}
 }

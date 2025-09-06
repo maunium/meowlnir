@@ -9,27 +9,39 @@ import (
 
 const (
 	getAllManagementRoomsQuery = `
-		SELECT room_id FROM management_room WHERE bot_username=$1;
+		SELECT room_id, bot_username, encrypted FROM management_room WHERE bot_username=$1;
 	`
 	putManagementRoomQuery = `
-		INSERT INTO management_room (room_id, bot_username)
-		VALUES ($1, $2)
-		ON CONFLICT (room_id) DO UPDATE
-			SET bot_username=excluded.bot_username
+		INSERT INTO management_room (room_id, bot_username, encrypted)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (room_id) DO UPDATE SET
+			bot_username=excluded.bot_username,
+			encrypted=excluded.encrypted;
 	`
 )
 
 type ManagementRoomQuery struct {
-	*dbutil.Database
+	*dbutil.QueryHelper[*ManagementRoom]
 }
 
-func (mrq *ManagementRoomQuery) Put(ctx context.Context, roomID id.RoomID, botUsername string) error {
-	_, err := mrq.Exec(ctx, putManagementRoomQuery, roomID, botUsername)
-	return err
+func (mrq *ManagementRoomQuery) Put(ctx context.Context, mr *ManagementRoom) error {
+	return mrq.Exec(ctx, putManagementRoomQuery, mr.sqlVariables()...)
 }
 
-var roomIDScanner = dbutil.ConvertRowFn[id.RoomID](dbutil.ScanSingleColumn[id.RoomID])
+func (mrq *ManagementRoomQuery) GetAll(ctx context.Context, botUsername string) ([]*ManagementRoom, error) {
+	return mrq.QueryMany(ctx, getAllManagementRoomsQuery, botUsername)
+}
 
-func (mrq *ManagementRoomQuery) GetAll(ctx context.Context, botUsername string) ([]id.RoomID, error) {
-	return roomIDScanner.NewRowIter(mrq.Query(ctx, getAllManagementRoomsQuery, botUsername)).AsList()
+type ManagementRoom struct {
+	RoomID      id.RoomID
+	BotUsername string
+	Encrypted   bool
+}
+
+func (m *ManagementRoom) Scan(row dbutil.Scannable) (*ManagementRoom, error) {
+	return dbutil.ValueOrErr(m, row.Scan(&m.RoomID, &m.BotUsername, &m.Encrypted))
+}
+
+func (m *ManagementRoom) sqlVariables() []any {
+	return []any{m.RoomID, m.BotUsername, m.Encrypted}
 }

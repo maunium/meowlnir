@@ -13,7 +13,6 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 	clientRouter.HandleFunc("POST /v3/rooms/{roomID}/report/{eventID}", m.PostReport)
 	clientRouter.HandleFunc("POST /v3/rooms/{roomID}/report", m.PostReport)
 	clientRouter.HandleFunc("POST /v3/users/{userID}/report", m.PostReport)
-
 	m.AS.Router.Handle("/_matrix/client/", exhttp.ApplyMiddleware(
 		http.StripPrefix("/_matrix/client", clientRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "reporting api").Logger()),
@@ -25,7 +24,6 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 
 	policyServerRouter := http.NewServeMux()
 	policyServerRouter.HandleFunc("POST /unstable/org.matrix.msc4284/event/{event_id}/check", m.PostMSC4284EventCheck)
-
 	m.AS.Router.Handle("/_matrix/policy/", exhttp.ApplyMiddleware(
 		http.StripPrefix("/_matrix/policy", policyServerRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "policy server").Logger()),

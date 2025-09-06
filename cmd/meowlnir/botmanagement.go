@@ -175,6 +175,7 @@ var (
 type ReqVerifyBot struct {
 	RecoveryKey   string `json:"recovery_key"`
 	Generate      bool   `json:"generate"`
+	Save          bool   `json:"save"`
 	ForceGenerate bool   `json:"force_generate"`
 	ForceVerify   bool   `json:"force_verify"`
 }
@@ -218,12 +219,12 @@ func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Generate {
-		recoveryKey, err := bot.GenerateRecoveryKey(r.Context())
+		req.RecoveryKey, err = bot.GenerateRecoveryKey(r.Context())
 		if err != nil {
 			hlog.FromRequest(r).Err(err).Msg("Failed to generate recovery key")
 			mautrix.MUnknown.WithMessage("Failed to generate recovery key: " + err.Error()).Write(w)
 		} else {
-			exhttp.WriteJSONResponse(w, http.StatusCreated, &RespVerifyBot{RecoveryKey: recoveryKey})
+			exhttp.WriteJSONResponse(w, http.StatusCreated, &RespVerifyBot{RecoveryKey: req.RecoveryKey})
 		}
 	} else {
 		err = bot.VerifyWithRecoveryKey(r.Context(), req.RecoveryKey)
@@ -234,10 +235,18 @@ func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
 			exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 		}
 	}
+	if req.Save {
+		bot.Meta.RecoveryKey = req.RecoveryKey
+		err = m.DB.Bot.Put(r.Context(), bot.Meta)
+		if err != nil {
+			hlog.FromRequest(r).Err(err).Msg("Failed to save bot recovery key to database")
+		}
+	}
 }
 
 type ReqPutManagementRoom struct {
 	BotUsername string `json:"bot_username"`
+	Encrypted   *bool  `json:"encrypted,omitempty"`
 }
 
 func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
@@ -260,13 +269,18 @@ func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to join room")
 	}
-	err = m.DB.ManagementRoom.Put(r.Context(), roomID, bot.Meta.Username)
+	mr := &database.ManagementRoom{
+		RoomID:      roomID,
+		BotUsername: bot.Meta.Username,
+		Encrypted:   req.Encrypted == nil || *req.Encrypted,
+	}
+	err = m.DB.ManagementRoom.Put(r.Context(), mr)
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to save management room to database")
 		mautrix.MUnknown.WithMessage("Failed to save management room to database").Write(w)
 		return
 	}
-	didUpdate := m.loadManagementRoom(context.WithoutCancel(r.Context()), roomID, bot)
+	didUpdate := m.loadManagementRoom(context.WithoutCancel(r.Context()), roomID, bot, mr.Encrypted)
 	if didUpdate {
 		exhttp.WriteEmptyJSONResponse(w, http.StatusCreated)
 	} else {

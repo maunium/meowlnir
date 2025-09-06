@@ -32,7 +32,7 @@ type CommandHandler = commands.Handler[*PolicyEvaluator]
 const SuccessReaction = "✅"
 
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
-	if !evt.Mautrix.WasEncrypted && pe.Bot.CryptoHelper != nil {
+	if !evt.Mautrix.WasEncrypted && pe.Bot.CryptoHelper != nil && pe.RequireEncryption {
 		zerolog.Ctx(ctx).Warn().
 			Stringer("event_id", evt.ID).
 			Stringer("sender", evt.Sender).
