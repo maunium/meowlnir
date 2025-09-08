@@ -1,3 +1,17 @@
+# v0.8.0 (unreleased)
+
+* Added PDU validation to policy server.
+* Added note for policy list change notices that were delayed.
+* Added command flag to kick user in a specific room only
+  (thanks to [@nexy7574] in [#39]).
+* Added option to not require encryption in management room even if encryption
+  is set up in config.
+* Fixed policy server redacting events multiple times.
+* Fixed spoilers in bot notices not being applied properly in some cases.
+* Fixed policy list cache not handling removals of duplicate policies correctly.
+
+[#39]: https://github.com/maunium/meowlnir/pull/39
+
 # v0.7.0 (2025-08-16)
 
 * Bumped minimum Go version to 1.24.
