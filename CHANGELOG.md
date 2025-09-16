@@ -1,4 +1,4 @@
-# v0.8.0 (unreleased)
+# v0.8.0 (2025-09-16)
 
 * Added PDU validation to policy server.
 * Added note for policy list change notices that were delayed.
