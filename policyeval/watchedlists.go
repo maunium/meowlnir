@@ -20,15 +20,18 @@ import (
 
 func (pe *PolicyEvaluator) IsWatchingList(roomID id.RoomID) bool {
 	pe.watchedListsLock.RLock()
-	_, watched := pe.watchedListsMap[roomID]
+	meta, watched := pe.watchedListsMap[roomID]
 	pe.watchedListsLock.RUnlock()
-	return watched
+	return watched && (meta.InRoom || !pe.Untrusted)
 }
 
 func (pe *PolicyEvaluator) GetWatchedListMeta(roomID id.RoomID) *config.WatchedPolicyList {
 	pe.watchedListsLock.RLock()
 	meta := pe.watchedListsMap[roomID]
 	pe.watchedListsLock.RUnlock()
+	if meta != nil && !meta.InRoom && pe.Untrusted {
+		return nil
+	}
 	return meta
 }
 
@@ -38,6 +41,9 @@ func (pe *PolicyEvaluator) FindListByShortcode(shortcode string) *config.Watched
 	defer pe.watchedListsLock.RUnlock()
 	for _, meta := range pe.watchedListsMap {
 		if strings.ToLower(meta.Shortcode) == shortcode {
+			if !meta.InRoom && pe.Untrusted {
+				return nil
+			}
 			return meta
 		}
 	}
@@ -56,6 +62,13 @@ func (pe *PolicyEvaluator) GetWatchedListsForACLs() []id.RoomID {
 	return pe.watchedListsForACLs
 }
 
+func (pe *PolicyEvaluator) GetWatchedListsForMatch() []id.RoomID {
+	if pe.Untrusted {
+		return pe.GetWatchedLists()
+	}
+	return nil
+}
+
 func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Event, isInitial bool) (output, errors []string) {
 	content, ok := evt.Content.Parsed.(*config.WatchedListsEventContent)
 	if !ok {
@@ -64,26 +77,42 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	var wg sync.WaitGroup
 	var outLock sync.Mutex
 	wg.Add(len(content.Lists))
+	failed := make(map[id.RoomID]struct{})
 	for _, listInfo := range content.Lists {
 		doLoad := func() {
 			defer wg.Done()
-			if !pe.Store.Contains(listInfo.RoomID) {
+			var errMsg string
+			if pe.Untrusted {
+				state, err := pe.Bot.FullStateEvent(ctx, listInfo.RoomID, event.StateMember, pe.Bot.UserID.String())
+				if err != nil {
+					zerolog.Ctx(ctx).Err(err).Stringer("room_id", listInfo.RoomID).Msg("Failed to load bot member event in watched list")
+					errMsg = fmt.Sprintf("* Failed to check membership in %s: %v", format.MarkdownMentionRoomID(listInfo.Name, listInfo.RoomID), err)
+				} else if state == nil || state.Content.AsMember().Membership != event.MembershipJoin {
+					errMsg = fmt.Sprintf("* Not a member of %s", format.MarkdownMentionRoomID(listInfo.Name, listInfo.RoomID))
+				}
+			}
+			if errMsg == "" && !pe.Store.Contains(listInfo.RoomID) {
 				state, err := pe.Bot.State(ctx, listInfo.RoomID)
 				if err != nil {
 					zerolog.Ctx(ctx).Err(err).Stringer("room_id", listInfo.RoomID).Msg("Failed to load state of watched list")
-					outLock.Lock()
-					errors = append(errors, fmt.Sprintf("* Failed to get room state for %s: %v", format.MarkdownMentionRoomID(listInfo.Name, listInfo.RoomID), err))
-					outLock.Unlock()
-					return
+				} else {
+					pe.Store.Add(listInfo.RoomID, state)
 				}
-				pe.Store.Add(listInfo.RoomID, state)
+			}
+			if errMsg != "" {
+				outLock.Lock()
+				if pe.Untrusted {
+					failed[listInfo.RoomID] = struct{}{}
+				}
+				errors = append(errors, errMsg)
+				outLock.Unlock()
 			}
 		}
 		if pe.DB.Dialect == dbutil.SQLite {
 			// Load rooms synchronously on SQLite to avoid lots of things trying to write at once
-			doLoad()
+			pe.Store.WithLoadLock(listInfo.RoomID, doLoad)
 		} else {
-			go doLoad()
+			go pe.Store.WithLoadLock(listInfo.RoomID, doLoad)
 		}
 	}
 	wg.Wait()
@@ -94,8 +123,10 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 		if _, alreadyWatched := watchedMap[listInfo.RoomID]; alreadyWatched {
 			errors = append(errors, fmt.Sprintf("* Duplicate watched list %s", format.MarkdownMentionRoomID(listInfo.Name, listInfo.RoomID)))
 		} else {
+			_, listFailed := failed[listInfo.RoomID]
+			listInfo.InRoom = !listFailed
 			watchedMap[listInfo.RoomID] = &listInfo
-			if !listInfo.DontApply {
+			if !listInfo.DontApply && !listFailed {
 				watchedList = append(watchedList, listInfo.RoomID)
 				if !listInfo.DontApplyACL {
 					aclWatchedList = append(aclWatchedList, listInfo.RoomID)

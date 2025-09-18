@@ -246,6 +246,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID, encrypted 
 		bot, m.PolicyStore,
 		roomID,
 		encrypted,
+		m.Config.Meowlnir.Untrusted,
 		m.DB,
 		m.SynapseDB,
 		m.claimProtectedRoom,

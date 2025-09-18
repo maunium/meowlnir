@@ -22,6 +22,8 @@ type WatchedPolicyList struct {
 	AutoSuspend  bool      `json:"auto_suspend"`
 
 	DontNotifyOnChange bool `json:"dont_notify_on_change"`
+
+	InRoom bool `json:"-"`
 }
 
 type WatchedListsEventContent struct {

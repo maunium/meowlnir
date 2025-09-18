@@ -17,13 +17,15 @@ import (
 // against the policies of any subset of rooms in the store.
 type Store struct {
 	rooms     map[id.RoomID]*Room
+	loadLocks map[id.RoomID]*sync.Mutex
 	roomsLock sync.RWMutex
 }
 
 // NewStore creates a new policy list store.
 func NewStore() *Store {
 	return &Store{
-		rooms: make(map[id.RoomID]*Room),
+		rooms:     make(map[id.RoomID]*Room),
+		loadLocks: make(map[id.RoomID]*sync.Mutex),
 	}
 }
 
@@ -102,6 +104,19 @@ func (s *Store) Add(roomID id.RoomID, state map[event.Type]map[string]*event.Eve
 	s.roomsLock.Lock()
 	s.rooms[roomID] = NewRoom(roomID).ParseState(state)
 	s.roomsLock.Unlock()
+}
+
+func (s *Store) WithLoadLock(roomID id.RoomID, fn func()) {
+	s.roomsLock.Lock()
+	lock, ok := s.loadLocks[roomID]
+	if !ok {
+		lock = &sync.Mutex{}
+		s.loadLocks[roomID] = lock
+	}
+	s.roomsLock.Unlock()
+	lock.Lock()
+	defer lock.Unlock()
+	fn()
 }
 
 func (s *Store) Contains(roomID id.RoomID) bool {

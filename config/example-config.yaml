@@ -28,6 +28,10 @@ meowlnir:
     # If dry run is set to true, meowlnir won't take any actual actions,
     # but will do everything else as if it was going to take actions.
     dry_run: false
+    # Should all bots be considered as untrusted?
+    # This will enable some additional checks, e.g. to prevent subscribing to a policy list without being in the room
+    # if another bot has subscribed to it. In the future, this will be configurable per bot.
+    untrusted: false
 
     # Which management room should handle requests to the Matrix report API?
     report_room: '!roomid:example.com'

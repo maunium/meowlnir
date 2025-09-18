@@ -41,6 +41,7 @@ type PolicyEvaluator struct {
 	RequireEncryption bool
 	Admins            *exsync.Set[id.UserID]
 	RoomHashes        *roomhash.Map
+	Untrusted         bool
 
 	commandProcessor *commands.Processor[*PolicyEvaluator]
 
@@ -80,6 +81,7 @@ func NewPolicyEvaluator(
 	store *policylist.Store,
 	managementRoom id.RoomID,
 	requireEncryption bool,
+	untrusted bool,
 	db *database.Database,
 	synapseDB *synapsedb.SynapseDB,
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
@@ -96,6 +98,7 @@ func NewPolicyEvaluator(
 		Store:                store,
 		ManagementRoom:       managementRoom,
 		RequireEncryption:    requireEncryption,
+		Untrusted:            untrusted,
 		Admins:               exsync.NewSet[id.UserID](),
 		commandProcessor:     commands.NewProcessor[*PolicyEvaluator](bot.Client),
 		protectedRoomMembers: make(map[id.UserID][]id.RoomID),

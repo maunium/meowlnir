@@ -28,6 +28,7 @@ type MeowlnirConfig struct {
 	ManagementSecret string `yaml:"management_secret"`
 	DataSecret       string `yaml:"data_secret"`
 	DryRun           bool   `yaml:"dry_run"`
+	Untrusted        bool   `yaml:"untrusted"`
 
 	ReportRoom          id.RoomID `yaml:"report_room"`
 	RoomBanRoom         id.RoomID `yaml:"room_ban_room"`
