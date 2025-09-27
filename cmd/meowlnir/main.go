@@ -43,7 +43,7 @@ import (
 
 var configPath = flag.MakeFull("c", "config", "Path to the config file", "config.yaml").String()
 var noSaveConfig = flag.MakeFull("n", "no-update", "Don't update the config file", "false").Bool()
-var version = flag.MakeFull("v", "version", "Print the version and exit", "false").Bool()
+var wantVersion = flag.MakeFull("v", "version", "Print the version and exit", "false").Bool()
 var writeExampleConfig = flag.MakeFull("e", "generate-example-config", "Save the example config to the config path and quit.", "false").Bool()
 var wantHelp, _ = flag.MakeHelpFlag()
 
@@ -107,8 +107,8 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	exzerolog.SetupDefaults(m.Log)
 
 	m.Log.Info().
-		Str("version", VersionWithCommit).
-		Time("built_at", ParsedBuildTime).
+		Str("version", VersionInfo.FormattedVersion).
+		Time("built_at", VersionInfo.BuildTime).
 		Str("go_version", runtime.Version()).
 		Msg("Initializing Meowlnir")
 
@@ -393,7 +393,6 @@ func loadConfig(path string, noSave bool) *config.Config {
 }
 
 func main() {
-	initVersion()
 	flag.SetHelpTitles(
 		"meowlnir - An opinionated Matrix moderation bot.",
 		"meowlnir [-hnve] [-c <path>]",
@@ -405,8 +404,8 @@ func main() {
 	} else if *wantHelp {
 		flag.PrintHelp()
 		os.Exit(0)
-	} else if *version {
-		fmt.Println(VersionDescription)
+	} else if *wantVersion {
+		fmt.Println(VersionInfo.VersionDescription)
 		os.Exit(0)
 	} else if *writeExampleConfig {
 		if *configPath != "-" && *configPath != "/dev/stdout" && *configPath != "/dev/stderr" {
