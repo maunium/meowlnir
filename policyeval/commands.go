@@ -14,6 +14,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/glob"
+	"go.mau.fi/util/progver"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
@@ -972,6 +973,15 @@ var cmdProtectRoom = &CommandHandler{
 			}
 			ce.React(SuccessReaction)
 		}
+	},
+}
+
+var VersionInfo progver.ProgramVersion
+
+var cmdVersion = &CommandHandler{
+	Name: "version",
+	Func: func(ce *CommandEvent) {
+		ce.Reply(VersionInfo.MarkdownDescription())
 	},
 }
 

@@ -5,6 +5,8 @@ import (
 
 	"go.mau.fi/util/progver"
 	"maunium.net/go/mautrix"
+
+	"go.mau.fi/meowlnir/policyeval"
 )
 
 const version = "0.8.0"
@@ -24,4 +26,5 @@ var VersionInfo = progver.ProgramVersion{
 
 func init() {
 	mautrix.DefaultUserAgent = fmt.Sprintf("%s/%s %s", VersionInfo.Name, VersionInfo.FormattedVersion, mautrix.DefaultUserAgent)
+	policyeval.VersionInfo = VersionInfo
 }
