@@ -926,6 +926,48 @@ var cmdDeactivate = &CommandHandler{
 	},
 }
 
+var cmdBotProfile = &CommandHandler{
+	Name:    "bot-profile",
+	Aliases: []string{"profile"},
+	Func: func(ce *CommandEvent) {
+		if len(ce.Args) < 2 {
+			ce.Reply("Usage: `!bot-profile <displayname|avatar> <new value>`")
+			return
+		}
+		val := strings.Join(ce.Args[1:], " ")
+		switch strings.ToLower(ce.Args[0]) {
+		case "displayname", "name":
+			err := ce.Meta.Bot.Intent.SetDisplayName(ce.Ctx, val)
+			if err != nil {
+				ce.Log.Err(err).Msg("Failed to update bot displayname")
+				ce.Reply("Failed to update displayname")
+				return
+			}
+			ce.Meta.Bot.Meta.Displayname = val
+		case "avatar", "avatar_url", "avatar-url":
+			parsed, err := id.ParseContentURI(val)
+			if err != nil {
+				ce.Reply("Malformed avatar URL %s: %v", format.SafeMarkdownCode(val), err)
+				return
+			}
+			err = ce.Meta.Bot.Intent.SetAvatarURL(ce.Ctx, parsed)
+			if err != nil {
+				ce.Log.Err(err).Msg("Failed to update bot avatar")
+				ce.Reply("Failed to update avatar")
+				return
+			}
+			ce.Meta.Bot.Meta.AvatarURL = parsed
+		default:
+			ce.Reply("Usage: `!bot-profile <displayname|avatar> <new value>`")
+			return
+		}
+		err := ce.Meta.DB.Bot.Put(ce.Ctx, ce.Meta.Bot.Meta)
+		if err != nil {
+			ce.Log.Err(err).Msg("Failed to save bot profile to database")
+		}
+	},
+}
+
 var cmdProtectRoom = &CommandHandler{
 	Name:    "protect",
 	Aliases: []string{"unprotect"},
@@ -1005,7 +1047,10 @@ var cmdHelp = &CommandHandler{
 				"* `!search <pattern>` - Search for rules by a pattern in all lists\n" +
 				"* `!send-as-bot <room> <message>` - Send a message as the bot\n" +
 				"* `![un]suspend <user ID>` - Suspend or unsuspend a user\n" +
+				"* `!deactivate <user ID> [--erase]` - Deactivate a user\n" +
+				"* `!bot-profile <displayname/avatar> <new value>` - Update the bot profile\n" +
 				"* `!rooms <...>` - Manage rooms\n" +
+				"* `!version` - Check the running Meowlnir version\n" +
 				"* `!help <command>` - Show detailed help for a command\n" +
 				"* `!help` - Show this help message\n" +
 				"\n" +

@@ -143,6 +143,7 @@ func NewPolicyEvaluator(
 		cmdSendAsBot,
 		cmdSuspend,
 		cmdDeactivate,
+		cmdBotProfile,
 		cmdRooms,
 		cmdProtectRoom,
 		cmdVersion,
