@@ -210,8 +210,11 @@ func (m *Meowlnir) createPuppetClient(userID id.UserID) *mautrix.Client {
 	return cli
 }
 
-func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
+func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) (*bot.Bot, error) {
 	intent := m.AS.Intent(id.NewUserID(db.Username, m.AS.HomeserverDomain))
+	if intent == nil {
+		return nil, fmt.Errorf("got nil intent for %s", db.Username)
+	}
 	wrapped := bot.NewBot(
 		db, intent, m.Log.With().Str("bot", db.Username).Logger(),
 		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Encryption.PickleKey,
@@ -228,13 +231,12 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 
 	managementRooms, err := m.DB.ManagementRoom.GetAll(ctx, db.Username)
 	if err != nil {
-		wrapped.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to get management room list")
-		os.Exit(15)
+		return nil, fmt.Errorf("failed to get management room list: %w", err)
 	}
 	for _, mr := range managementRooms {
 		m.EvaluatorByManagementRoom[mr.RoomID] = m.newPolicyEvaluator(wrapped, mr.RoomID, mr.Encrypted)
 	}
-	return wrapped
+	return wrapped, nil
 }
 
 func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID, encrypted bool) *policyeval.PolicyEvaluator {
@@ -321,7 +323,13 @@ func (m *Meowlnir) Run(ctx context.Context) {
 		os.Exit(15)
 	}
 	for _, dbBot := range bots {
-		m.initBot(ctx, dbBot)
+		_, err = m.initBot(ctx, dbBot)
+		if err != nil {
+			m.Log.WithLevel(zerolog.FatalLevel).Err(err).
+				Str("bot_username", dbBot.Username).
+				Msg("Failed to initialize bot")
+			os.Exit(15)
+		}
 	}
 
 	m.EventProcessor.Start(ctx)

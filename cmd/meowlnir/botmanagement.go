@@ -133,7 +133,10 @@ func (m *Meowlnir) provisionM4ABot(ctx context.Context, owner id.UserID) (id.Use
 	if err != nil {
 		return "", "", fmt.Errorf("failed to save bot to database: %w", err)
 	}
-	bot := m.initBot(ctx, dbBot)
+	bot, err := m.initBot(ctx, dbBot)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to initialize bot: %w", err)
+	}
 	unlockMapLock()
 	bot.Meta.RecoveryKey, err = bot.GenerateRecoveryKey(ctx)
 	if err != nil {
@@ -213,7 +216,12 @@ func (m *Meowlnir) PutBot(w http.ResponseWriter, r *http.Request) {
 			mautrix.MUnknown.WithMessage("Failed to save new bot to database").Write(w)
 			return
 		}
-		bot = m.initBot(r.Context(), dbBot)
+		bot, err = m.initBot(r.Context(), dbBot)
+		if err != nil {
+			hlog.FromRequest(r).Err(err).Msg("Failed to initialize bot")
+			mautrix.MUnknown.WithMessage("Failed to initialize new bot").Write(w)
+			return
+		}
 	} else {
 		if req.Displayname != nil && bot.Meta.Displayname != *req.Displayname {
 			err = bot.Intent.SetDisplayName(r.Context(), *req.Displayname)
