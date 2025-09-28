@@ -41,6 +41,13 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.List, "meowlnir", "hacky_redact_patterns")
 	helper.Copy(up.Map, "meowlnir", "admin_tokens")
 
+	helper.Copy(up.Str|up.Null, "meowlnir4all", "admin_room")
+	helper.Copy(up.Str, "meowlnir4all", "localpart_template")
+	helper.Copy(up.Str|up.Null, "meowlnir4all", "displayname")
+	helper.Copy(up.Str|up.Null, "meowlnir4all", "avatar_url")
+	helper.Copy(up.Str, "meowlnir4all", "room_name")
+	helper.Copy(up.List, "meowlnir4all", "default_watched_lists")
+
 	if secret, ok := helper.Get(up.Str, "meowlnir", "antispam_secret"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "antispam", "secret")
 	} else {

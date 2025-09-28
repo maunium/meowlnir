@@ -42,6 +42,7 @@ type PolicyEvaluator struct {
 	Admins            *exsync.Set[id.UserID]
 	RoomHashes        *roomhash.Map
 	Untrusted         bool
+	provisionM4A      func(context.Context, id.UserID) (id.UserID, id.RoomID, error)
 
 	commandProcessor *commands.Processor[*PolicyEvaluator]
 
@@ -82,6 +83,7 @@ func NewPolicyEvaluator(
 	managementRoom id.RoomID,
 	requireEncryption bool,
 	untrusted bool,
+	provisionM4A func(context.Context, id.UserID) (id.UserID, id.RoomID, error),
 	db *database.Database,
 	synapseDB *synapsedb.SynapseDB,
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
@@ -99,6 +101,7 @@ func NewPolicyEvaluator(
 		ManagementRoom:       managementRoom,
 		RequireEncryption:    requireEncryption,
 		Untrusted:            untrusted,
+		provisionM4A:         provisionM4A,
 		Admins:               exsync.NewSet[id.UserID](),
 		commandProcessor:     commands.NewProcessor[*PolicyEvaluator](bot.Client),
 		protectedRoomMembers: make(map[id.UserID][]id.RoomID),
@@ -145,6 +148,7 @@ func NewPolicyEvaluator(
 		cmdDeactivate,
 		cmdBotProfile,
 		cmdRooms,
+		cmdProvision,
 		cmdProtectRoom,
 		cmdVersion,
 		cmdHelp,

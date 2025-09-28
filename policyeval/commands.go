@@ -968,6 +968,32 @@ var cmdBotProfile = &CommandHandler{
 	},
 }
 
+var cmdProvision = &CommandHandler{
+	Name: "provision",
+	Func: func(ce *CommandEvent) {
+		if ce.Meta.provisionM4A == nil {
+			ce.Reply("This is not the Meowlnir4All admin room")
+			return
+		} else if len(ce.Args) < 1 {
+			ce.Reply("Usage: `!provision <user ID>`")
+			return
+		}
+		owner := id.UserID(ce.Args[0])
+		userID, roomID, err := ce.Meta.provisionM4A(ce.Ctx, owner)
+		if err != nil {
+			ce.Log.Err(err).Msg("Failed to provision new M4A bot")
+			ce.Reply("Failed to provision bot: %v", err)
+			return
+		}
+		ce.Reply(
+			"Successfully provisioned %s for %s with management room %s",
+			format.MarkdownMention(userID),
+			format.MarkdownMention(owner),
+			format.MarkdownMentionRoomID("", roomID, ce.Meta.Bot.ServerName),
+		)
+	},
+}
+
 var cmdProtectRoom = &CommandHandler{
 	Name:    "protect",
 	Aliases: []string{"unprotect"},

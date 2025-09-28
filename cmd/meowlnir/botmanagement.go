@@ -4,18 +4,23 @@ import (
 	"context"
 	"crypto/hmac"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
 	"go.mau.fi/util/exslices"
 	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
+	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/util"
@@ -105,6 +110,83 @@ func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
 type ReqPutBot struct {
 	Displayname *string        `json:"displayname"`
 	AvatarURL   *id.ContentURI `json:"avatar_url"`
+}
+
+func (m *Meowlnir) provisionM4ABot(ctx context.Context, owner id.UserID) (id.UserID, id.RoomID, error) {
+	localpart, err := m.Config.Meowlnir4All.FormatLocalpart(owner)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to format localpart: %w", err)
+	}
+	userID := id.NewUserID(localpart, m.AS.HomeserverDomain)
+	m.MapLock.Lock()
+	unlockMapLock := sync.OnceFunc(m.MapLock.Unlock)
+	defer unlockMapLock()
+	if _, ok := m.Bots[userID]; ok {
+		return "", "", fmt.Errorf("duplicate bot user ID %s", userID)
+	}
+	dbBot := &database.Bot{
+		Username:    localpart,
+		Displayname: m.Config.Meowlnir4All.DisplayName,
+		AvatarURL:   m.Config.Meowlnir4All.AvatarURL,
+	}
+	err = m.DB.Bot.Put(ctx, dbBot)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to save bot to database: %w", err)
+	}
+	bot := m.initBot(ctx, dbBot)
+	unlockMapLock()
+	bot.Meta.RecoveryKey, err = bot.GenerateRecoveryKey(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate recovery key: %w", err)
+	}
+	err = m.DB.Bot.Put(ctx, bot.Meta)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to save bot recovery key to database: %w", err)
+	}
+	for _, list := range m.Config.Meowlnir4All.DefaultWatchedLists {
+		_, err = bot.Intent.JoinRoomByID(ctx, list.RoomID)
+		if err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).
+				Stringer("bot_user_id", bot.UserID).
+				Stringer("list_room_id", list.RoomID).
+				Msg("Failed to join new M4A bot to default watched list")
+		}
+	}
+	resp, err := bot.Intent.CreateRoom(ctx, &mautrix.ReqCreateRoom{
+		Name:   m.Config.Meowlnir4All.RoomName,
+		Invite: []id.UserID{owner},
+		Preset: "trusted_private_chat",
+		InitialState: []*event.Event{{
+			Type: config.StateProtectedRooms,
+			Content: event.Content{
+				Parsed: &config.ProtectedRoomsEventContent{
+					Rooms:   []id.RoomID{},
+					SkipACL: []id.RoomID{},
+				},
+			},
+		}, {
+			Type: config.StateWatchedLists,
+			Content: event.Content{
+				Parsed: &config.WatchedListsEventContent{
+					Lists: m.Config.Meowlnir4All.DefaultWatchedLists,
+				},
+			},
+		}},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create management room: %w", err)
+	}
+	mr := &database.ManagementRoom{
+		RoomID:      resp.RoomID,
+		BotUsername: bot.Meta.Username,
+		Encrypted:   false,
+	}
+	err = m.DB.ManagementRoom.Put(ctx, mr)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to save management room to database: %w", err)
+	}
+	m.loadManagementRoom(context.WithoutCancel(ctx), mr.RoomID, bot, mr.Encrypted)
+	return userID, mr.RoomID, nil
 }
 
 func (m *Meowlnir) PutBot(w http.ResponseWriter, r *http.Request) {

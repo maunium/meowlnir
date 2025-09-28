@@ -242,11 +242,16 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID, encrypted 
 	if m.Config.Meowlnir.RoomBanRoom == roomID {
 		roomHashes = m.RoomHashes
 	}
+	var m4aInit func(context.Context, id.UserID) (id.UserID, id.RoomID, error)
+	if m.Config.Meowlnir4All.AdminRoom == roomID {
+		m4aInit = m.provisionM4ABot
+	}
 	return policyeval.NewPolicyEvaluator(
 		bot, m.PolicyStore,
 		roomID,
 		encrypted,
 		m.Config.Meowlnir.Untrusted,
+		m4aInit,
 		m.DB,
 		m.SynapseDB,
 		m.claimProtectedRoom,
