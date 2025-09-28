@@ -975,10 +975,28 @@ var cmdProvision = &CommandHandler{
 			ce.Reply("This is not the Meowlnir4All admin room")
 			return
 		} else if len(ce.Args) < 1 {
-			ce.Reply("Usage: `!provision <user ID>`")
+			ce.Reply("Usage: `!provision [--force] <user ID>`")
 			return
 		}
+		force := strings.ToLower(ce.Args[0]) == "--force" && len(ce.Args) > 1
+		if force {
+			ce.Args = ce.Args[1:]
+		}
+		var ownerName string
 		owner := id.UserID(ce.Args[0])
+		if !force {
+			profile, err := ce.Meta.Bot.GetProfile(ce.Ctx, owner)
+			if err != nil || profile == nil || profile.DisplayName == "" {
+				ce.Reply("Profile not found for %s, are you sure the user ID is correct?", format.SafeMarkdownCode(owner))
+				return
+			}
+			if profile != nil {
+				ownerName = profile.DisplayName
+			}
+		}
+		if ownerName == "" {
+			ownerName = owner.String()
+		}
 		userID, roomID, err := ce.Meta.provisionM4A(ce.Ctx, owner)
 		if err != nil {
 			ce.Log.Err(err).Msg("Failed to provision new M4A bot")
@@ -988,7 +1006,7 @@ var cmdProvision = &CommandHandler{
 		ce.Reply(
 			"Successfully provisioned %s for %s with management room %s",
 			format.MarkdownMention(userID),
-			format.MarkdownMention(owner),
+			format.MarkdownMentionWithName(ownerName, owner),
 			format.MarkdownMentionRoomID("", roomID, ce.Meta.Bot.ServerName),
 		)
 	},
