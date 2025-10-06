@@ -76,7 +76,7 @@ func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
 		var verified, csSetUp bool
 		if m.Config.Encryption.Enable {
 			var err error
-			verified, csSetUp, err = bot.GetVerificationStatus(r.Context())
+			verified, csSetUp, err = bot.Mach.GetOwnVerificationStatus(r.Context())
 			if err != nil {
 				hlog.FromRequest(r).Err(err).Str("bot_username", bot.Meta.Username).Msg("Failed to get bot verification status")
 				mautrix.MUnknown.WithMessage("Failed to get bot verification status").Write(w)
@@ -138,7 +138,7 @@ func (m *Meowlnir) provisionM4ABot(ctx context.Context, owner id.UserID) (id.Use
 		return "", "", fmt.Errorf("failed to initialize bot: %w", err)
 	}
 	unlockMapLock()
-	bot.Meta.RecoveryKey, err = bot.GenerateRecoveryKey(ctx)
+	bot.Meta.RecoveryKey, err = bot.Mach.GenerateAndVerifyWithRecoveryKey(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to generate recovery key: %w", err)
 	}
@@ -296,7 +296,7 @@ func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
 		mautrix.MNotFound.WithMessage("Bot not found").Write(w)
 		return
 	}
-	hasKeys, isVerified, err := bot.GetVerificationStatus(r.Context())
+	hasKeys, isVerified, err := bot.Mach.GetOwnVerificationStatus(r.Context())
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to get bot verification status")
 		mautrix.MUnknown.WithMessage("Failed to get bot verification status").Write(w)
@@ -309,7 +309,7 @@ func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Generate {
-		req.RecoveryKey, err = bot.GenerateRecoveryKey(r.Context())
+		req.RecoveryKey, err = bot.Mach.GenerateAndVerifyWithRecoveryKey(r.Context())
 		if err != nil {
 			hlog.FromRequest(r).Err(err).Msg("Failed to generate recovery key")
 			mautrix.MUnknown.WithMessage("Failed to generate recovery key: " + err.Error()).Write(w)
@@ -317,7 +317,7 @@ func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
 			exhttp.WriteJSONResponse(w, http.StatusCreated, &RespVerifyBot{RecoveryKey: req.RecoveryKey})
 		}
 	} else {
-		err = bot.VerifyWithRecoveryKey(r.Context(), req.RecoveryKey)
+		err = bot.Mach.VerifyWithRecoveryKey(r.Context(), req.RecoveryKey)
 		if err != nil {
 			hlog.FromRequest(r).Err(err).Msg("Failed to verify bot with recovery key")
 			mautrix.MUnknown.WithMessage("Failed to verify bot with recovery key: " + err.Error()).Write(w)

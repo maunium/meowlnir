@@ -140,7 +140,7 @@ func (bot *Bot) Init(ctx context.Context) {
 	bot.Mach.ShareKeysMinTrust = id.TrustStateCrossSignedTOFU
 	bot.eventProcessor.OnDeviceList(bot.Mach.HandleDeviceLists)
 
-	hasKeys, isVerified, err := bot.GetVerificationStatus(ctx)
+	hasKeys, isVerified, err := bot.Mach.GetOwnVerificationStatus(ctx)
 	if err != nil {
 		bot.Log.Err(err).Msg("Failed to check verification status")
 	} else if !hasKeys {
