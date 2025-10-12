@@ -139,7 +139,13 @@ func (pe *PolicyEvaluator) maybeApplySuspend(ctx context.Context, userID id.User
 	if !plist.AutoSuspend {
 		return
 	}
-	err := pe.Bot.SynapseAdmin.SuspendAccount(ctx, userID, synapseadmin.ReqSuspendUser{Suspend: true})
+
+	var err error
+	if pe.Bot.SpecVersions.Supports(mautrix.FeatureAccountModeration) {
+		_, err = pe.Bot.UnstableSetSuspendedStatus(ctx, userID, true)
+	} else {
+		err = pe.Bot.SynapseAdmin.SuspendAccount(ctx, userID, synapseadmin.ReqSuspendUser{Suspend: true})
+	}
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Stringer("user_id", userID).Msg("Failed to suspend user")
 		pe.sendNotice(ctx, "Failed to suspend %s: %v", format.MarkdownMention(userID), err)
