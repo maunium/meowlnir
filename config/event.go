@@ -31,7 +31,8 @@ type WatchedListsEventContent struct {
 }
 
 type ProtectedRoomsEventContent struct {
-	Rooms []id.RoomID `json:"rooms"`
+	Rooms       []id.RoomID               `json:"rooms"`
+	Protections map[string]map[string]any `json:"protections,omitempty"`
 
 	// TODO make this less hacky
 	SkipACL []id.RoomID `json:"skip_acl"`
