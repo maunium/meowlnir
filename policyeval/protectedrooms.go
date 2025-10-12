@@ -2,14 +2,17 @@ package policyeval
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/dbutil"
+	"go.mau.fi/util/exerrors"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/format"
@@ -216,6 +219,21 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 			pe.claimProtected(roomID, pe, false)
 			output = append(output, fmt.Sprintf("* Stopped protecting room %s", format.MarkdownMentionRoomID("", roomID)))
 		}
+	}
+	for protectionName, protectionConfig := range content.Protections {
+		protType, ok := protectionsRegistry[protectionName]
+		if !ok {
+			errors = append(errors, fmt.Sprintf("* Unknown protection %q", protectionName))
+			continue
+		}
+		protValue := reflect.New(protType).Interface()
+		err := json.Unmarshal(exerrors.Must(json.Marshal(protectionConfig)), protValue)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("* Failed to parse protection %s: %v", protectionName, err))
+			continue
+		}
+		pe.protections[protectionName] = protValue.(Protection)
+		output = append(output, fmt.Sprintf("* Enabled protection %q", protectionName))
 	}
 	pe.protectedRoomsLock.Unlock()
 	joinedRooms, err := pe.Bot.JoinedRooms(ctx)
