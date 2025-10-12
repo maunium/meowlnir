@@ -21,6 +21,7 @@ func init() {
 	protectionsRegistry = make(map[string]reflect.Type)
 	protectionsRegistry["bad_words"] = reflect.TypeOf(BadWords{})
 	protectionsRegistry["max_mentions"] = reflect.TypeOf(MaxMentions{})
+	protectionsRegistry["join_rate"] = reflect.TypeOf(MaxJoinRate{})
 }
 
 // Protection is an interface that defines the minimum exposed functionality required to define a protection.
@@ -81,6 +82,7 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 	return hit, nil
 }
 
+// MaxMentions is a protection that redacts and bans users who mention too many unique users in a given time period.
 type MaxMentions struct {
 	Limit          int              `json:"limit"`                     // how many mentions to allow before actioning
 	Per            jsontime.Seconds `json:"per"`                       // the timespan in which to count mentions
@@ -93,12 +95,10 @@ type MaxMentions struct {
 
 func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
 	if m.Limit <= 0 {
-		pe.Bot.Log.Trace().Msg("max_mentions protection disabled, skipping")
 		return false, nil // no-op
 	}
 	content := evt.Content.AsMessage()
 	if content.Mentions == nil || len(content.Mentions.UserIDs) == 0 {
-		pe.Bot.Log.Trace().Msg("max_mentions protection no mentions, skipping")
 		return false, nil
 	}
 
@@ -187,6 +187,83 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 			}
 		}
 	}
-	pe.Bot.Log.Trace().Bool("hit", hit).Msg("max_mentions protection done")
+	return hit, nil
+}
+
+// MaxJoinRate is a protection that kicks users that join past a certain threshold, to prevent join floods.
+// This can be used to set a limit of, for example, 10 joins a minute, after which users will be kicked.
+type MaxJoinRate struct {
+	Limit     int              `json:"limit"` // how many joins to allow before actioning
+	Per       jsontime.Seconds `json:"per"`   // the timespan in which to count joins
+	counts    map[id.RoomID]int
+	expire    map[id.RoomID]time.Time
+	countLock sync.Mutex
+}
+
+func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
+	if m.Limit <= 0 || evt.Type != event.StateMember {
+		return false, nil
+	}
+	content := evt.Content.AsMember()
+	if !content.Membership.IsInviteOrJoin() { // we only care about invites and joins
+		return false, nil
+	}
+
+	m.countLock.Lock()
+	defer m.countLock.Unlock()
+	if m.counts == nil {
+		m.counts = make(map[id.RoomID]int)
+	}
+	if m.expire == nil {
+		m.expire = make(map[id.RoomID]time.Time)
+	}
+
+	// Expire old counts
+	now := time.Now()
+	for room, exp := range m.expire {
+		if now.After(exp) {
+			delete(m.counts, room)
+			delete(m.expire, room)
+		}
+	}
+
+	// Increase counts
+	m.counts[evt.RoomID]++
+	expires, ok := m.expire[evt.RoomID]
+	if !ok {
+		expires = now.Add(m.Per.Duration)
+	}
+	// Unlike MaxMentions, we don't increment the window on each join
+	m.expire[evt.RoomID] = expires
+
+	if m.counts[evt.RoomID] > m.Limit {
+		hit = true
+		if !dry {
+			// At least one of the patterns matched, kick in the background
+			go func() {
+				_, err := pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{
+					UserID: evt.Sender,
+					Reason: "too many recent joins! try again later.",
+				})
+				if err == nil {
+					pe.sendNotice(
+						ctx,
+						fmt.Sprintf(
+							"Kicked [%s](%s) from [%s](%s) for exceeding the join limit of %d joins per %s, with %d joins.",
+							evt.Sender,
+							evt.Sender.URI(),
+							evt.RoomID,
+							evt.RoomID.URI(),
+							m.Limit,
+							m.Per.String(),
+							m.counts[evt.RoomID],
+						),
+					)
+				} else {
+					pe.Bot.Log.Error().Err(err).Msg("failed to kick user for max_joins")
+				}
+			}()
+		}
+	}
 	return hit, nil
 }
