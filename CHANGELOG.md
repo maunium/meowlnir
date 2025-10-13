@@ -1,3 +1,12 @@
+# v25.10 (unreleased)
+
+* Switched to calendar versioning.
+* Added `untrusted` flag to enforce membership checks before accessing policy
+  list cache.
+* Added automatic bot provisioning command with configuration defined in the
+  `meowlnir4all` section.
+* Added command to change bot profile from management room.
+
 # v0.8.0 (2025-09-16)
 
 * Added PDU validation to policy server.
