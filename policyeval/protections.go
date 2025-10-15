@@ -307,7 +307,7 @@ func (n *NoMedia) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.E
 		}
 	case event.EventReaction:
 		content := evt.Content.AsReaction()
-		if !n.DenyCustomReactions && strings.HasPrefix(content.RelatesTo.Key, "mxc://") {
+		if n.DenyCustomReactions && strings.HasPrefix(content.RelatesTo.Key, "mxc://") {
 			hit = true
 		}
 	}
