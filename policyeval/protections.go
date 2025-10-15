@@ -405,7 +405,7 @@ func (i *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator,
 		// If the result is true (insecure) and less than 5 minutes old, it is fresh.
 		// Secure results are cached for longer since they're less likely to be invalid.
 		if (result && time.Since(cached) < 5*time.Minute) || (!result && time.Since(cached) < time.Hour) {
-			if !dry {
+			if result && !dry {
 				// Kick user and alert the management room
 				go i.Kick(ctx, pe, evt, target)
 			}
