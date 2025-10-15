@@ -2,9 +2,12 @@ package policyeval
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +25,8 @@ func init() {
 	protectionsRegistry["bad_words"] = reflect.TypeOf(BadWords{})
 	protectionsRegistry["max_mentions"] = reflect.TypeOf(MaxMentions{})
 	protectionsRegistry["join_rate"] = reflect.TypeOf(MaxJoinRate{})
+	protectionsRegistry["no_media"] = reflect.TypeOf(NoMedia{})
+	protectionsRegistry["insecure_registration"] = reflect.TypeOf(InsecureRegistration{})
 }
 
 // Protection is an interface that defines the minimum exposed functionality required to define a protection.
@@ -75,7 +80,7 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 					),
 				)
 			} else {
-				pe.Bot.Log.Error().Err(err).Msg("failed to redact message for bad_words")
+				pe.Bot.Log.Err(err).Msg("failed to redact message for bad_words")
 			}
 		}()
 	}
@@ -153,7 +158,7 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 						),
 					)
 				} else {
-					pe.Bot.Log.Error().Err(err).Msg("failed to redact message for max_mentions")
+					pe.Bot.Log.Err(err).Msg("failed to redact message for max_mentions")
 				}
 			}()
 			// If the infractions are over the limit, issue a ban
@@ -181,7 +186,7 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 							),
 						)
 					} else {
-						pe.Bot.Log.Error().Err(err).Msg("failed to ban user for max_mentions")
+						pe.Bot.Log.Err(err).Msg("failed to ban user for max_mentions")
 					}
 				}()
 			}
@@ -208,6 +213,7 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 	if !content.Membership.IsInviteOrJoin() { // we only care about invites and joins
 		return false, nil
 	}
+	target := id.UserID(*evt.StateKey)
 
 	m.countLock.Lock()
 	defer m.countLock.Unlock()
@@ -242,7 +248,7 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 			// At least one of the patterns matched, kick in the background
 			go func() {
 				_, err := pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{
-					UserID: evt.Sender,
+					UserID: target,
 					Reason: "too many recent joins! try again later.",
 				})
 				if err == nil {
@@ -250,8 +256,8 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 						ctx,
 						fmt.Sprintf(
 							"Kicked [%s](%s) from [%s](%s) for exceeding the join limit of %d joins per %s, with %d joins.",
-							evt.Sender,
-							evt.Sender.URI(),
+							target,
+							target.URI(),
 							evt.RoomID,
 							evt.RoomID.URI(),
 							m.Limit,
@@ -260,10 +266,180 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 						),
 					)
 				} else {
-					pe.Bot.Log.Error().Err(err).Msg("failed to kick user for max_joins")
+					pe.Bot.Log.Err(err).Msg("failed to kick user for max_joins")
 				}
 			}()
 		}
+	}
+	return hit, nil
+}
+
+// NoMedia is a protection that redacts messages containing media of disallowed types.
+type NoMedia struct {
+	AllowImages         bool `json:"allow_images"`          // allow m.image
+	AllowVideos         bool `json:"allow_videos"`          // allow m.video
+	AllowAudio          bool `json:"allow_audio"`           // allow m.audio
+	AllowFiles          bool `json:"allow_files"`           // allow m.file
+	AllowStickers       bool `json:"allow_stickers"`        // allow m.sticker event type
+	DenyCustomReactions bool `json:"deny_custom_reactions"` // deny m.reaction events with mxc://-prefixed keys
+}
+
+func (n *NoMedia) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
+	if evt.Type != event.EventMessage && evt.Type != event.EventSticker && evt.Type != event.EventReaction {
+		return false, nil // no-op
+	}
+
+	switch evt.Type {
+	case event.EventMessage:
+		content := evt.Content.AsMessage()
+		if content.MsgType == event.MsgImage && !n.AllowImages {
+			hit = true
+		} else if content.MsgType == event.MsgVideo && !n.AllowVideos {
+			hit = true
+		} else if content.MsgType == event.MsgAudio && !n.AllowAudio {
+			hit = true
+		} else if content.MsgType == event.MsgFile && !n.AllowFiles {
+			hit = true
+		}
+	case event.EventSticker:
+		if !n.AllowStickers {
+			hit = true
+		}
+	case event.EventReaction:
+		content := evt.Content.AsReaction()
+		if !n.DenyCustomReactions && strings.HasPrefix(content.RelatesTo.Key, "mxc://") {
+			hit = true
+		}
+	}
+	if hit && !dry {
+		// At least one of the patterns matched, redact and notify in the background
+		go func() {
+			_, err := pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "media was not allowed"})
+			if err == nil {
+				displayType := evt.Type.Type
+				if evt.Type == event.EventMessage {
+					displayType = string(evt.Content.AsMessage().MsgType)
+				}
+				pe.sendNotice(
+					ctx,
+					fmt.Sprintf(
+						"Redacted [this event (`%s`)](%s) from [%s](%s) in [%s](%s) for containing disallowed media.",
+						displayType,
+						evt.RoomID.EventURI(evt.ID),
+						evt.Sender,
+						evt.Sender.URI(),
+						evt.RoomID,
+						evt.RoomID.URI(),
+					),
+				)
+			} else {
+				pe.Bot.Log.Err(err).Msg("failed to redact message for no_media")
+			}
+		}()
+	}
+	return hit, nil
+}
+
+// InsecureRegistration checks server legacy registration requirements when a user joins a room,
+// kicking them if they allow registration without email nor captcha, and alerting the management room.
+type InsecureRegistration struct {
+	// map of servername:insecure
+	cache  map[string]bool
+	expire map[string]time.Time
+	lock   sync.RWMutex
+}
+
+func resolveWellKnown(ctx context.Context, client *http.Client, serverName string) string {
+	wk, err := mautrix.DiscoverClientAPIWithClient(ctx, client, serverName)
+	if err != nil || wk == nil || wk.Homeserver.BaseURL == "" {
+		return "https://" + serverName // fallback
+	}
+	return wk.Homeserver.BaseURL
+}
+
+func (i *InsecureRegistration) Kick(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, target id.UserID) {
+	_, err := pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{
+		UserID: target,
+		Reason: "insecure registration (no email or captcha) on your home server",
+	})
+	if err == nil {
+		pe.sendNotice(
+			ctx,
+			fmt.Sprintf(
+				"Kicked [%s](%s) from [%s](%s) for joining from a homeserver (%s) that allows insecure registration.",
+				target,
+				target.URI(),
+				evt.RoomID,
+				evt.RoomID.URI(),
+				target.Homeserver(),
+			),
+		)
+	} else {
+		pe.Bot.Log.Err(err).Msg("failed to kick user for insecure registration")
+	}
+}
+
+func (i *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
+	if i.expire == nil {
+		i.expire = make(map[string]time.Time)
+	}
+	if i.cache == nil {
+		i.cache = make(map[string]bool)
+	}
+	if evt.Type != event.StateMember {
+		return false, nil // no-op
+	}
+	content := evt.Content.AsMember()
+	if !content.Membership.IsInviteOrJoin() { // we only care about invites and joins
+		return false, nil
+	}
+
+	// Check when the last lookup for this server name was
+	target := id.UserID(*evt.StateKey)
+	hs := target.Homeserver()
+	i.lock.RLock()
+	cached, ok := i.expire[hs]
+	result, hasResult := i.cache[hs]
+	i.lock.RUnlock()
+	if ok && time.Since(cached) < time.Hour && hasResult {
+		if result && !dry {
+			// Kick user and alert the management room
+			go i.Kick(ctx, pe, evt, target)
+		}
+		return result, nil // recently checked, skip
+	}
+
+	// Not recently checked, do a lookup
+	i.lock.Lock()
+	defer func() {
+		// Cache the result
+		if err == nil {
+			i.cache[hs] = hit
+			i.expire[hs] = time.Now()
+		}
+		i.lock.Unlock()
+	}()
+	pe.Bot.Log.Debug().Stringer("user_id", target).Msg("performing insecure registration check")
+	baseUrl := resolveWellKnown(ctx, pe.Bot.Client.Client, hs)
+	client, err := mautrix.NewClient(baseUrl, "", "")
+	if err != nil {
+		pe.Bot.Log.Err(err).Str("homeserver", hs).Msg("failed to create client for insecure registration check")
+		return false, err
+	}
+	_, flows, err := client.Register(ctx, &mautrix.ReqRegister{})
+	pe.Bot.Log.Debug().Stringer("user_id", target).Err(err).Msg("finished insecure registration check")
+	if err != nil {
+		if errors.Is(err, mautrix.MForbidden) {
+			// Registration is disabled or handled externally
+			return false, nil
+		}
+		pe.Bot.Log.Err(err).Str("homeserver", hs).Msg("failed to query registration flows for insecure registration check")
+		return false, err
+	}
+	hit = flows.HasSingleStageFlow(mautrix.AuthTypeDummy)
+	if hit && !dry {
+		// Kick user and alert the management room
+		go i.Kick(ctx, pe, evt, target)
 	}
 	return hit, nil
 }
