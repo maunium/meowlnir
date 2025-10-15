@@ -455,6 +455,7 @@ func (i *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator,
 	return hit, nil
 }
 
+// AntiFlood is a protection that redacts and bans users who send too many events in a given time period.
 type AntiFlood struct {
 	Limit          int              `json:"limit"` // how many events to allow before actioning
 	Per            jsontime.Seconds `json:"per"`   // the timespan in which to count events
