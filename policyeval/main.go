@@ -275,3 +275,14 @@ func (pe *PolicyEvaluator) handlePowerLevels(ctx context.Context, evt *event.Eve
 	pe.Admins.ReplaceAll(admins)
 	return ""
 }
+
+func (pe *PolicyEvaluator) getPowerLevels(ctx context.Context, roomID id.RoomID) (*event.PowerLevelsEventContent, error) {
+	pl, err := pe.Bot.StateStore.GetPowerLevels(ctx, roomID)
+	if err != nil || pl == nil {
+		// Fallback to fetching from server
+		if err = pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &pl); err != nil {
+			return nil, err
+		}
+	}
+	return pl, err
+}

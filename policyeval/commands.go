@@ -53,7 +53,13 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event, execProtections bool) {
 	pe.commandProcessor.Process(ctx, evt)
 	if execProtections && pe.protections != nil {
-		pl, _ := pe.Bot.StateStore.GetPowerLevels(ctx, evt.RoomID)
+		pl, err := pe.getPowerLevels(ctx, evt.RoomID)
+		if err != nil || pl == nil {
+			pe.Bot.Log.Err(err).
+				Stringer("room_id", evt.RoomID).
+				Stringer("event_id", evt.ID).
+				Msg("Failed to fetch power levels")
+		}
 		if pl != nil {
 			// Don't act if the user is a room mod
 			if pl.GetUserLevel(evt.Sender) >= pl.Kick() {
