@@ -36,7 +36,7 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 			&bot.SendNoticeOpts{Mentions: &event.Mentions{Room: true}, SendAsText: true},
 		)
 	}
-	if pe.protections != nil {
+	if pe.protections != nil && evt.Sender != pe.Bot.UserID {
 		pl, err := pe.getPowerLevels(ctx, evt.RoomID)
 		if err != nil || pl == nil {
 			pe.Bot.Log.Err(err).
