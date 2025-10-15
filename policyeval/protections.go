@@ -240,7 +240,7 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 	m.counts[evt.RoomID]++
 	expires, ok := m.expire[evt.RoomID]
 	if !ok {
-		expires = now.Add(m.Per.Duration)
+		expires = time.UnixMilli(evt.Timestamp).Add(m.Per.Duration)
 	}
 	// Unlike MaxMentions, we don't increment the window on each join
 	m.expire[evt.RoomID] = expires
