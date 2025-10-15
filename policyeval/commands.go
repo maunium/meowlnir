@@ -52,6 +52,25 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 
 func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event) {
 	pe.commandProcessor.Process(ctx, evt)
+	// Don't act if the user is a room mod
+	var powerLevels event.PowerLevelsEventContent
+	if stateErr := pe.Bot.StateEvent(ctx, evt.RoomID, event.StatePowerLevels, "", &powerLevels); stateErr == nil {
+		if powerLevels.GetUserLevel(evt.Sender) > powerLevels.Kick() {
+			return
+		}
+	}
+	for _, prot := range pe.protections {
+		hit, err := prot.Execute(ctx, pe, evt, pe.DryRun)
+		if err != nil {
+			pe.Bot.Log.Err(err).
+				Stringer("room_id", evt.RoomID).
+				Stringer("event_id", evt.ID).
+				Msg("Failed to execute protection")
+		}
+		if hit {
+			break
+		}
+	}
 }
 
 var cmdJoin = &CommandHandler{
