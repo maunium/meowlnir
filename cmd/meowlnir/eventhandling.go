@@ -182,9 +182,9 @@ func (m *Meowlnir) HandleReaction(ctx context.Context, evt *event.Event) {
 		return
 	}
 	if isManagement && managementRoom.Admins.Has(evt.Sender) {
-		managementRoom.HandleReaction(ctx, evt)
+		managementRoom.HandleReaction(ctx, evt, false)
 	}
 	if isProtected {
-		roomProtector.HandleReaction(ctx, evt)
+		roomProtector.HandleReaction(ctx, evt, true)
 	}
 }
