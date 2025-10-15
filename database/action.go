@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"go.mau.fi/util/dbutil"
+	"go.mau.fi/util/exslices"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
@@ -41,7 +43,8 @@ func (taq *TakenActionQuery) Put(ctx context.Context, ta *TakenAction) error {
 }
 
 func (taq *TakenActionQuery) queryManyWithRoomList(ctx context.Context, roomIDs []id.RoomID, query string, args ...any) ([]*TakenAction, error) {
-	if taq.GetDB().Dialect == dbutil.SQLite {
+	switch taq.GetDB().Dialect {
+	case dbutil.SQLite:
 		sqlitePlaceholders := make([]string, len(roomIDs))
 		for i := range roomIDs {
 			sqlitePlaceholders[i] = fmt.Sprintf("$%d", len(args)+1+i)
@@ -51,9 +54,13 @@ func (taq *TakenActionQuery) queryManyWithRoomList(ctx context.Context, roomIDs 
 		sqliteAny := fmt.Sprintf("in_room_id IN (%s)", strings.Join(sqlitePlaceholders, ","))
 		newQuery := strings.Replace(query, postgresAny, sqliteAny, 1)
 		if newQuery == query {
-			panic(fmt.Errorf("replacement %q -> %q failed in %q", postgresAny, sqliteAny, query))
+			return nil, fmt.Errorf("replacement %q -> %q failed in %q", postgresAny, sqliteAny, query)
 		}
 		query = newQuery
+	case dbutil.Postgres:
+		args = append(args, pq.Array(exslices.CastToString[string](roomIDs)))
+	default:
+		return nil, fmt.Errorf("unsupported dialect: %s", taq.GetDB().Dialect)
 	}
 	return taq.QueryMany(ctx, query, args...)
 }
