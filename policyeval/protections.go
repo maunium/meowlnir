@@ -27,6 +27,7 @@ func init() {
 	protectionsRegistry["join_rate"] = reflect.TypeOf(MaxJoinRate{})
 	protectionsRegistry["no_media"] = reflect.TypeOf(NoMedia{})
 	protectionsRegistry["insecure_registration"] = reflect.TypeOf(InsecureRegistration{})
+	protectionsRegistry["anti_flood"] = reflect.TypeOf(AntiFlood{})
 }
 
 // Protection is an interface that defines the minimum exposed functionality required to define a protection.
@@ -70,7 +71,8 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 				pe.sendNotice(
 					ctx,
 					fmt.Sprintf(
-						"Redacted [this message](%s) from [%s](%s) in [%s](%s) for matching the bad word pattern `%s`.",
+						"Redacted [this message](%s) from [%s](%s) in [%s](%s) for matching the bad word "+
+							"pattern `%s`.",
 						evt.RoomID.EventURI(evt.ID),
 						evt.Sender,
 						evt.Sender.URI(),
@@ -177,7 +179,8 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 						pe.sendNotice(
 							ctx,
 							fmt.Sprintf(
-								"Banned [%s](%s) from [%s](%s) for exceeding the mention infraction limit of %d infractions.",
+								"Banned [%s](%s) from [%s](%s) for exceeding the mention infraction "+
+									"limit of %d infractions.",
 								evt.Sender,
 								evt.Sender.URI(),
 								evt.RoomID,
@@ -448,6 +451,103 @@ func (i *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator,
 	if hit && !dry {
 		// Kick user and alert the management room
 		go i.Kick(ctx, pe, evt, target)
+	}
+	return hit, nil
+}
+
+type AntiFlood struct {
+	Limit          int              `json:"limit"` // how many events to allow before actioning
+	Per            jsontime.Seconds `json:"per"`   // the timespan in which to count events
+	MaxInfractions int              `json:"max_infractions,omitempty"`
+	counts         map[id.UserID]int
+	expire         map[id.UserID]time.Time
+	countLock      sync.Mutex
+}
+
+func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
+	if a.Limit <= 0 || evt.StateKey != nil {
+		return false, nil // no-op
+	}
+	a.countLock.Lock()
+	defer a.countLock.Unlock()
+	if a.counts == nil {
+		a.counts = make(map[id.UserID]int)
+	}
+	if a.expire == nil {
+		a.expire = make(map[id.UserID]time.Time)
+	}
+
+	// Expire old counts
+	now := time.Now()
+	for user, exp := range a.expire {
+		if now.After(exp) {
+			delete(a.counts, user)
+			delete(a.expire, user)
+		}
+	}
+
+	// Count event
+	a.counts[evt.Sender]++
+	a.expire[evt.Sender] = now.Add(a.Per.Duration)
+
+	if a.counts[evt.Sender] > a.Limit {
+		hit = true
+		infractions := a.counts[evt.Sender] - a.Limit
+		if !dry {
+			// At least one of the patterns matched, redact and notify in the background
+			go func() {
+				_, err := pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "flooding"})
+				if err == nil {
+					pe.sendNotice(
+						ctx,
+						fmt.Sprintf(
+							"Redacted [this message](%s) from [%s](%s) in [%s](%s) for exceeding the flood "+
+								"limit of %d events per %s with %d events (%d considered infractions).",
+							evt.RoomID.EventURI(evt.ID),
+							evt.Sender,
+							evt.Sender.URI(),
+							evt.RoomID,
+							evt.RoomID.URI(),
+							a.Limit,
+							a.Per.String(),
+							a.counts[evt.Sender],
+							infractions,
+						),
+					)
+				} else {
+					pe.Bot.Log.Err(err).Msg("failed to redact message for anti_flood")
+				}
+			}()
+			// If the infractions are over the limit, issue a ban
+			if infractions >= a.MaxInfractions {
+				go func() {
+					_, err := pe.Bot.BanUser(
+						ctx,
+						evt.RoomID,
+						&mautrix.ReqBanUser{
+							Reason:              "too many recent events (flooding)",
+							UserID:              evt.Sender,
+							MSC4293RedactEvents: true,
+						},
+					)
+					if err == nil {
+						pe.sendNotice(
+							ctx,
+							fmt.Sprintf(
+								"Banned [%s](%s) from [%s](%s) for exceeding the flood infraction limit of %d infractions.",
+								evt.Sender,
+								evt.Sender.URI(),
+								evt.RoomID,
+								evt.RoomID.URI(),
+								a.MaxInfractions,
+							),
+						)
+					} else {
+						pe.Bot.Log.Err(err).Msg("failed to ban user for anti_flood")
+					}
+				}()
+			}
+		}
 	}
 	return hit, nil
 }
