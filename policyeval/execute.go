@@ -69,7 +69,7 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 			pe.maybeApplySuspend(ctx, userID, recs.BanOrUnban)
 		} else {
 			// TODO unban if banned in some rooms? or just require doing that manually
-			//takenActions, err := pe.DB.TakenAction.GetAllByTargetUser(ctx, userID, database.TakenActionTypeBanOrUnban)
+			//takenActions, err := pe.DB.TakenAction.GetAllByTargetUser(ctx, userID, database.TakenActionTypeBanOrUnban, pe.GetProtectedRooms())
 			//if err != nil {
 			//	zerolog.Ctx(ctx).Err(err).Stringer("user_id", userID).Msg("Failed to get taken actions")
 			//	pe.sendNotice(ctx, "Database error in ApplyPolicy (GetAllByTargetUser): %v", err)

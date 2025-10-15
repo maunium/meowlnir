@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"go.mau.fi/util/dbutil"
@@ -14,9 +16,9 @@ const (
 		SELECT target_user, in_room_id, action_type, policy_list, rule_entity, action, taken_at
 		FROM taken_action
 	`
-	getTakenActionsByPolicyListQuery = getTakenActionBaseQuery + `WHERE policy_list=$1`
-	getTakenActionsByRuleEntityQuery = getTakenActionBaseQuery + `WHERE policy_list=$1 AND rule_entity=$2`
-	getTakenActionByTargetUserQuery  = getTakenActionBaseQuery + `WHERE target_user=$1 AND action_type=$2`
+	getTakenActionsByPolicyListQuery = getTakenActionBaseQuery + `WHERE policy_list=$1 AND in_room_id=ANY($2)`
+	getTakenActionsByRuleEntityQuery = getTakenActionBaseQuery + `WHERE policy_list=$1 AND rule_entity=$2 AND in_room_id=ANY($3)`
+	getTakenActionByTargetUserQuery  = getTakenActionBaseQuery + `WHERE target_user=$1 AND action_type=$2 AND in_room_id=ANY($3)`
 	insertTakenActionQuery           = `
 		INSERT INTO taken_action (target_user, in_room_id, action_type, policy_list, rule_entity, action, taken_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -38,16 +40,34 @@ func (taq *TakenActionQuery) Put(ctx context.Context, ta *TakenAction) error {
 	return taq.Exec(ctx, insertTakenActionQuery, ta.sqlVariables()...)
 }
 
-func (taq *TakenActionQuery) GetAllByPolicyList(ctx context.Context, policyList id.RoomID) ([]*TakenAction, error) {
-	return taq.QueryMany(ctx, getTakenActionsByPolicyListQuery, policyList)
+func (taq *TakenActionQuery) queryManyWithRoomList(ctx context.Context, roomIDs []id.RoomID, query string, args ...any) ([]*TakenAction, error) {
+	if taq.GetDB().Dialect == dbutil.SQLite {
+		sqlitePlaceholders := make([]string, len(roomIDs))
+		for i := range roomIDs {
+			sqlitePlaceholders[i] = fmt.Sprintf("$%d", len(args)+1+i)
+			args = append(args, roomIDs[i])
+		}
+		postgresAny := fmt.Sprintf("in_room_id=ANY($%d)", len(args)+1)
+		sqliteAny := fmt.Sprintf("in_room_id IN (%s)", strings.Join(sqlitePlaceholders, ","))
+		newQuery := strings.Replace(query, postgresAny, sqliteAny, 1)
+		if newQuery == query {
+			panic(fmt.Errorf("replacement %q -> %q failed in %q", postgresAny, sqliteAny, query))
+		}
+		query = newQuery
+	}
+	return taq.QueryMany(ctx, query, args...)
 }
 
-func (taq *TakenActionQuery) GetAllByRuleEntity(ctx context.Context, policyList id.RoomID, ruleEntity string) ([]*TakenAction, error) {
-	return taq.QueryMany(ctx, getTakenActionsByRuleEntityQuery, policyList, ruleEntity)
+func (taq *TakenActionQuery) GetAllByPolicyList(ctx context.Context, policyList id.RoomID, inRooms []id.RoomID) ([]*TakenAction, error) {
+	return taq.queryManyWithRoomList(ctx, inRooms, getTakenActionsByPolicyListQuery, policyList)
 }
 
-func (taq *TakenActionQuery) GetAllByTargetUser(ctx context.Context, userID id.UserID, actionType TakenActionType) ([]*TakenAction, error) {
-	return taq.QueryMany(ctx, getTakenActionByTargetUserQuery, userID, actionType)
+func (taq *TakenActionQuery) GetAllByRuleEntity(ctx context.Context, policyList id.RoomID, ruleEntity string, inRooms []id.RoomID) ([]*TakenAction, error) {
+	return taq.queryManyWithRoomList(ctx, inRooms, getTakenActionsByRuleEntityQuery, policyList, ruleEntity)
+}
+
+func (taq *TakenActionQuery) GetAllByTargetUser(ctx context.Context, userID id.UserID, actionType TakenActionType, inRooms []id.RoomID) ([]*TakenAction, error) {
+	return taq.queryManyWithRoomList(ctx, inRooms, getTakenActionByTargetUserQuery, userID, actionType)
 }
 
 type TakenActionType string

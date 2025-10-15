@@ -118,7 +118,7 @@ func (pe *PolicyEvaluator) EvaluateRemovedRule(ctx context.Context, policy *poli
 			}
 		} else {
 			// For ban rules, find users who were banned by the rule and re-evaluate them.
-			reevalTargets, err := pe.DB.TakenAction.GetAllByRuleEntity(ctx, policy.RoomID, policy.EntityOrHash())
+			reevalTargets, err := pe.DB.TakenAction.GetAllByRuleEntity(ctx, policy.RoomID, policy.EntityOrHash(), pe.GetProtectedRooms())
 			if err != nil {
 				zerolog.Ctx(ctx).Err(err).Str("policy_entity", policy.EntityOrHash()).
 					Msg("Failed to get actions taken for removed policy")
@@ -178,7 +178,7 @@ func (pe *PolicyEvaluator) EvaluateAddedRule(ctx context.Context, policy *policy
 func (pe *PolicyEvaluator) ReevaluateAffectedByLists(ctx context.Context, policyLists []id.RoomID) {
 	var reevalTargets []*database.TakenAction
 	for _, list := range policyLists {
-		targets, err := pe.DB.TakenAction.GetAllByPolicyList(ctx, list)
+		targets, err := pe.DB.TakenAction.GetAllByPolicyList(ctx, list, pe.GetProtectedRooms())
 		if err != nil {
 			zerolog.Ctx(ctx).Err(err).Stringer("policy_list_id", list).
 				Msg("Failed to get actions taken from policy list")
