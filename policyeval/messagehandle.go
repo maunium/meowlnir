@@ -37,10 +37,10 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 		)
 	}
 	if pe.protections != nil {
-		// Don't act if the user is a room mod
-		var powerLevels event.PowerLevelsEventContent
-		if stateErr := pe.Bot.StateEvent(ctx, evt.RoomID, event.StatePowerLevels, "", &powerLevels); stateErr == nil {
-			if powerLevels.GetUserLevel(evt.Sender) > powerLevels.Kick() {
+		pl, _ := pe.Bot.StateStore.GetPowerLevels(ctx, evt.RoomID)
+		if pl != nil {
+			// Don't act if the user is a room mod
+			if pl.GetUserLevel(evt.Sender) >= pl.Kick() {
 				return
 			}
 		}
