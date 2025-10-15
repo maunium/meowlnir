@@ -489,7 +489,11 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 
 	// Count event
 	a.counts[evt.Sender]++
-	a.expire[evt.Sender] = now.Add(a.Per.Duration)
+	cur, ok := a.expire[evt.Sender]
+	if !ok {
+		cur = now.Add(a.Per.Duration)
+	}
+	a.expire[evt.Sender] = cur
 
 	if a.counts[evt.Sender] > a.Limit {
 		hit = true
