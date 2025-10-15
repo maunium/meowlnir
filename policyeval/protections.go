@@ -134,7 +134,7 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 
 	// Count mentions
 	m.counts[evt.Sender] += len(uniqueMentions)
-	m.expire[evt.Sender] = now.Add(m.Per.Duration)
+	m.expire[evt.Sender] = time.UnixMilli(evt.Timestamp).Add(m.Per.Duration)
 	if m.counts[evt.Sender] > m.Limit {
 		hit = true
 		infractions := m.counts[evt.Sender] - m.Limit
@@ -491,7 +491,7 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 	a.counts[evt.Sender]++
 	cur, ok := a.expire[evt.Sender]
 	if !ok {
-		cur = now.Add(a.Per.Duration)
+		cur = time.UnixMilli(evt.Timestamp).Add(a.Per.Duration)
 	}
 	a.expire[evt.Sender] = cur
 
