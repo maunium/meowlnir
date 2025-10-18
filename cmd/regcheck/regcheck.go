@@ -41,6 +41,7 @@ var fed = federation.NewClient("", nil, nil)
 func init() {
 	fedTransport := defaultTransport.Clone()
 	fedTransport.DialContext = srt.DialContext
+	fed.ResponseSizeLimit = 1024 * 1024
 	srt.Transport = fedTransport
 	srt.Dialer = defaultDialer
 	fed.HTTP.Transport = srt
@@ -112,9 +113,10 @@ func newClient(serverURL string) (*mautrix.Client, error) {
 
 func newClientWithURL(parsedURL *url.URL) *mautrix.Client {
 	return &mautrix.Client{
-		HomeserverURL: parsedURL,
-		Client:        defaultHTTP,
-		Log:           log.With().Stringer("homeserver_url", parsedURL).Logger(),
+		HomeserverURL:     parsedURL,
+		Client:            defaultHTTP,
+		Log:               log.With().Stringer("homeserver_url", parsedURL).Logger(),
+		ResponseSizeLimit: 1024 * 1024,
 	}
 }
 
