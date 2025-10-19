@@ -45,12 +45,12 @@ func (taq *TakenActionQuery) Put(ctx context.Context, ta *TakenAction) error {
 func (taq *TakenActionQuery) queryManyWithRoomList(ctx context.Context, roomIDs []id.RoomID, query string, args ...any) ([]*TakenAction, error) {
 	switch taq.GetDB().Dialect {
 	case dbutil.SQLite:
+		postgresAny := fmt.Sprintf("in_room_id=ANY($%d)", len(args)+1)
 		sqlitePlaceholders := make([]string, len(roomIDs))
 		for i := range roomIDs {
 			sqlitePlaceholders[i] = fmt.Sprintf("$%d", len(args)+1+i)
 			args = append(args, roomIDs[i])
 		}
-		postgresAny := fmt.Sprintf("in_room_id=ANY($%d)", len(args)+1)
 		sqliteAny := fmt.Sprintf("in_room_id IN (%s)", strings.Join(sqlitePlaceholders, ","))
 		newQuery := strings.Replace(query, postgresAny, sqliteAny, 1)
 		if newQuery == query {
