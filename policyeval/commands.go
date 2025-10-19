@@ -841,7 +841,7 @@ var cmdRoomDelete = &CommandHandler{
 	Aliases: []string{"purge", "block"},
 	Func: func(ce *CommandEvent) {
 		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!rooms %s [--async] <room ID>`", ce.Command)
+			ce.Reply("Usage: `!rooms %s [--force] [--async] <room ID>`", ce.Command)
 			return
 		}
 		if ce.Args[0] == "--confirm" {
@@ -863,17 +863,30 @@ var cmdRoomDelete = &CommandHandler{
 			ce.Meta.sendReactions(ce.Ctx, evtID, "/cancel", "/confirm")
 			return
 		}
-		roomID := id.RoomID(ce.RawArgs)
-		if ce.Meta.DryRun {
-			ce.Reply("Would have deleted room %s if dry run wasn't enabled", format.SafeMarkdownCode(roomID))
-			return
-		}
+		rawRoomID := ce.RawArgs
 		req := synapseadmin.ReqDeleteRoom{
 			Purge: true,
 			Block: ce.Command == "block",
 		}
-		if ce.Args[0] == "--async" {
-			roomID = id.RoomID(strings.TrimPrefix(ce.RawArgs, "--async "))
+		var async bool
+	Loop:
+		for _, arg := range ce.Args {
+			switch strings.ToLower(arg) {
+			case "--force":
+				req.ForcePurge = true
+			case "--async":
+				async = true
+			default:
+				break Loop
+			}
+			rawRoomID = strings.TrimPrefix(rawRoomID, arg+" ")
+		}
+		roomID := id.RoomID(rawRoomID)
+		if ce.Meta.DryRun {
+			ce.Reply("Would have deleted room %s if dry run wasn't enabled", format.SafeMarkdownCode(roomID))
+			return
+		}
+		if async {
 			resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoom(ce.Ctx, roomID, req)
 			if err != nil {
 				ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
