@@ -9,7 +9,7 @@ import (
 	"go.mau.fi/meowlnir/policyeval"
 )
 
-const version = "0.8.0"
+const version = "25.10"
 
 var (
 	BuildTime string
@@ -21,7 +21,7 @@ var VersionInfo = progver.ProgramVersion{
 	Name:        "Meowlnir",
 	URL:         "https://github.com/maunium/meowlnir",
 	BaseVersion: version,
-	SemCalVer:   false,
+	SemCalVer:   true,
 }.Init(Tag, Commit, BuildTime)
 
 func init() {

@@ -71,7 +71,7 @@ type m4aLocalpartData struct {
 }
 
 func (mac *Meowlnir4AllConfig) FormatLocalpart(owner id.UserID) (string, error) {
-	localpart, domain, err := owner.ParseAndValidate()
+	localpart, domain, err := owner.ParseAndValidateRelaxed()
 	if err != nil {
 		return "", fmt.Errorf("failed to parse owner user ID: %w", err)
 	}
