@@ -59,7 +59,7 @@ func (ps *PolicyServer) HandleSign(
 				return
 			}
 			signatures = map[string]map[string]string{
-				clientEvt.Sender.Homeserver(): {
+				ps.Federation.ServerName: {
 					"ed25519:policy_server": signature,
 				},
 			}

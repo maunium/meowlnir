@@ -143,5 +143,6 @@ func (m *Meowlnir) PostMSC4284Sign(w http.ResponseWriter, r *http.Request) {
 		mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
 		return
 	}
+	hlog.FromRequest(r).Trace().Any("resp", resp).Msg("Signed PDU")
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
