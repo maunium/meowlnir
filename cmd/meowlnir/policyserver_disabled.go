@@ -8,6 +8,10 @@ import (
 	"maunium.net/go/mautrix"
 )
 
-func (m *Meowlnir) PostMSC4284EventCheck(w http.ResponseWriter, r *http.Request) {
+func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Request) {
+	mautrix.MUnrecognized.WithMessage("This Meowlnir wasn't compiled with jsonv2 for policy server support").Write(w)
+}
+
+func (m *Meowlnir) PostMSC4284Sign(w http.ResponseWriter, r *http.Request) {
 	mautrix.MUnrecognized.WithMessage("This Meowlnir wasn't compiled with jsonv2 for policy server support").Write(w)
 }
