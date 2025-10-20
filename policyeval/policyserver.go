@@ -96,7 +96,7 @@ type PolicyServerResponse struct {
 	Recommendation PSRecommendation `json:"recommendation"`
 }
 
-func (ps *PolicyServer) getRecommendation(pdu *event.Event, evaluator *PolicyEvaluator) (PSRecommendation, policylist.Match) {
+func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event, evaluator *PolicyEvaluator) (PSRecommendation, policylist.Match) {
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {
@@ -112,7 +112,21 @@ func (ps *PolicyServer) getRecommendation(pdu *event.Event, evaluator *PolicyEva
 			return PSRecommendationSpam, match
 		}
 	}
-	// TODO check protections
+	if evaluator.protections != nil {
+		for _, prot := range evaluator.protections {
+			rec, err := prot.Execute(context.TODO(), evaluator, pdu, true)
+			if err != nil {
+				evaluator.Bot.Log.Err(err).
+					Stringer("room_id", pdu.RoomID).
+					Stringer("event_id", pdu.ID).
+					Msg("Failed to execute protection")
+				continue
+			}
+			if rec {
+				return PSRecommendationSpam, nil
+			}
+		}
+	}
 	return PSRecommendationOk, nil
 }
 
@@ -159,7 +173,7 @@ func (ps *PolicyServer) HandleCheck(
 
 	if r.Recommendation == "" {
 		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
-		rec, match := ps.getRecommendation(pdu, evaluator)
+		rec, match := ps.getRecommendation(ctx, pdu, evaluator)
 		finalRec = rec
 		if rec == PSRecommendationSpam {
 			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
