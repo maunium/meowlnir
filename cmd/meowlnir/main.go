@@ -28,6 +28,7 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	cryptoupgrade "maunium.net/go/mautrix/crypto/sql_store_upgrade"
+	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
 	"maunium.net/go/mautrix/sqlstatestore"
 
@@ -160,7 +161,15 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to create Matrix appservice")
 		os.Exit(13)
 	}
-	m.PolicyServer = policyeval.NewPolicyServer(m.Config.Homeserver.Domain)
+	var pskey *federation.SigningKey
+	if m.Config.PolicyServer.SigningKey != "" {
+		pskey, err = federation.ParseSynapseKey(m.Config.PolicyServer.SigningKey)
+		if err != nil {
+			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to parse policy server signing key")
+			os.Exit(13)
+		}
+	}
+	m.PolicyServer = policyeval.NewPolicyServer(m.Config.Homeserver.Domain, pskey)
 	m.AS.Log = m.Log.With().Str("component", "matrix").Logger()
 	m.AS.StateStore = m.StateStore
 	m.EventProcessor = appservice.NewEventProcessor(m.AS)
