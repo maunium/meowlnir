@@ -17,7 +17,6 @@ import (
 
 type psCacheEntry struct {
 	Recommendation PSRecommendation
-	Signatures     map[string]map[string]string
 	LastAccessed   time.Time
 	PDU            *event.Event
 	Lock           sync.Mutex

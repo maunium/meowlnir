@@ -5,7 +5,6 @@ package policyeval
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/event"
@@ -27,11 +26,8 @@ func (ps *PolicyServer) HandleSign(
 		Stringer("room_id", clientEvt.RoomID).
 		Stringer("event_id", clientEvt.ID).
 		Logger()
-	r := ps.getCache(clientEvt.ID, clientEvt)
-	finalRec := r.Recommendation
-	r.Lock.Lock()
+	finalRec := PSRecommendationOk
 	defer func() {
-		r.Lock.Unlock()
 		if caller != evt.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact && ps.redactionCache.Add(clientEvt.ID) {
 			go func() {
 				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), clientEvt.RoomID, clientEvt.ID); err != nil {
@@ -41,30 +37,25 @@ func (ps *PolicyServer) HandleSign(
 		}
 	}()
 
-	if r.Signatures == nil {
-		log.Trace().Any("event", evt).Msg("Checking event received by policy server")
-		rec, match := ps.getRecommendation(clientEvt, evaluator)
-		finalRec = rec
-		r.Recommendation = finalRec
-		if rec == PSRecommendationSpam {
-			// Don't sign spam events
-			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
-			signatures = make(map[string]map[string]string) // empty but not nil map to prevent later rechecks
-		} else {
-			log.Trace().Msg("Event accepted")
+	log.Trace().Any("event", evt).Msg("Checking event received by policy server")
+	rec, match := ps.getRecommendation(clientEvt, evaluator)
+	finalRec = rec
+	if rec == PSRecommendationSpam {
+		// Don't sign spam events
+		log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
+	} else {
+		log.Trace().Msg("Event accepted")
 
-			var signature string
-			signature, err = ps.SigningKey.SignJSON(evt)
-			if err != nil {
-				return
-			}
-			signatures = map[string]map[string]string{
-				ps.Federation.ServerName: {
-					"ed25519:policy_server": signature,
-				},
-			}
+		var signature string
+		signature, err = ps.SigningKey.SignJSON(evt)
+		if err != nil {
+			return
+		}
+		signatures = map[string]map[string]string{
+			ps.Federation.ServerName: {
+				"ed25519:policy_server": signature,
+			},
 		}
 	}
-	r.LastAccessed = time.Now()
 	return signatures, nil
 }
