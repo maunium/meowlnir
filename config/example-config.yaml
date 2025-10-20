@@ -112,6 +112,8 @@ policy_server:
     # If enabled, always issue redactions for events that are blocked by the policy server.
     # This is useful to prevent failed events from reaching servers that do not yet respect policy servers.
     always_redact: true
+    # The Synapse-style private signing key for the policy server.
+    signing_key:
 
 # Encryption settings.
 encryption:

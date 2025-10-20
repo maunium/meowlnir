@@ -58,6 +58,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Bool, "antispam", "notify_management_room")
 
 	helper.Copy(up.Bool, "policy_server", "always_redact")
+	helper.Copy(up.Bool, "policy_server", "signing_key")
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "pickle_key"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "encryption", "pickle_key")
