@@ -101,7 +101,7 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 
 func (m *Meowlnir) PostMSC4284Sign(w http.ResponseWriter, r *http.Request) {
 	if m.PolicyServer.SigningKey == nil {
-		mautrix.MUnrecognized.WithMessage("Policy server signing key is not configured").Write(w)
+		mautrix.MUnknown.WithMessage("Policy server signing key is not configured").Write(w)
 		return
 	}
 	var parsedPDU *pdu.PDU
