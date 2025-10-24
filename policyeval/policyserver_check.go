@@ -103,7 +103,7 @@ func (ps *PolicyServer) HandleLegacyCheck(
 	defer func() {
 		r.Lock.Unlock()
 		// TODO if event is older than when the process was started, check if it was already redacted on the server
-		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact && ps.redactionCache.Add(pdu.ID) {
+		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact && ps.redactionCache.Add(evtID) {
 			go func() {
 				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
 					log.Error().Err(err).Msg("Failed to redact event")
