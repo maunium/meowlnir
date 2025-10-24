@@ -319,7 +319,7 @@ var cmdKick = &CommandHandler{
 		for _, userID := range users {
 			successCount := 0
 			var rooms []id.RoomID
-			if targetRoom != "" {
+			if targetRoom == "" {
 				rooms = ce.Meta.getRoomsUserIsIn(userID)
 				if len(rooms) == 0 {
 					continue
