@@ -34,11 +34,11 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if r.ContentLength >= 0 && r.ContentLength <= 2 {
-		resp := m.PolicyServer.HandleCachedCheck(eventID)
+		resp := m.PolicyServer.HandleLegacyCachedCheck(eventID)
 		if resp == nil {
 			mautrix.MNotFound.WithMessage("Event not found in cache, please provide it in the request").Write(w)
 		} else if resp.Recommendation == "spam" && m.Config.Meowlnir.DryRun {
-			exhttp.WriteJSONResponse(w, http.StatusOK, &policyeval.PolicyServerResponse{Recommendation: "ok"})
+			exhttp.WriteJSONResponse(w, http.StatusOK, &policyeval.LegacyPolicyServerResponse{Recommendation: "ok"})
 		} else {
 			exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 		}
@@ -81,7 +81,9 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 
 	resp, err := m.PolicyServer.HandleLegacyCheck(
 		r.Context(),
+		createEvt.RoomVersion,
 		eventID,
+		parsedPDU,
 		clientEvent,
 		eval,
 		m.Config.PolicyServer.AlwaysRedact && !m.Config.Meowlnir.DryRun,
@@ -94,7 +96,7 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 	}
 	if resp.Recommendation == "spam" && m.Config.Meowlnir.DryRun {
 		hlog.FromRequest(r).Warn().Msg("Event would have been marked as spam, but dry run is enabled")
-		resp = &policyeval.PolicyServerResponse{Recommendation: "ok"}
+		resp = &policyeval.LegacyPolicyServerResponse{Recommendation: "ok"}
 	}
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
@@ -123,29 +125,17 @@ func (m *Meowlnir) PostMSC4284Sign(w http.ResponseWriter, r *http.Request) {
 		mautrix.MNotFound.WithMessage("Policy server error: room create event not found").Write(w)
 		return
 	}
-	clientEvent, err := parsedPDU.ToClientEvent(createEvt.RoomVersion)
-	if err != nil {
-		hlog.FromRequest(r).Err(err).Msg("Failed to convert PDU to client event")
-		mautrix.MUnknown.WithMessage("Failed to convert PDU to client event").Write(w)
-		return
-	}
 
-	err = m.PolicyServer.HandleSign(
-		r.Context(),
-		createEvt.RoomVersion,
-		parsedPDU,
-		clientEvent,
-		eval,
-	)
+	err = m.PolicyServer.HandleSign(r.Context(), createEvt.RoomVersion, parsedPDU, eval)
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
 		mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
 		return
 	}
-	sig, ok := parsedPDU.Signatures[m.PolicyServer.Federation.ServerName]["policy_server"]
+	sig, ok := parsedPDU.Signatures[m.PolicyServer.Federation.ServerName][policyeval.PolicyServerKeyID]
 	sigs := map[string]map[id.KeyID]string{}
 	if ok {
-		sigs[m.PolicyServer.Federation.ServerName] = map[id.KeyID]string{"ed25519:policy_server": sig}
+		sigs[m.PolicyServer.Federation.ServerName] = map[id.KeyID]string{policyeval.PolicyServerKeyID: sig}
 	}
 	exhttp.WriteJSONResponse(w, http.StatusOK, sigs)
 }
