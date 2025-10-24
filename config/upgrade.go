@@ -60,7 +60,7 @@ func upgradeConfig(helper up.Helper) {
 
 	helper.Copy(up.Bool, "policy_server", "always_redact")
 	if sk, ok := helper.Get(up.Str, "policy_server", "signing_key"); ok && sk != "generate" {
-		helper.Copy(up.Str, "policy_server", "signing_key")
+		helper.Set(up.Str, sk, "policy_server", "signing_key")
 	} else {
 		helper.Set(up.Str, federation.GenerateSigningKey().SynapseString(), "policy_server", "signing_key")
 	}

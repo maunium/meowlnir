@@ -166,7 +166,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		pskey, err = federation.ParseSynapseKey(m.Config.PolicyServer.SigningKey)
 		if err != nil {
 			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to parse policy server signing key")
-			os.Exit(13)
+			os.Exit(10)
 		}
 	}
 	m.PolicyServer = policyeval.NewPolicyServer(m.Config.Homeserver.Domain, pskey)
