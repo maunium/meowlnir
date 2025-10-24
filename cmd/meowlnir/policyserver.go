@@ -130,19 +130,22 @@ func (m *Meowlnir) PostMSC4284Sign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := m.PolicyServer.HandleSign(
+	err = m.PolicyServer.HandleSign(
 		r.Context(),
+		createEvt.RoomVersion,
 		parsedPDU,
 		clientEvent,
 		eval,
-		m.Config.PolicyServer.AlwaysRedact && !m.Config.Meowlnir.DryRun,
-		federation.OriginServerNameFromRequest(r),
 	)
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
 		mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
 		return
 	}
-	hlog.FromRequest(r).Trace().Any("resp", resp).Msg("Signed PDU")
-	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
+	sig, ok := parsedPDU.Signatures[m.PolicyServer.Federation.ServerName]["policy_server"]
+	sigs := map[string]map[id.KeyID]string{}
+	if ok {
+		sigs[m.PolicyServer.Federation.ServerName] = map[id.KeyID]string{"ed25519:policy_server": sig}
+	}
+	exhttp.WriteJSONResponse(w, http.StatusOK, sigs)
 }
