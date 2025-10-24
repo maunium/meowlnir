@@ -3,6 +3,7 @@ package config
 import (
 	up "go.mau.fi/util/configupgrade"
 	"go.mau.fi/util/random"
+	"maunium.net/go/mautrix/federation"
 )
 
 var Upgrader = &up.StructUpgrader{
@@ -58,6 +59,11 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Bool, "antispam", "notify_management_room")
 
 	helper.Copy(up.Bool, "policy_server", "always_redact")
+	if sk, ok := helper.Get(up.Str, "policy_server", "signing_key"); ok && sk != "generate" {
+		helper.Set(up.Str, sk, "policy_server", "signing_key")
+	} else {
+		helper.Set(up.Str, federation.GenerateSigningKey().SynapseString(), "policy_server", "signing_key")
+	}
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "pickle_key"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "encryption", "pickle_key")
