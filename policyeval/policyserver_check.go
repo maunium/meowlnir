@@ -89,14 +89,15 @@ func (ps *PolicyServer) HandleLegacyCheck(
 	redact bool,
 	caller string,
 ) (res *LegacyPolicyServerResponse, err error) {
-	if pdu.VerifySignature(roomVersion, ps.Federation.ServerName, ps.getSigningKey) == nil {
-		res = &LegacyPolicyServerResponse{Recommendation: PSRecommendationOk}
-		return res, nil
-	}
 	log := zerolog.Ctx(ctx).With().
 		Stringer("room_id", pdu.RoomID).
 		Stringer("event_id", evtID).
 		Logger()
+	if pdu.VerifySignature(roomVersion, ps.Federation.ServerName, ps.getSigningKey) == nil {
+		log.Trace().Msg("Valid signature from self, short-circuiting legacy check")
+		res = &LegacyPolicyServerResponse{Recommendation: PSRecommendationOk}
+		return res, nil
+	}
 	r := ps.getCache(evtID, clientEvt)
 	finalRec := r.Recommendation
 	r.Lock.Lock()
