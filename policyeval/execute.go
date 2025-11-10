@@ -136,7 +136,7 @@ func (pe *PolicyEvaluator) maybeApplySuspend(ctx context.Context, userID id.User
 		return
 	}
 	plist := pe.GetWatchedListMeta(policy.RoomID)
-	if !plist.AutoSuspend {
+	if plist == nil || !plist.AutoSuspend {
 		return
 	}
 	err := pe.Bot.SynapseAdmin.SuspendAccount(ctx, userID, synapseadmin.ReqSuspendUser{Suspend: true})
