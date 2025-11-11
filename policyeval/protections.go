@@ -2,6 +2,7 @@ package policyeval
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -44,10 +45,35 @@ type Protection interface {
 // regexes.
 type BadWords struct {
 	Patterns []string `json:"patterns,omitempty"`
+	compiled []regexp.Regexp
+}
+
+func (b *BadWords) UnmarshalJSON(data []byte) error {
+	type badWordsAlias BadWords
+	var alias badWordsAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*b = BadWords(alias)
+
+	b.compiled = make([]regexp.Regexp, 0, len(b.Patterns))
+	// compiling the patterns ahead of time is a performance improvement and also allows for preprocessing.
+	for _, pattern := range b.Patterns {
+		if !strings.HasPrefix(pattern, "(?i)") {
+			// force case-insensitivity
+			pattern = "(?i)" + pattern
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return fmt.Errorf("failed to compile bad word pattern %q: %w", pattern, err)
+		}
+		b.compiled = append(b.compiled, *re)
+	}
+	return nil
 }
 
 func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
-	if len(b.Patterns) == 0 || evt.Type != event.EventMessage {
+	if len(b.compiled) == 0 || evt.Type != event.EventMessage {
 		return false, nil // no-op
 	}
 	content := evt.Content.AsMessage()
@@ -55,10 +81,10 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 
 	// Check for substring hits
 	flagged := ""
-	for _, pattern := range b.Patterns {
-		if matched, _ := regexp.MatchString(pattern, combined); matched {
+	for _, pattern := range b.compiled {
+		if matched := pattern.MatchString(combined); matched {
 			hit = true
-			flagged = pattern
+			flagged = pattern.String()
 			break
 		}
 	}
