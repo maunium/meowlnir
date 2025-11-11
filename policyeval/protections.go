@@ -101,42 +101,29 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 
 	if hit {
 		// At least one of the patterns matched, redact and notify in the background
-		if !dry {
-			go func() {
-				_, err := pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "bad words"})
-				if err == nil {
-					pe.sendNotice(
-						ctx,
-						fmt.Sprintf(
-							"Redacted [this message](%s) from [%s](%s) in [%s](%s) for matching the bad word "+
-								"pattern `%s`.",
-							evt.RoomID.EventURI(evt.ID),
-							evt.Sender,
-							evt.Sender.URI(),
-							evt.RoomID,
-							evt.RoomID.URI(),
-							flagged,
-						),
-					)
-				} else {
-					pe.Bot.Log.Err(err).Msg("failed to redact message for bad_words")
-				}
-			}()
-		} else {
-			pe.sendNotice(
-				ctx,
-				fmt.Sprintf(
-					"[DRY RUN] Would have redacted [this message](%s) from [%s](%s) in [%s](%s) for matching the bad word "+
-						"pattern `%s`.",
-					evt.RoomID.EventURI(evt.ID),
-					evt.Sender,
-					evt.Sender.URI(),
-					evt.RoomID,
-					evt.RoomID.URI(),
-					flagged,
-				),
-			)
-		}
+		go func() {
+			var execErr error
+			if !dry {
+				_, execErr = pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "bad words"})
+			}
+			if execErr == nil {
+				pe.sendNotice(
+					ctx,
+					fmt.Sprintf(
+						"Redacted [this message](%s) from [%s](%s) in [%s](%s) for matching the bad word "+
+							"pattern `%s`.",
+						evt.RoomID.EventURI(evt.ID),
+						evt.Sender,
+						evt.Sender.URI(),
+						evt.RoomID,
+						evt.RoomID.URI(),
+						flagged,
+					),
+				)
+			} else {
+				pe.Bot.Log.Err(execErr).Msg("failed to redact message for bad_words")
+			}
+		}()
 	}
 	return hit, nil
 }
@@ -198,35 +185,38 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 	if m.counts[evt.Sender] > m.Limit {
 		hit = true
 		infractions := m.counts[evt.Sender] - m.Limit
-		if !dry {
-			// At least one of the patterns matched, redact and notify in the background
+		go func() {
+			var execErr error
+			if !dry {
+				_, execErr = pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "too many mentions"})
+			}
+			if execErr == nil {
+				pe.sendNotice(
+					ctx,
+					fmt.Sprintf(
+						"Redacted [this message](%s) from [%s](%s) in [%s](%s) for exceeding the mention limit "+
+							"of %d mentions per %s with %d mentions (%d considered infractions).",
+						evt.RoomID.EventURI(evt.ID),
+						evt.Sender,
+						evt.Sender.URI(),
+						evt.RoomID,
+						evt.RoomID.URI(),
+						m.Limit,
+						m.Per.String(),
+						m.counts[evt.Sender],
+						infractions,
+					),
+				)
+			} else {
+				pe.Bot.Log.Err(execErr).Msg("failed to redact message for max_mentions")
+			}
+		}()
+		// If the infractions are over the limit, issue a ban
+		if infractions >= m.MaxInfractions {
 			go func() {
-				_, err := pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "too many mentions!"})
-				if err == nil {
-					pe.sendNotice(
-						ctx,
-						fmt.Sprintf(
-							"Redacted [this message](%s) from [%s](%s) in [%s](%s) for exceeding the mention limit "+
-								"of %d mentions per %s with %d mentions (%d considered infractions).",
-							evt.RoomID.EventURI(evt.ID),
-							evt.Sender,
-							evt.Sender.URI(),
-							evt.RoomID,
-							evt.RoomID.URI(),
-							m.Limit,
-							m.Per.String(),
-							m.counts[evt.Sender],
-							infractions,
-						),
-					)
-				} else {
-					pe.Bot.Log.Err(err).Msg("failed to redact message for max_mentions")
-				}
-			}()
-			// If the infractions are over the limit, issue a ban
-			if infractions >= m.MaxInfractions {
-				go func() {
-					_, err := pe.Bot.BanUser(
+				var execErr error
+				if !dry {
+					_, execErr = pe.Bot.BanUser(
 						ctx,
 						evt.RoomID,
 						&mautrix.ReqBanUser{
@@ -235,55 +225,24 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 							MSC4293RedactEvents: true,
 						},
 					)
-					if err == nil {
-						pe.sendNotice(
-							ctx,
-							fmt.Sprintf(
-								"Banned [%s](%s) from [%s](%s) for exceeding the mention infraction "+
-									"limit of %d infractions.",
-								evt.Sender,
-								evt.Sender.URI(),
-								evt.RoomID,
-								evt.RoomID.URI(),
-								m.MaxInfractions,
-							),
-						)
-					} else {
-						pe.Bot.Log.Err(err).Msg("failed to ban user for max_mentions")
-					}
-				}()
-			}
-		} else {
-			pe.sendNotice(
-				ctx,
-				fmt.Sprintf(
-					"[DRY RUN] Would have redacted [this message](%s) from [%s](%s) in [%s](%s) for exceeding the mention limit "+
-						"of %d mentions per %s with %d mentions (%d considered infractions).",
-					evt.RoomID.EventURI(evt.ID),
-					evt.Sender,
-					evt.Sender.URI(),
-					evt.RoomID,
-					evt.RoomID.URI(),
-					m.Limit,
-					m.Per.String(),
-					m.counts[evt.Sender],
-					infractions,
-				),
-			)
-			if infractions >= m.MaxInfractions {
-				pe.sendNotice(
-					ctx,
-					fmt.Sprintf(
-						"[DRY RUN] Would have banned [%s](%s) from [%s](%s) for exceeding the mention infraction "+
-							"limit of %d infractions.",
-						evt.Sender,
-						evt.Sender.URI(),
-						evt.RoomID,
-						evt.RoomID.URI(),
-						m.MaxInfractions,
-					),
-				)
-			}
+				}
+				if execErr == nil {
+					pe.sendNotice(
+						ctx,
+						fmt.Sprintf(
+							"Banned [%s](%s) from [%s](%s) for exceeding the mention infraction limit of "+
+								"%d infractions.",
+							evt.Sender,
+							evt.Sender.URI(),
+							evt.RoomID,
+							evt.RoomID.URI(),
+							m.MaxInfractions,
+						),
+					)
+				} else {
+					pe.Bot.Log.Err(execErr).Msg("failed to ban user for max_mentions")
+				}
+			}()
 		}
 	}
 	return hit, nil
@@ -346,46 +305,33 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 
 	if m.counts[evt.RoomID] > m.Limit {
 		hit = true
-		if !dry {
-			// At least one of the patterns matched, kick in the background
-			go func() {
-				_, err := pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{
+		// At least one of the patterns matched, kick in the background
+		go func() {
+			var execErr error
+			if !dry {
+				_, execErr = pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{
 					UserID: target,
 					Reason: "too many recent joins! try again later.",
 				})
-				if err == nil {
-					pe.sendNotice(
-						ctx,
-						fmt.Sprintf(
-							"Kicked [%s](%s) from [%s](%s) for exceeding the join limit of %d joins per %s, with %d joins.",
-							target,
-							target.URI(),
-							evt.RoomID,
-							evt.RoomID.URI(),
-							m.Limit,
-							m.Per.String(),
-							m.counts[evt.RoomID],
-						),
-					)
-				} else {
-					pe.Bot.Log.Err(err).Msg("failed to kick user for max_joins")
-				}
-			}()
-		} else {
-			pe.sendNotice(
-				ctx,
-				fmt.Sprintf(
-					"[DRY RUN] Would have kicked [%s](%s) from [%s](%s) for exceeding the join limit of %d joins per %s, with %d joins.",
-					target,
-					target.URI(),
-					evt.RoomID,
-					evt.RoomID.URI(),
-					m.Limit,
-					m.Per.String(),
-					m.counts[evt.RoomID],
-				),
-			)
-		}
+			}
+			if execErr == nil {
+				pe.sendNotice(
+					ctx,
+					fmt.Sprintf(
+						"Kicked [%s](%s) from [%s](%s) for exceeding the join limit of %d joins per %s, with %d joins.",
+						target,
+						target.URI(),
+						evt.RoomID,
+						evt.RoomID.URI(),
+						m.Limit,
+						m.Per.String(),
+						m.counts[evt.RoomID],
+					),
+				)
+			} else {
+				pe.Bot.Log.Err(execErr).Msg("failed to kick user for max_joins")
+			}
+		}()
 	}
 	return hit, nil
 }
@@ -441,40 +387,28 @@ func (n *NoMedia) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.E
 			Stringer("event_id", evt.ID).
 			Msg("no_media protection hit")
 		// At least one of the patterns matched, redact and notify in the background
-		if !dry {
-			go func() {
-				_, err := pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "media was not allowed"})
-				if err == nil {
-					pe.sendNotice(
-						ctx,
-						fmt.Sprintf(
-							"Redacted [this event (`%s`)](%s) from [%s](%s) in [%s](%s) for containing disallowed media.",
-							displayType,
-							evt.RoomID.EventURI(evt.ID),
-							evt.Sender,
-							evt.Sender.URI(),
-							evt.RoomID,
-							evt.RoomID.URI(),
-						),
-					)
-				} else {
-					pe.Bot.Log.Err(err).Msg("failed to redact message for no_media")
-				}
-			}()
-		} else {
-			pe.sendNotice(
-				ctx,
-				fmt.Sprintf(
-					"[DRY RUN] Would have redacted [this event (`%s`)](%s) from [%s](%s) in [%s](%s) for containing disallowed media.",
-					displayType,
-					evt.RoomID.EventURI(evt.ID),
-					evt.Sender,
-					evt.Sender.URI(),
-					evt.RoomID,
-					evt.RoomID.URI(),
-				),
-			)
-		}
+		go func() {
+			var execErr error
+			if !dry {
+				_, execErr = pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "media was not allowed"})
+			}
+			if execErr == nil {
+				pe.sendNotice(
+					ctx,
+					fmt.Sprintf(
+						"Redacted [this event (`%s`)](%s) from [%s](%s) in [%s](%s) for containing disallowed media.",
+						displayType,
+						evt.RoomID.EventURI(evt.ID),
+						evt.Sender,
+						evt.Sender.URI(),
+						evt.RoomID,
+						evt.RoomID.URI(),
+					),
+				)
+			} else {
+				pe.Bot.Log.Err(execErr).Msg("failed to redact message for no_media")
+			}
+		}()
 	}
 	return hit, nil
 }
@@ -496,11 +430,14 @@ func resolveWellKnown(ctx context.Context, client *http.Client, serverName strin
 	return wk.Homeserver.BaseURL
 }
 
-func (i *InsecureRegistration) Kick(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, target id.UserID) {
-	_, err := pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{
-		UserID: target,
-		Reason: "insecure registration (no email or captcha) on your home server",
-	})
+func (i *InsecureRegistration) Kick(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, target id.UserID, dry bool) {
+	var err error
+	if !dry {
+		_, err = pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{
+			UserID: target,
+			Reason: "insecure registration (no email or captcha) on your home server",
+		})
+	}
 	if err == nil {
 		pe.sendNotice(
 			ctx,
@@ -546,22 +483,7 @@ func (i *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator,
 		if (result && time.Since(cached) < 5*time.Minute) || (!result && time.Since(cached) < time.Hour) {
 			if result {
 				// Kick user and alert the management room
-				if !dry {
-					go i.Kick(ctx, pe, evt, target)
-				} else {
-					pe.sendNotice(
-						ctx,
-						fmt.Sprintf(
-							"[DRY RUN] Would have kicked [%s](%s) from [%s](%s) for joining from a homeserver"+
-								"(%s) that allows insecure registration.",
-							target,
-							target.URI(),
-							evt.RoomID,
-							evt.RoomID.URI(),
-							target.Homeserver(),
-						),
-					)
-				}
+				go i.Kick(ctx, pe, evt, target, dry)
 			}
 			return result, nil // recently checked, skip
 		}
@@ -608,21 +530,7 @@ func (i *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator,
 		Msg("server has registration enabled")
 	if hit {
 		// Kick user and alert the management room
-		if !dry {
-			go i.Kick(ctx, pe, evt, target)
-		} else {
-			pe.sendNotice(
-				ctx,
-				fmt.Sprintf(
-					"[DRY RUN] Would have kicked [%s](%s) from [%s](%s) for joining from a homeserver (%s) that allows insecure registration.",
-					target,
-					target.URI(),
-					evt.RoomID,
-					evt.RoomID.URI(),
-					target.Homeserver(),
-				),
-			)
-		}
+		go i.Kick(ctx, pe, evt, target, dry)
 	}
 	return hit, nil
 }
@@ -688,8 +596,11 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 		if !dry {
 			// At least one of the patterns matched, redact and notify in the background
 			go func() {
-				_, err := pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "flooding"})
-				if err == nil {
+				var execErr error
+				if !dry {
+					_, execErr = pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "flooding"})
+				}
+				if execErr == nil {
 					pe.sendNotice(
 						ctx,
 						fmt.Sprintf(
@@ -707,22 +618,25 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 						),
 					)
 				} else {
-					pe.Bot.Log.Err(err).Msg("failed to redact message for anti_flood")
+					pe.Bot.Log.Err(execErr).Msg("failed to redact message for anti_flood")
 				}
 			}()
 			// If the infractions are over the limit, issue a ban
 			if infractions >= a.MaxInfractions {
 				go func() {
-					_, err := pe.Bot.BanUser(
-						ctx,
-						evt.RoomID,
-						&mautrix.ReqBanUser{
-							Reason:              "too many recent events (flooding)",
-							UserID:              evt.Sender,
-							MSC4293RedactEvents: true,
-						},
-					)
-					if err == nil {
+					var execErr error
+					if !dry {
+						_, execErr = pe.Bot.BanUser(
+							ctx,
+							evt.RoomID,
+							&mautrix.ReqBanUser{
+								Reason:              "too many recent events (flooding)",
+								UserID:              evt.Sender,
+								MSC4293RedactEvents: true,
+							},
+						)
+					}
+					if execErr == nil {
 						pe.sendNotice(
 							ctx,
 							fmt.Sprintf(
@@ -735,39 +649,9 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 							),
 						)
 					} else {
-						pe.Bot.Log.Err(err).Msg("failed to ban user for anti_flood")
+						pe.Bot.Log.Err(execErr).Msg("failed to ban user for anti_flood")
 					}
 				}()
-			}
-		} else {
-			go pe.sendNotice(
-				ctx,
-				fmt.Sprintf(
-					"[DRY RUN] Would have redacted [this message](%s) from [%s](%s) in [%s](%s) for exceeding"+
-						" the flood limit of %d events per %s with %d events (%d considered infractions).",
-					evt.RoomID.EventURI(evt.ID),
-					evt.Sender,
-					evt.Sender.URI(),
-					evt.RoomID,
-					evt.RoomID.URI(),
-					a.Limit,
-					a.Per.String(),
-					a.counts[evt.Sender],
-					infractions,
-				),
-			)
-			if infractions >= a.MaxInfractions {
-				go pe.sendNotice(
-					ctx,
-					fmt.Sprintf(
-						"[DRY RUN] Would have banned [%s](%s) from [%s](%s) for exceeding the flood infraction limit of %d infractions.",
-						evt.Sender,
-						evt.Sender.URI(),
-						evt.RoomID,
-						evt.RoomID.URI(),
-						a.MaxInfractions,
-					),
-				)
 			}
 		}
 	}
