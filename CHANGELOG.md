@@ -1,3 +1,17 @@
+# v25.11
+
+* Added flag for force purging a room.
+* Added support for new `/sign` endpoint for [MSC4284] policy servers
+  (thanks to [@nexy7574] in [#44]).
+* Fixed bots trying to remove bans made by other bots on the same Meowlnir
+  instance when a policy is removed.
+* Fixed kick command not reading room parameter correctly
+  (thanks to [@nexy7574] in [#45]).
+* Removed unnecessary 10 second sleep when first creating a bot.
+
+[#44]: https://github.com/maunium/meowlnir/pull/44
+[#45]: https://github.com/maunium/meowlnir/pull/45
+
 # v25.10
 
 * Switched to calendar versioning.
