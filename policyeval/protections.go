@@ -593,66 +593,64 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 	if a.counts[evt.Sender] > a.Limit {
 		hit = true
 		infractions := a.counts[evt.Sender] - a.Limit
-		if !dry {
-			// At least one of the patterns matched, redact and notify in the background
+		// At least one of the patterns matched, redact and notify in the background
+		go func() {
+			var execErr error
+			if !dry {
+				_, execErr = pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "flooding"})
+			}
+			if execErr == nil {
+				pe.sendNotice(
+					ctx,
+					fmt.Sprintf(
+						"Redacted [this message](%s) from [%s](%s) in [%s](%s) for exceeding the flood "+
+							"limit of %d events per %s with %d events (%d considered infractions).",
+						evt.RoomID.EventURI(evt.ID),
+						evt.Sender,
+						evt.Sender.URI(),
+						evt.RoomID,
+						evt.RoomID.URI(),
+						a.Limit,
+						a.Per.String(),
+						a.counts[evt.Sender],
+						infractions,
+					),
+				)
+			} else {
+				pe.Bot.Log.Err(execErr).Msg("failed to redact message for anti_flood")
+			}
+		}()
+		// If the infractions are over the limit, issue a ban
+		if infractions >= a.MaxInfractions {
 			go func() {
 				var execErr error
 				if !dry {
-					_, execErr = pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{Reason: "flooding"})
+					_, execErr = pe.Bot.BanUser(
+						ctx,
+						evt.RoomID,
+						&mautrix.ReqBanUser{
+							Reason:              "too many recent events (flooding)",
+							UserID:              evt.Sender,
+							MSC4293RedactEvents: true,
+						},
+					)
 				}
 				if execErr == nil {
 					pe.sendNotice(
 						ctx,
 						fmt.Sprintf(
-							"Redacted [this message](%s) from [%s](%s) in [%s](%s) for exceeding the flood "+
-								"limit of %d events per %s with %d events (%d considered infractions).",
-							evt.RoomID.EventURI(evt.ID),
+							"Banned [%s](%s) from [%s](%s) for exceeding the flood infraction limit of %d infractions.",
 							evt.Sender,
 							evt.Sender.URI(),
 							evt.RoomID,
 							evt.RoomID.URI(),
-							a.Limit,
-							a.Per.String(),
-							a.counts[evt.Sender],
-							infractions,
+							a.MaxInfractions,
 						),
 					)
 				} else {
-					pe.Bot.Log.Err(execErr).Msg("failed to redact message for anti_flood")
+					pe.Bot.Log.Err(execErr).Msg("failed to ban user for anti_flood")
 				}
 			}()
-			// If the infractions are over the limit, issue a ban
-			if infractions >= a.MaxInfractions {
-				go func() {
-					var execErr error
-					if !dry {
-						_, execErr = pe.Bot.BanUser(
-							ctx,
-							evt.RoomID,
-							&mautrix.ReqBanUser{
-								Reason:              "too many recent events (flooding)",
-								UserID:              evt.Sender,
-								MSC4293RedactEvents: true,
-							},
-						)
-					}
-					if execErr == nil {
-						pe.sendNotice(
-							ctx,
-							fmt.Sprintf(
-								"Banned [%s](%s) from [%s](%s) for exceeding the flood infraction limit of %d infractions.",
-								evt.Sender,
-								evt.Sender.URI(),
-								evt.RoomID,
-								evt.RoomID.URI(),
-								a.MaxInfractions,
-							),
-						)
-					} else {
-						pe.Bot.Log.Err(execErr).Msg("failed to ban user for anti_flood")
-					}
-				}()
-			}
 		}
 	}
 	return hit, nil
