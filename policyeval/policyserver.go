@@ -113,8 +113,21 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *event.Event,
 		}
 	}
 	if evaluator.protections != nil {
+		pl, err := evaluator.getPowerLevels(ctx, pdu.RoomID)
+		if err != nil || pl == nil {
+			evaluator.Bot.Log.Err(err).
+				Stringer("room_id", pdu.RoomID).
+				Stringer("event_id", pdu.ID).
+				Msg("Failed to fetch power levels")
+		}
+		if pl != nil {
+			// Don't act if the user is a room mod
+			if pl.GetUserLevel(pdu.Sender) >= pl.Kick() {
+				return PSRecommendationOk, nil
+			}
+		}
 		for _, prot := range evaluator.protections {
-			rec, err := prot.Execute(context.TODO(), evaluator, pdu, true)
+			rec, err := prot.Execute(ctx, evaluator, pdu, true)
 			if err != nil {
 				evaluator.Bot.Log.Err(err).
 					Stringer("room_id", pdu.RoomID).
