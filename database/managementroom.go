@@ -18,6 +18,9 @@ const (
 			bot_username=excluded.bot_username,
 			encrypted=excluded.encrypted;
 	`
+	deleteManagementRoomQuery = `
+		DELETE FROM management_room WHERE room_id=$1
+	`
 )
 
 type ManagementRoomQuery struct {
@@ -26,6 +29,10 @@ type ManagementRoomQuery struct {
 
 func (mrq *ManagementRoomQuery) Put(ctx context.Context, mr *ManagementRoom) error {
 	return mrq.Exec(ctx, putManagementRoomQuery, mr.sqlVariables()...)
+}
+
+func (mrq *ManagementRoomQuery) Delete(ctx context.Context, roomID id.RoomID) error {
+	return mrq.Exec(ctx, deleteManagementRoomQuery, roomID)
 }
 
 func (mrq *ManagementRoomQuery) GetAll(ctx context.Context, botUsername string) ([]*ManagementRoom, error) {
