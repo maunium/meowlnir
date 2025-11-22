@@ -33,6 +33,7 @@ func upgradeConfig(helper up.Helper) {
 
 	generateOrCopy(helper, "meowlnir", "management_secret")
 	generateOrCopy(helper, "meowlnir", "data_secret")
+	helper.Copy(up.Bool, "meowlnir", "federation_auth")
 	helper.Copy(up.Bool, "meowlnir", "dry_run")
 	helper.Copy(up.Bool, "meowlnir", "untrusted")
 	helper.Copy(up.Str|up.Null, "meowlnir", "report_room")
