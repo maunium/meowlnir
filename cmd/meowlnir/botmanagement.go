@@ -29,6 +29,7 @@ type RespManagementRoom struct {
 	ProtectedRooms []id.RoomID `json:"protected_rooms"`
 	WatchedLists   []id.RoomID `json:"watched_lists"`
 	Admins         []id.UserID `json:"admins"`
+	BotUserID      id.UserID   `json:"bot_user_id,omitempty"`
 }
 
 type RespBot struct {
@@ -83,6 +84,35 @@ func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
+}
+
+type RespGetManagementRoomsForUser struct {
+	Rooms map[id.RoomID]*RespManagementRoom `json:"rooms"`
+}
+
+func (m *Meowlnir) GetManagementRoomsForUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(contextKeyUserID).(id.UserID)
+	if !ok {
+		mautrix.MUnknown.WithMessage("Failed to get user ID from context").Write(w)
+		return
+	}
+	rooms := make(map[id.RoomID]*RespManagementRoom)
+	m.MapLock.RLock()
+	for _, room := range m.EvaluatorByManagementRoom {
+		if room.Admins.Has(userID) {
+			rooms[room.ManagementRoom] = &RespManagementRoom{
+				RoomID:         room.ManagementRoom,
+				ProtectedRooms: room.GetProtectedRooms(),
+				WatchedLists:   room.GetWatchedLists(),
+				Admins:         room.Admins.AsList(),
+				BotUserID:      room.Bot.UserID,
+			}
+		}
+	}
+	m.MapLock.RUnlock()
+	exhttp.WriteJSONResponse(w, http.StatusOK, &RespGetManagementRoomsForUser{
+		Rooms: rooms,
+	})
 }
 
 type ReqPutBot struct {
