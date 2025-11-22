@@ -55,6 +55,18 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		SecretAuth(m.loadSecret(m.Config.Meowlnir.DataSecret)),
 	))
 
+	mxauthRouter := http.NewServeMux()
+	mxauthRouter.HandleFunc("GET /v1/match/{entityType}/{entity}", m.MatchPolicy)
+	mxauthRouter.HandleFunc("GET /v1/management_rooms", m.GetManagementRoomsForUser)
+	m.AS.Router.Handle("/_meowlnir/mxauth/", exhttp.ApplyMiddleware(
+		http.StripPrefix("/_meowlnir/mxauth", mxauthRouter),
+		hlog.NewHandler(m.Log.With().Str("component", "mxauth api").Logger()),
+		hlog.RequestIDHandler("request_id", "X-Request-ID"),
+		exhttp.CORSMiddleware,
+		requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
+		m.MatrixFederationOAuth,
+	))
+
 	managementRouter := http.NewServeMux()
 	managementRouter.HandleFunc("GET /v1/bots", m.GetBots)
 	managementRouter.HandleFunc("PUT /v1/bot/{username}", m.PutBot)
