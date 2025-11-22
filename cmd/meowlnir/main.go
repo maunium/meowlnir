@@ -21,6 +21,7 @@ import (
 	_ "go.mau.fi/util/dbutil/litestream"
 	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/exslices"
+	"go.mau.fi/util/exsync"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/glob"
 	"go.mau.fi/util/ptr"
@@ -58,7 +59,10 @@ type Meowlnir struct {
 	CryptoStoreDB  *dbutil.Database
 	AS             *appservice.AppService
 	EventProcessor *appservice.EventProcessor
+	Federation     *federation.Client
 	PolicyServer   *policyeval.PolicyServer
+
+	federationTokenCache *exsync.RingBuffer[string, federationTokenCacheValue]
 
 	PolicyStore               *policylist.Store
 	MapLock                   sync.RWMutex
@@ -175,7 +179,12 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 			os.Exit(10)
 		}
 	}
-	m.PolicyServer = policyeval.NewPolicyServer(m.Config.Homeserver.Domain, pskey)
+	inMemCache := federation.NewInMemoryCache()
+	m.Federation = federation.NewClient(m.Config.Homeserver.Domain, nil, inMemCache)
+	serverAuth := federation.NewServerAuth(m.Federation, inMemCache, func(auth federation.XMatrixAuth) string {
+		return auth.Destination
+	})
+	m.PolicyServer = policyeval.NewPolicyServer(m.Federation, serverAuth, pskey)
 	m.AS.Log = m.Log.With().Str("component", "matrix").Logger()
 	m.AS.StateStore = m.StateStore
 	m.EventProcessor = appservice.NewEventProcessor(m.AS)
@@ -186,6 +195,8 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	m.Bots = make(map[id.UserID]*bot.Bot)
 	m.EvaluatorByProtectedRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
 	m.EvaluatorByManagementRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
+
+	m.federationTokenCache = exsync.NewRingBuffer[string, federationTokenCacheValue](100)
 
 	var compiledGlobs []glob.Glob
 	for _, pattern := range m.Config.Meowlnir.HackyRedactPatterns {

@@ -31,19 +31,15 @@ type PolicyServer struct {
 	lastCacheClear time.Time
 }
 
-func NewPolicyServer(serverName string, signingKey *federation.SigningKey) *PolicyServer {
-	inMemCache := federation.NewInMemoryCache()
-	fed := federation.NewClient(serverName, nil, inMemCache)
+func NewPolicyServer(fed *federation.Client, serverAuth *federation.ServerAuth, signingKey *federation.SigningKey) *PolicyServer {
 	return &PolicyServer{
 		eventCache:     make(map[id.EventID]*psCacheEntry),
 		redactionCache: exsync.NewSet[id.EventID](),
 		Federation:     fed,
-		ServerAuth: federation.NewServerAuth(fed, inMemCache, func(auth federation.XMatrixAuth) string {
-			return auth.Destination
-		}),
-		CacheMaxSize: 1000,
-		CacheMaxAge:  5 * time.Minute,
-		SigningKey:   signingKey,
+		ServerAuth:     serverAuth,
+		CacheMaxSize:   1000,
+		CacheMaxAge:    5 * time.Minute,
+		SigningKey:     signingKey,
 	}
 }
 

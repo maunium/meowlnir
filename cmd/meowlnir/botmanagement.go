@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/hmac"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -23,7 +22,6 @@ import (
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
-	"go.mau.fi/meowlnir/util"
 )
 
 type RespManagementRoom struct {
@@ -44,26 +42,6 @@ type RespBot struct {
 
 type RespGetBots struct {
 	Bots []*RespBot `json:"bots"`
-}
-
-func disabledAPI(w http.ResponseWriter, r *http.Request) {
-	mautrix.MUnknownToken.WithMessage("This API is disabled").Write(w)
-}
-
-func SecretAuth(secret *[32]byte) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		if secret == nil {
-			return http.HandlerFunc(disabledAPI)
-		}
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-			if !hmac.Equal(authHash[:], secret[:]) {
-				mautrix.MUnknownToken.WithMessage("Invalid authorization token").Write(w)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
 }
 
 func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {

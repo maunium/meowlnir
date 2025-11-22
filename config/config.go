@@ -33,6 +33,7 @@ type MeowlnirConfig struct {
 
 	ManagementSecret string `yaml:"management_secret"`
 	DataSecret       string `yaml:"data_secret"`
+	FederationAuth   bool   `yaml:"federation_auth"`
 	DryRun           bool   `yaml:"dry_run"`
 	Untrusted        bool   `yaml:"untrusted"`
 
