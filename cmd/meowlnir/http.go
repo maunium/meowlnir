@@ -58,8 +58,10 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 	managementRouter := http.NewServeMux()
 	managementRouter.HandleFunc("GET /v1/bots", m.GetBots)
 	managementRouter.HandleFunc("PUT /v1/bot/{username}", m.PutBot)
+	managementRouter.HandleFunc("DELETE /v1/bot/{username}", m.DeleteBot)
 	managementRouter.HandleFunc("POST /v1/bot/{username}/verify", m.PostVerifyBot)
 	managementRouter.HandleFunc("PUT /v1/management_room/{roomID}", m.PutManagementRoom)
+	managementRouter.HandleFunc("DELETE /v1/management_room/{roomID}", m.DeleteManagementRoom)
 	m.AS.Router.Handle("/_meowlnir/", exhttp.ApplyMiddleware(
 		http.StripPrefix("/_meowlnir", managementRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "management api").Logger()),

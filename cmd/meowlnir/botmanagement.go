@@ -249,6 +249,33 @@ func (m *Meowlnir) PutBot(w http.ResponseWriter, r *http.Request) {
 	exhttp.WriteJSONResponse(w, http.StatusOK, bot.Meta)
 }
 
+var ErrBotInUse = mautrix.RespError{ErrCode: "FI.MAU.MEOWLNIR.BOT_IN_USE", StatusCode: http.StatusConflict}
+
+func (m *Meowlnir) DeleteBot(w http.ResponseWriter, r *http.Request) {
+	userID := id.NewUserID(r.PathValue("username"), m.AS.HomeserverDomain)
+	m.MapLock.Lock()
+	defer m.MapLock.Unlock()
+	bot, ok := m.Bots[userID]
+	if !ok {
+		mautrix.MNotFound.WithMessage("Bot not found").Write(w)
+		return
+	}
+	for _, eval := range m.EvaluatorByManagementRoom {
+		if eval.Bot == bot {
+			ErrBotInUse.WithMessage("The bot is still used in %s", eval.ManagementRoom).Write(w)
+			return
+		}
+	}
+	err := m.DB.Bot.Delete(r.Context(), bot.Meta.Username)
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Msg("Failed to delete bot from database")
+		mautrix.MUnknown.WithMessage("Failed to delete bot from database").Write(w)
+		return
+	}
+	delete(m.Bots, userID)
+	exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
+}
+
 var (
 	ErrAlreadyVerified = mautrix.RespError{
 		ErrCode:    "FI.MAU.MEOWLNIR.ALREADY_VERIFIED",
@@ -376,6 +403,30 @@ func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
 	} else {
 		exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 	}
+}
+
+func (m *Meowlnir) DeleteManagementRoom(w http.ResponseWriter, r *http.Request) {
+	roomID := id.RoomID(r.PathValue("roomID"))
+	m.MapLock.Lock()
+	defer m.MapLock.Unlock()
+	eval, ok := m.EvaluatorByManagementRoom[roomID]
+	if !ok {
+		mautrix.MNotFound.WithMessage("Management room not found").Write(w)
+		return
+	}
+	err := m.DB.ManagementRoom.Delete(r.Context(), roomID)
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Msg("Failed to delete management room from database")
+		mautrix.MUnknown.WithMessage("Failed to delete management room from database").Write(w)
+		return
+	}
+	delete(m.EvaluatorByManagementRoom, roomID)
+	for protectedRoomID, room := range m.EvaluatorByProtectedRoom {
+		if room == eval {
+			delete(m.EvaluatorByProtectedRoom, protectedRoomID)
+		}
+	}
+	exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 }
 
 func getPolicyListIDs(r *http.Request) []id.RoomID {
