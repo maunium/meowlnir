@@ -67,13 +67,6 @@ func (pe *PolicyEvaluator) GetWatchedListsForACLs() []id.RoomID {
 	return pe.watchedListsForACLs
 }
 
-func (pe *PolicyEvaluator) GetWatchedListsForMatch() []id.RoomID {
-	if pe.Untrusted {
-		return pe.GetWatchedLists()
-	}
-	return nil
-}
-
 func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Event, isInitial bool) (output, errors []string) {
 	content, ok := evt.Content.Parsed.(*config.WatchedListsEventContent)
 	if !ok {

@@ -561,7 +561,7 @@ func doMatch(ce *CommandEvent, target string) {
 	var match policylist.Match
 	if entityType == policylist.EntityTypeUser {
 		start := time.Now()
-		match = ce.Meta.Store.MatchUser(ce.Meta.GetWatchedListsForMatch(), id.UserID(target))
+		match = ce.Meta.Store.MatchUser(ce.Meta.GetWatchedLists(), id.UserID(target))
 		dur = time.Since(start)
 		rooms := ce.Meta.getRoomsUserIsIn(id.UserID(target))
 		if len(rooms) > 0 {
@@ -580,11 +580,11 @@ func doMatch(ce *CommandEvent, target string) {
 		}
 	} else if entityType == policylist.EntityTypeRoom {
 		start := time.Now()
-		match = ce.Meta.Store.MatchRoom(ce.Meta.GetWatchedListsForMatch(), id.RoomID(target))
+		match = ce.Meta.Store.MatchRoom(ce.Meta.GetWatchedLists(), id.RoomID(target))
 		dur = time.Since(start)
 	} else if entityType == policylist.EntityTypeServer {
 		start := time.Now()
-		match = ce.Meta.Store.MatchServer(ce.Meta.GetWatchedListsForMatch(), target)
+		match = ce.Meta.Store.MatchServer(ce.Meta.GetWatchedLists(), target)
 		dur = time.Since(start)
 	} else {
 		ce.Reply("Invalid entity %s", format.SafeMarkdownCode(target))
