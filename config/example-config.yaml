@@ -27,7 +27,7 @@ meowlnir:
     data_secret: generate
     # Should the /_meowlnir/mxauth APIs be enabled, which allow querying certain data using any Matrix account?
     # This is necessary for the management web interface.
-    federation_auth: true
+    federation_auth: false
     # If dry run is set to true, meowlnir won't take any actual actions,
     # but will do everything else as if it was going to take actions.
     dry_run: false
