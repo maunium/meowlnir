@@ -212,9 +212,13 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 	pe.skipACLForRooms = content.SkipACL
 	for roomID := range pe.protectedRooms {
 		if !slices.Contains(content.Rooms, roomID) {
-			delete(pe.protectedRooms, roomID)
-			pe.claimProtected(roomID, pe, false)
+			pe.unlockedUnmarkProtectedRoom(roomID)
 			output = append(output, fmt.Sprintf("* Stopped protecting room %s", format.MarkdownMentionRoomID("", roomID)))
+		}
+	}
+	for roomID := range pe.wantToProtect {
+		if !slices.Contains(content.Rooms, roomID) {
+			delete(pe.wantToProtect, roomID)
 		}
 	}
 	pe.protectedRoomsLock.Unlock()
@@ -284,6 +288,16 @@ func (pe *PolicyEvaluator) markAsProtectedRoom(
 	delete(pe.wantToProtect, roomID)
 	for _, evt := range evts {
 		pe.unlockedUpdateUser(id.UserID(evt.GetStateKey()), evt.RoomID, evt.Content.AsMember().Membership)
+	}
+}
+
+func (pe *PolicyEvaluator) unlockedUnmarkProtectedRoom(roomID id.RoomID) {
+	delete(pe.protectedRooms, roomID)
+	pe.claimProtected(roomID, pe, false)
+	for userID, members := range pe.protectedRoomMembers {
+		if idx := slices.Index(members, roomID); idx >= 0 {
+			pe.protectedRoomMembers[userID] = slices.Delete(members, idx, idx+1)
+		}
 	}
 }
 
