@@ -640,7 +640,7 @@ var cmdSearch = &CommandHandler{
 	Func: func(ce *CommandEvent) {
 		target := ce.Args[0]
 		start := time.Now()
-		match := ce.Meta.Store.Search(nil, target)
+		match := ce.Meta.Store.Search(ce.Meta.GetWatchedLists(), target)
 		dur := time.Since(start)
 		if len(match) > 25 {
 			ce.Reply("Too many results (%d) in %s, please narrow your search", len(match), dur)

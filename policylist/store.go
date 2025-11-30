@@ -127,11 +127,6 @@ func (s *Store) Contains(roomID id.RoomID) bool {
 }
 
 func (s *Store) matchFunc(listIDs []id.RoomID, entityType EntityType, fn func(*List) Match) (output Match) {
-	if listIDs == nil {
-		s.roomsLock.Lock()
-		listIDs = slices.Collect(maps.Keys(s.rooms))
-		s.roomsLock.Unlock()
-	}
 	for _, roomID := range listIDs {
 		s.roomsLock.RLock()
 		list, ok := s.rooms[roomID]
@@ -178,11 +173,6 @@ func (s *Store) MatchHash(listIDs []id.RoomID, entityType EntityType, entity [ut
 }
 
 func (s *Store) Search(listIDs []id.RoomID, entity string) (output Match) {
-	if listIDs == nil {
-		s.roomsLock.Lock()
-		listIDs = slices.Collect(maps.Keys(s.rooms))
-		s.roomsLock.Unlock()
-	}
 	entityGlob := glob.Compile(entity)
 	for _, roomID := range listIDs {
 		s.roomsLock.RLock()
@@ -198,12 +188,13 @@ func (s *Store) Search(listIDs []id.RoomID, entity string) (output Match) {
 	return
 }
 
+func (s *Store) GetAllLists() []id.RoomID {
+	s.roomsLock.RLock()
+	defer s.roomsLock.RUnlock()
+	return slices.Collect(maps.Keys(s.rooms))
+}
+
 func (s *Store) compileList(listIDs []id.RoomID, listGetter func(*Room) *List) (output map[string]*Policy) {
-	if listIDs == nil {
-		s.roomsLock.Lock()
-		listIDs = slices.Collect(maps.Keys(s.rooms))
-		s.roomsLock.Unlock()
-	}
 	output = make(map[string]*Policy)
 	// Iterate the list backwards so that entries in higher priority lists overwrite lower priority ones
 	for _, roomID := range slices.Backward(listIDs) {

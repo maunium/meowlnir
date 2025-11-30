@@ -437,12 +437,12 @@ func (m *Meowlnir) DeleteManagementRoom(w http.ResponseWriter, r *http.Request) 
 	exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 }
 
-func getPolicyListIDs(r *http.Request) []id.RoomID {
+func (m *Meowlnir) getPolicyListIDs(r *http.Request) []id.RoomID {
 	listIDs := exslices.CastFuncFilter(r.URL.Query()["list_id"], func(s string) (id.RoomID, bool) {
 		return id.RoomID(s), strings.HasPrefix(s, "!")
 	})
 	if len(listIDs) == 0 {
-		listIDs = nil
+		listIDs = m.PolicyStore.GetAllLists()
 	}
 	return listIDs
 }
@@ -454,7 +454,7 @@ func (m *Meowlnir) MatchPolicy(w http.ResponseWriter, r *http.Request) {
 		mautrix.MInvalidParam.WithMessage("Invalid entity type").Write(w)
 		return
 	}
-	match := m.PolicyStore.Match(getPolicyListIDs(r), entityType, entity)
+	match := m.PolicyStore.Match(m.getPolicyListIDs(r), entityType, entity)
 	exhttp.WriteJSONResponse(w, http.StatusOK, match)
 }
 
@@ -467,6 +467,6 @@ func (m *Meowlnir) ListPolicies(w http.ResponseWriter, r *http.Request) {
 		mautrix.MInvalidParam.WithMessage("Only server policies can be listed").Write(w)
 		return
 	}
-	rules := m.PolicyStore.ListServerRules(getPolicyListIDs(r))
+	rules := m.PolicyStore.ListServerRules(m.getPolicyListIDs(r))
 	exhttp.WriteJSONResponse(w, http.StatusOK, rules)
 }
