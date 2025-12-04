@@ -133,10 +133,10 @@ type MaxMentions struct {
 	Limit          int              `json:"limit"`                     // how many mentions to allow before actioning
 	Per            jsontime.Seconds `json:"per"`                       // the timespan in which to count mentions
 	MaxInfractions int              `json:"max_infractions,omitempty"` // how many warnings can be given before a ban is issued
-
-	counts    map[id.UserID]int
-	expire    map[id.UserID]time.Time
-	countLock sync.Mutex
+	TrustServer    bool             `json:"trust_server,omitempty"`    // if false, use local time, instead of evt origin
+	counts         map[id.UserID]int
+	expire         map[id.UserID]time.Time
+	countLock      sync.Mutex
 }
 
 func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
@@ -159,6 +159,20 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 
 	// Expire old counts
 	now := time.Now()
+	origin := time.UnixMilli(evt.Timestamp)
+	if !m.TrustServer || origin.After(now.Add(1*time.Hour)) {
+		if m.TrustServer {
+			pe.Bot.Log.Warn().
+				Str("protection", "max_mentions").
+				Stringer("sender", evt.Sender).
+				Stringer("room_id", evt.RoomID).
+				Stringer("event_id", evt.ID).
+				Time("event_origin", origin).
+				Time("current_time", now).
+				Msg("event origin time is more than 1 hour in the future; falling back to local time")
+		}
+		origin = now
+	}
 	for user, exp := range m.expire {
 		if now.After(exp) {
 			delete(m.counts, user)
@@ -173,7 +187,7 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 
 	// Count mentions
 	m.counts[evt.Sender] += len(uniqueMentions)
-	m.expire[evt.Sender] = time.UnixMilli(evt.Timestamp).Add(m.Per.Duration)
+	m.expire[evt.Sender] = origin.Add(m.Per.Duration)
 	pe.Bot.Log.Trace().
 		Str("protection", "max_mentions").
 		Stringer("sender", evt.Sender).
@@ -251,11 +265,12 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 // MaxJoinRate is a protection that kicks users that join past a certain threshold, to prevent join floods.
 // This can be used to set a limit of, for example, 10 joins a minute, after which users will be kicked.
 type MaxJoinRate struct {
-	Limit     int              `json:"limit"` // how many joins to allow before actioning
-	Per       jsontime.Seconds `json:"per"`   // the timespan in which to count joins
-	counts    map[id.RoomID]int
-	expire    map[id.RoomID]time.Time
-	countLock sync.Mutex
+	Limit       int              `json:"limit"`                  // how many joins to allow before actioning
+	Per         jsontime.Seconds `json:"per"`                    // the timespan in which to count joins
+	TrustServer bool             `json:"trust_server,omitempty"` // if false, use local time, instead of evt origin
+	counts      map[id.RoomID]int
+	expire      map[id.RoomID]time.Time
+	countLock   sync.Mutex
 }
 
 func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
@@ -279,6 +294,20 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 
 	// Expire old counts
 	now := time.Now()
+	origin := time.UnixMilli(evt.Timestamp)
+	if !m.TrustServer || origin.After(now.Add(1*time.Hour)) {
+		if m.TrustServer {
+			pe.Bot.Log.Warn().
+				Str("protection", "max_join_rate").
+				Stringer("sender", evt.Sender).
+				Stringer("room_id", evt.RoomID).
+				Stringer("event_id", evt.ID).
+				Time("event_origin", origin).
+				Time("current_time", now).
+				Msg("event origin time is more than 1 hour in the future; falling back to local time")
+		}
+		origin = now
+	}
 	for room, exp := range m.expire {
 		if now.After(exp) {
 			delete(m.counts, room)
@@ -290,7 +319,7 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 	m.counts[evt.RoomID]++
 	expires, ok := m.expire[evt.RoomID]
 	if !ok {
-		expires = time.UnixMilli(evt.Timestamp).Add(m.Per.Duration)
+		expires = origin.Add(m.Per.Duration)
 	}
 	// Unlike MaxMentions, we don't increment the window on each join
 	m.expire[evt.RoomID] = expires
@@ -562,7 +591,17 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 	// Expire old counts
 	now := time.Now()
 	origin := time.UnixMilli(evt.Timestamp)
-	if !a.TrustServer {
+	if !a.TrustServer || origin.After(now.Add(1*time.Hour)) {
+		if a.TrustServer {
+			pe.Bot.Log.Warn().
+				Str("protection", "anti_flood").
+				Stringer("sender", evt.Sender).
+				Stringer("room_id", evt.RoomID).
+				Stringer("event_id", evt.ID).
+				Time("event_origin", origin).
+				Time("current_time", now).
+				Msg("event origin time is more than 1 hour in the future; falling back to local time")
+		}
 		origin = now
 	}
 	for user, exp := range a.expire {
@@ -577,7 +616,7 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 	expire, ok := a.expire[evt.Sender]
 	if !ok || expire.Before(origin) {
 		// If there isn't already an expiry, or the current expiry is before the event origin, set a new expiry
-		expire = time.UnixMilli(evt.Timestamp).Add(a.Per.Duration)
+		expire = origin.Add(a.Per.Duration)
 	}
 	a.expire[evt.Sender] = expire
 	pe.Bot.Log.Trace().
