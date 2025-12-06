@@ -31,6 +31,17 @@ func init() {
 	protectionsRegistry["anti_flood"] = reflect.TypeOf(AntiFlood{})
 }
 
+// useOrigin determines whether to use the event origin time or local time based on the trustServer flag and the
+// claimedOrigin time. If trustServer is false or the claimed origin time is more than 1 hour in the future or past,
+// it returns false, indicating local time should be used. Otherwise, it returns true.
+func useOrigin(trustServer bool, claimedOrigin time.Time) bool {
+	if !trustServer {
+		return false
+	}
+	now := time.Now()
+	return !(claimedOrigin.After(now.Add(1*time.Hour)) || claimedOrigin.Before(now.Add(-1*time.Hour)))
+}
+
 // Protection is an interface that defines the minimum exposed functionality required to define a protection.
 // All protection definitions must implement this interface in order to be used.
 type Protection interface {
@@ -139,8 +150,8 @@ type MaxMentions struct {
 	countLock      sync.Mutex
 }
 
-func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
-	if m.Limit <= 0 {
+func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
+	if mm.Limit <= 0 {
 		return false, nil // no-op
 	}
 	content := evt.Content.AsMessage()
@@ -148,20 +159,20 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 		return false, nil
 	}
 
-	m.countLock.Lock()
-	defer m.countLock.Unlock()
-	if m.counts == nil {
-		m.counts = make(map[id.UserID]int)
+	mm.countLock.Lock()
+	defer mm.countLock.Unlock()
+	if mm.counts == nil {
+		mm.counts = make(map[id.UserID]int)
 	}
-	if m.expire == nil {
-		m.expire = make(map[id.UserID]time.Time)
+	if mm.expire == nil {
+		mm.expire = make(map[id.UserID]time.Time)
 	}
 
 	// Expire old counts
 	now := time.Now()
 	origin := time.UnixMilli(evt.Timestamp)
-	if !m.TrustServer || origin.After(now.Add(1*time.Hour)) {
-		if m.TrustServer {
+	if !useOrigin(mm.TrustServer, origin) {
+		if mm.TrustServer {
 			pe.Bot.Log.Warn().
 				Str("protection", "max_mentions").
 				Stringer("sender", evt.Sender).
@@ -173,10 +184,10 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 		}
 		origin = now
 	}
-	for user, exp := range m.expire {
+	for user, exp := range mm.expire {
 		if now.After(exp) {
-			delete(m.counts, user)
-			delete(m.expire, user)
+			delete(mm.counts, user)
+			delete(mm.expire, user)
 		}
 	}
 
@@ -186,19 +197,19 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 	}
 
 	// Count mentions
-	m.counts[evt.Sender] += len(uniqueMentions)
-	m.expire[evt.Sender] = origin.Add(m.Per.Duration)
+	mm.counts[evt.Sender] += len(uniqueMentions)
+	mm.expire[evt.Sender] = origin.Add(mm.Per.Duration)
 	pe.Bot.Log.Trace().
 		Str("protection", "max_mentions").
 		Stringer("sender", evt.Sender).
 		Stringer("room_id", evt.RoomID).
 		Stringer("event_id", evt.ID).
-		Int("count", m.counts[evt.Sender]).
-		Time("expires", m.expire[evt.Sender]).
+		Int("count", mm.counts[evt.Sender]).
+		Time("expires", mm.expire[evt.Sender]).
 		Msg("max_mentions count and expiry updated")
-	if m.counts[evt.Sender] > m.Limit {
+	if mm.counts[evt.Sender] > mm.Limit {
 		hit = true
-		infractions := m.counts[evt.Sender] - m.Limit
+		infractions := mm.counts[evt.Sender] - mm.Limit
 		go func() {
 			var execErr error
 			if !dry {
@@ -215,9 +226,9 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 						evt.Sender.URI(),
 						evt.RoomID,
 						evt.RoomID.URI(),
-						m.Limit,
-						m.Per.String(),
-						m.counts[evt.Sender],
+						mm.Limit,
+						mm.Per.String(),
+						mm.counts[evt.Sender],
 						infractions,
 					),
 				)
@@ -226,7 +237,7 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 			}
 		}()
 		// If the infractions are over the limit, issue a ban
-		if infractions >= m.MaxInfractions {
+		if infractions >= mm.MaxInfractions {
 			go func() {
 				var execErr error
 				if !dry {
@@ -234,7 +245,7 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 						ctx,
 						evt.RoomID,
 						&mautrix.ReqBanUser{
-							Reason:              fmt.Sprintf("%d recent mentions (too many mentions)", m.counts[evt.Sender]),
+							Reason:              fmt.Sprintf("%d recent mentions (too many mentions)", mm.counts[evt.Sender]),
 							UserID:              evt.Sender,
 							MSC4293RedactEvents: true,
 						},
@@ -250,7 +261,7 @@ func (m *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 							evt.Sender.URI(),
 							evt.RoomID,
 							evt.RoomID.URI(),
-							m.MaxInfractions,
+							mm.MaxInfractions,
 						),
 					)
 				} else {
@@ -273,8 +284,8 @@ type MaxJoinRate struct {
 	countLock   sync.Mutex
 }
 
-func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
-	if m.Limit <= 0 || evt.Type != event.StateMember {
+func (mj *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
+	if mj.Limit <= 0 || evt.Type != event.StateMember {
 		return false, nil
 	}
 	content := evt.Content.AsMember()
@@ -283,20 +294,20 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 	}
 	target := id.UserID(*evt.StateKey)
 
-	m.countLock.Lock()
-	defer m.countLock.Unlock()
-	if m.counts == nil {
-		m.counts = make(map[id.RoomID]int)
+	mj.countLock.Lock()
+	defer mj.countLock.Unlock()
+	if mj.counts == nil {
+		mj.counts = make(map[id.RoomID]int)
 	}
-	if m.expire == nil {
-		m.expire = make(map[id.RoomID]time.Time)
+	if mj.expire == nil {
+		mj.expire = make(map[id.RoomID]time.Time)
 	}
 
 	// Expire old counts
 	now := time.Now()
 	origin := time.UnixMilli(evt.Timestamp)
-	if !m.TrustServer || origin.After(now.Add(1*time.Hour)) {
-		if m.TrustServer {
+	if !useOrigin(mj.TrustServer, origin) {
+		if mj.TrustServer {
 			pe.Bot.Log.Warn().
 				Str("protection", "max_join_rate").
 				Stringer("sender", evt.Sender).
@@ -308,31 +319,31 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 		}
 		origin = now
 	}
-	for room, exp := range m.expire {
+	for room, exp := range mj.expire {
 		if now.After(exp) {
-			delete(m.counts, room)
-			delete(m.expire, room)
+			delete(mj.counts, room)
+			delete(mj.expire, room)
 		}
 	}
 
 	// Increase counts
-	m.counts[evt.RoomID]++
-	expires, ok := m.expire[evt.RoomID]
+	mj.counts[evt.RoomID]++
+	expires, ok := mj.expire[evt.RoomID]
 	if !ok {
-		expires = origin.Add(m.Per.Duration)
+		expires = origin.Add(mj.Per.Duration)
 	}
 	// Unlike MaxMentions, we don't increment the window on each join
-	m.expire[evt.RoomID] = expires
+	mj.expire[evt.RoomID] = expires
 	pe.Bot.Log.Trace().
 		Str("protection", "max_join_rate").
 		Stringer("target", target).
 		Stringer("room_id", evt.RoomID).
 		Stringer("event_id", evt.ID).
-		Int("count", m.counts[evt.RoomID]).
+		Int("count", mj.counts[evt.RoomID]).
 		Time("expires", expires).
 		Msg("max_join_rate count and expiry updated")
 
-	if m.counts[evt.RoomID] > m.Limit {
+	if mj.counts[evt.RoomID] > mj.Limit {
 		hit = true
 		// At least one of the patterns matched, kick in the background
 		go func() {
@@ -352,9 +363,9 @@ func (m *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *eve
 						target.URI(),
 						evt.RoomID,
 						evt.RoomID.URI(),
-						m.Limit,
-						m.Per.String(),
-						m.counts[evt.RoomID],
+						mj.Limit,
+						mj.Per.String(),
+						mj.counts[evt.RoomID],
 					),
 				)
 			} else {
@@ -375,7 +386,7 @@ type NoMedia struct {
 	DenyCustomReactions bool `json:"deny_custom_reactions"` // deny m.reaction events with mxc://-prefixed keys
 }
 
-func (n *NoMedia) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
+func (nm *NoMedia) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
 	if evt.Type != event.EventMessage && evt.Type != event.EventSticker && evt.Type != event.EventReaction {
 		return false, nil // no-op
 	}
@@ -383,22 +394,22 @@ func (n *NoMedia) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.E
 	switch evt.Type {
 	case event.EventMessage:
 		content := evt.Content.AsMessage()
-		if content.MsgType == event.MsgImage && !n.AllowImages {
+		if content.MsgType == event.MsgImage && !nm.AllowImages {
 			hit = true
-		} else if content.MsgType == event.MsgVideo && !n.AllowVideos {
+		} else if content.MsgType == event.MsgVideo && !nm.AllowVideos {
 			hit = true
-		} else if content.MsgType == event.MsgAudio && !n.AllowAudio {
+		} else if content.MsgType == event.MsgAudio && !nm.AllowAudio {
 			hit = true
-		} else if content.MsgType == event.MsgFile && !n.AllowFiles {
+		} else if content.MsgType == event.MsgFile && !nm.AllowFiles {
 			hit = true
 		}
 	case event.EventSticker:
-		if !n.AllowStickers {
+		if !nm.AllowStickers {
 			hit = true
 		}
 	case event.EventReaction:
 		content := evt.Content.AsReaction()
-		if n.DenyCustomReactions && strings.HasPrefix(content.RelatesTo.Key, "mxc://") {
+		if nm.DenyCustomReactions && strings.HasPrefix(content.RelatesTo.Key, "mxc://") {
 			hit = true
 		}
 	}
@@ -459,7 +470,7 @@ func resolveWellKnown(ctx context.Context, client *http.Client, serverName strin
 	return wk.Homeserver.BaseURL
 }
 
-func (i *InsecureRegistration) Kick(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, target id.UserID, dry bool) {
+func (ir *InsecureRegistration) Kick(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, target id.UserID, dry bool) {
 	var err error
 	if !dry {
 		_, err = pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{
@@ -484,12 +495,12 @@ func (i *InsecureRegistration) Kick(ctx context.Context, pe *PolicyEvaluator, ev
 	}
 }
 
-func (i *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
-	if i.expire == nil {
-		i.expire = make(map[string]time.Time)
+func (ir *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
+	if ir.expire == nil {
+		ir.expire = make(map[string]time.Time)
 	}
-	if i.cache == nil {
-		i.cache = make(map[string]bool)
+	if ir.cache == nil {
+		ir.cache = make(map[string]bool)
 	}
 	if evt.Type != event.StateMember {
 		return false, nil // no-op
@@ -502,35 +513,35 @@ func (i *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator,
 	// Check when the last lookup for this server name was
 	target := id.UserID(*evt.StateKey)
 	hs := target.Homeserver()
-	i.lock.RLock()
-	cached, ok := i.expire[hs]
-	result, hasResult := i.cache[hs]
-	i.lock.RUnlock()
+	ir.lock.RLock()
+	cached, ok := ir.expire[hs]
+	result, hasResult := ir.cache[hs]
+	ir.lock.RUnlock()
 	if ok && hasResult {
 		// If the result is true (insecure) and less than 5 minutes old, it is fresh.
 		// Secure results are cached for longer since they're less likely to be invalid.
 		if (result && time.Since(cached) < 5*time.Minute) || (!result && time.Since(cached) < time.Hour) {
 			if result {
 				// Kick user and alert the management room
-				go i.Kick(ctx, pe, evt, target, dry)
+				go ir.Kick(ctx, pe, evt, target, dry)
 			}
 			return result, nil // recently checked, skip
 		}
-		i.lock.Lock()
-		delete(i.cache, hs)
-		delete(i.expire, hs)
-		i.lock.Unlock()
+		ir.lock.Lock()
+		delete(ir.cache, hs)
+		delete(ir.expire, hs)
+		ir.lock.Unlock()
 	}
 
 	// Not recently checked, do a lookup
-	i.lock.Lock()
+	ir.lock.Lock()
 	defer func() {
 		// Cache the result
 		if err == nil {
-			i.cache[hs] = hit
-			i.expire[hs] = time.Now()
+			ir.cache[hs] = hit
+			ir.expire[hs] = time.Now()
 		}
-		i.lock.Unlock()
+		ir.lock.Unlock()
 	}()
 	pe.Bot.Log.Trace().Stringer("user_id", target).Msg("performing insecure registration check")
 	baseUrl := resolveWellKnown(ctx, pe.Bot.Client.Client, hs)
@@ -559,7 +570,7 @@ func (i *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator,
 		Msg("server has registration enabled")
 	if hit {
 		// Kick user and alert the management room
-		go i.Kick(ctx, pe, evt, target, dry)
+		go ir.Kick(ctx, pe, evt, target, dry)
 	}
 	return hit, nil
 }
@@ -575,24 +586,24 @@ type AntiFlood struct {
 	countLock      sync.Mutex
 }
 
-func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
-	if a.Limit <= 0 || evt.StateKey != nil {
+func (af *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
+	if af.Limit <= 0 || evt.StateKey != nil {
 		return false, nil // no-op
 	}
-	a.countLock.Lock()
-	defer a.countLock.Unlock()
-	if a.counts == nil {
-		a.counts = make(map[id.UserID]int)
+	af.countLock.Lock()
+	defer af.countLock.Unlock()
+	if af.counts == nil {
+		af.counts = make(map[id.UserID]int)
 	}
-	if a.expire == nil {
-		a.expire = make(map[id.UserID]time.Time)
+	if af.expire == nil {
+		af.expire = make(map[id.UserID]time.Time)
 	}
 
 	// Expire old counts
 	now := time.Now()
 	origin := time.UnixMilli(evt.Timestamp)
-	if !a.TrustServer || origin.After(now.Add(1*time.Hour)) {
-		if a.TrustServer {
+	if !useOrigin(af.TrustServer, origin) {
+		if af.TrustServer {
 			pe.Bot.Log.Warn().
 				Str("protection", "anti_flood").
 				Stringer("sender", evt.Sender).
@@ -604,34 +615,34 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 		}
 		origin = now
 	}
-	for user, exp := range a.expire {
+	for user, exp := range af.expire {
 		if now.After(exp) {
-			delete(a.counts, user)
-			delete(a.expire, user)
+			delete(af.counts, user)
+			delete(af.expire, user)
 		}
 	}
 
 	// Count event
-	a.counts[evt.Sender]++
-	expire, ok := a.expire[evt.Sender]
+	af.counts[evt.Sender]++
+	expire, ok := af.expire[evt.Sender]
 	if !ok || expire.Before(origin) {
 		// If there isn't already an expiry, or the current expiry is before the event origin, set a new expiry
-		expire = origin.Add(a.Per.Duration)
+		expire = origin.Add(af.Per.Duration)
 	}
-	a.expire[evt.Sender] = expire
+	af.expire[evt.Sender] = expire
 	pe.Bot.Log.Trace().
 		Str("protection", "anti_flood").
 		Stringer("sender", evt.Sender).
 		Stringer("room_id", evt.RoomID).
 		Stringer("event_id", evt.ID).
-		Int("count", a.counts[evt.Sender]).
+		Int("count", af.counts[evt.Sender]).
 		Time("expires", expire).
-		Int("infractions", a.counts[evt.Sender]-a.Limit).
+		Int("infractions", af.counts[evt.Sender]-af.Limit).
 		Msg("anti_flood count and expiry updated")
 
-	if a.counts[evt.Sender] > a.Limit {
+	if af.counts[evt.Sender] > af.Limit {
 		hit = true
-		infractions := a.counts[evt.Sender] - a.Limit
+		infractions := af.counts[evt.Sender] - af.Limit
 		// At least one of the patterns matched, redact and notify in the background
 		go func() {
 			var execErr error
@@ -649,9 +660,9 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 						evt.Sender.URI(),
 						evt.RoomID,
 						evt.RoomID.URI(),
-						a.Limit,
-						a.Per.String(),
-						a.counts[evt.Sender],
+						af.Limit,
+						af.Per.String(),
+						af.counts[evt.Sender],
 						infractions,
 					),
 				)
@@ -660,7 +671,7 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 			}
 		}()
 		// If the infractions are over the limit, issue a ban
-		if infractions >= a.MaxInfractions {
+		if infractions >= af.MaxInfractions {
 			go func() {
 				var execErr error
 				if !dry {
@@ -683,7 +694,7 @@ func (a *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event
 							evt.Sender.URI(),
 							evt.RoomID,
 							evt.RoomID.URI(),
-							a.MaxInfractions,
+							af.MaxInfractions,
 						),
 					)
 				} else {
