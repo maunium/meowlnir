@@ -16,7 +16,7 @@ import (
 	"go.mau.fi/meowlnir/policylist"
 )
 
-func (ps *PolicyServer) getRecommendation(pdu *pdu.PDU, evaluator *PolicyEvaluator) (PSRecommendation, policylist.Match) {
+func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *pdu.PDU, roomVersion id.RoomVersion, evaluator *PolicyEvaluator) (PSRecommendation, policylist.Match) {
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {
@@ -32,7 +32,53 @@ func (ps *PolicyServer) getRecommendation(pdu *pdu.PDU, evaluator *PolicyEvaluat
 			return PSRecommendationSpam, match
 		}
 	}
-	// TODO check protections
+	if evaluator.protections != nil {
+		evtID, err := pdu.GetEventID(roomVersion)
+		if err != nil {
+			evaluator.Bot.Log.Err(err).
+				Stringer("room_id", pdu.RoomID).
+				Msg("Failed to calculate event ID")
+			return PSRecommendationOk, nil
+		}
+		pl, err := evaluator.getPowerLevels(ctx, pdu.RoomID)
+		if err != nil || pl == nil {
+			evaluator.Bot.Log.Err(err).
+				Stringer("room_id", pdu.RoomID).
+				Stringer("event_id", evtID).
+				Msg("Failed to fetch power levels")
+		}
+		if pl != nil {
+			// Don't act if the user is a room mod
+			if pl.GetUserLevel(pdu.Sender) >= pl.Kick() {
+				return PSRecommendationOk, nil
+			}
+		}
+		clientEvt, err := pdu.ToClientEvent(roomVersion)
+		if err != nil {
+			evaluator.Bot.Log.Err(err).
+				Stringer("room_id", pdu.RoomID).
+				Stringer("event_id", evtID).
+				Msg("Failed to convert PDU to client event")
+			return PSRecommendationOk, nil
+		}
+		ctx = zerolog.Ctx(ctx).With().
+			Stringer("room_id", pdu.RoomID).
+			Stringer("event_id", clientEvt.ID).
+			Logger().WithContext(ctx)
+		for _, prot := range evaluator.protections {
+			rec, err := prot.Execute(ctx, evaluator, clientEvt, true)
+			if err != nil {
+				evaluator.Bot.Log.Err(err).
+					Stringer("room_id", pdu.RoomID).
+					Stringer("event_id", evtID).
+					Msg("Failed to execute protection")
+				continue
+			}
+			if rec {
+				return PSRecommendationSpam, nil
+			}
+		}
+	}
 	return PSRecommendationOk, nil
 }
 
@@ -57,7 +103,7 @@ func (ps *PolicyServer) HandleSign(
 		Logger()
 
 	log.Trace().Any("event", evt).Msg("Checking event received by policy server")
-	rec, match := ps.getRecommendation(evt, evaluator)
+	rec, match := ps.getRecommendation(ctx, evt, roomVersion, evaluator)
 	if rec == PSRecommendationSpam {
 		// Don't sign spam events
 		log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
@@ -115,7 +161,7 @@ func (ps *PolicyServer) HandleLegacyCheck(
 
 	if r.Recommendation == "" {
 		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
-		rec, match := ps.getRecommendation(pdu, evaluator)
+		rec, match := ps.getRecommendation(ctx, pdu, roomVersion, evaluator)
 		finalRec = rec
 		if rec == PSRecommendationSpam {
 			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
