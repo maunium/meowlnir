@@ -1,3 +1,13 @@
+# v25.12
+
+* Added endpoints for deleting bots and management rooms.
+* Added endpoint for fetching own management rooms using a Matrix access token.
+  * The Matrix-authed endpoints are disabled by default and can be enabled in
+    the config. They will be used for a management web interface in the future.
+* Changed `!match` and `!search` command to always only look in watched lists,
+  regardless of `untrusted` flag.
+* Fixed new bans trying to ban users in rooms that were unprotected earlier.
+
 # v25.11
 
 * Added flag for force purging a room.
