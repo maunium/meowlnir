@@ -61,19 +61,28 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *pdu.PDU, roo
 				Msg("Failed to convert PDU to client event")
 			return PSRecommendationOk, nil
 		}
+		if parseErr := clientEvt.Content.ParseRaw(clientEvt.Type); parseErr != nil {
+			evaluator.Bot.Log.Err(parseErr).
+				Stringer("room_id", pdu.RoomID).
+				Stringer("event_id", evtID).
+				Msg("Failed to parse event content")
+		}
 		ctx = zerolog.Ctx(ctx).With().
 			Stringer("room_id", pdu.RoomID).
 			Stringer("event_id", clientEvt.ID).
 			Logger().WithContext(ctx)
-		for _, prot := range evaluator.protections {
+		for name, prot := range evaluator.protections {
+			zerolog.Ctx(ctx).Trace().Msgf("Evaluating protection '%s'", name)
 			rec, err := prot.Execute(ctx, evaluator, clientEvt, true)
 			if err != nil {
-				evaluator.Bot.Log.Err(err).
+				zerolog.Ctx(ctx).Err(err).
 					Stringer("room_id", pdu.RoomID).
 					Stringer("event_id", evtID).
+					Str("protection", name).
 					Msg("Failed to execute protection")
 				continue
 			}
+			zerolog.Ctx(ctx).Trace().Bool("spam", rec).Msgf("Evaluated protection '%s'", name)
 			if rec {
 				return PSRecommendationSpam, nil
 			}
