@@ -236,6 +236,9 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 			"Protecting %d rooms with %d users (%d all time) using %d lists.",
 			initDuration, evalDuration, protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
 	}
+	if pe.policyServer.SigningKey != nil {
+		msg += fmt.Sprintf("\n\nPolicy server signatures are enabled with the public key `%s`.", pe.policyServer.SigningKey.Pub)
+	}
 	if pe.DryRun {
 		msg += "\n\n**Dry run mode is enabled, no actions will be taken.**"
 	}
