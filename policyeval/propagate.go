@@ -90,7 +90,7 @@ func (pe *PolicyEvaluator) propagateUnban(ctx context.Context, unbanEvent *event
 		}
 		n++
 		msg += fmt.Sprintf(
-			"%d. [%s] %s set recommendation %s for %s at %s for %s",
+			"%d. [%s] %s set recommendation %s for %s at %s for %s\n",
 			n,
 			format.EscapeMarkdown(meta.Shortcode),
 			format.MarkdownMention(policy.Sender),
@@ -106,7 +106,10 @@ func (pe *PolicyEvaluator) propagateUnban(ctx context.Context, unbanEvent *event
 	}
 
 	evtID := pe.Bot.SendNoticeOpts(ctx, pe.ManagementRoom, msg, &bot.SendNoticeOpts{
-		Extra: map[string]any{commands.ReactionCommandsKey: actions},
+		Extra: map[string]any{
+			commands.ReactionCommandsKey: actions,
+			commands.ReactionMultiUseKey: true,
+		},
 	})
 	if evtID == "" {
 		return
