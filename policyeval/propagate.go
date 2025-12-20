@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"go.mau.fi/meowlnir/bot"
-	"go.mau.fi/meowlnir/config"
 	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/meowlnir/bot"
+	"go.mau.fi/meowlnir/config"
 )
 
 func (pe *PolicyEvaluator) writableLists(ctx context.Context) map[id.RoomID]*config.WatchedPolicyList {
