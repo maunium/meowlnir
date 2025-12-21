@@ -67,6 +67,12 @@ func (pe *PolicyEvaluator) GetWatchedListsForACLs() []id.RoomID {
 	return pe.watchedListsForACLs
 }
 
+func (pe *PolicyEvaluator) GetWatchedListsForMatch() []id.RoomID {
+	pe.watchedListsLock.RLock()
+	defer pe.watchedListsLock.RUnlock()
+	return pe.watchedListsNA
+}
+
 func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Event, isInitial bool) (output, errors []string) {
 	content, ok := evt.Content.Parsed.(*config.WatchedListsEventContent)
 	if !ok {
@@ -114,6 +120,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 		}
 	}
 	wg.Wait()
+	watchedListIncludingNonApply := make([]id.RoomID, 0, len(content.Lists))
 	watchedList := make([]id.RoomID, 0, len(content.Lists))
 	aclWatchedList := make([]id.RoomID, 0, len(content.Lists))
 	watchedMap := make(map[id.RoomID]*config.WatchedPolicyList, len(content.Lists))
@@ -124,10 +131,13 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 			_, listFailed := failed[listInfo.RoomID]
 			listInfo.InRoom = !listFailed
 			watchedMap[listInfo.RoomID] = &listInfo
-			if !listInfo.DontApply && !listFailed {
-				watchedList = append(watchedList, listInfo.RoomID)
-				if !listInfo.DontApplyACL {
-					aclWatchedList = append(aclWatchedList, listInfo.RoomID)
+			if !listFailed {
+				watchedListIncludingNonApply = append(watchedListIncludingNonApply, listInfo.RoomID)
+				if !listInfo.DontApply {
+					watchedList = append(watchedList, listInfo.RoomID)
+					if !listInfo.DontApplyACL {
+						aclWatchedList = append(aclWatchedList, listInfo.RoomID)
+					}
 				}
 			}
 		}
@@ -138,6 +148,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	oldFullWatchedList := slices.Collect(maps.Keys(pe.watchedListsMap))
 	pe.watchedListsMap = watchedMap
 	pe.watchedListsList = watchedList
+	pe.watchedListsNA = watchedListIncludingNonApply
 	pe.watchedListsForACLs = aclWatchedList
 	pe.watchedListsEvent = content
 	pe.watchedListsLock.Unlock()
