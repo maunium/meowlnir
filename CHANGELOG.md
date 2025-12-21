@@ -1,5 +1,6 @@
 # v25.12
 
+* Updated Docker image to Alpine 3.23.
 * Added endpoints for deleting bots and management rooms.
 * Added endpoint for fetching own management rooms using a Matrix access token.
   * The Matrix-authed endpoints are disabled by default and can be enabled in
