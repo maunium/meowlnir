@@ -52,6 +52,7 @@ type PolicyEvaluator struct {
 	watchedListsNA      []id.RoomID
 	watchedListsForACLs []id.RoomID
 	watchedListsLock    sync.RWMutex
+	protections         map[string]Protection
 
 	configLock sync.Mutex
 	aclLock    sync.Mutex
@@ -108,6 +109,7 @@ func NewPolicyEvaluator(
 		protectedRoomMembers: make(map[id.UserID][]id.RoomID),
 		memberHashes:         make(map[[32]byte]id.UserID),
 		watchedListsMap:      make(map[id.RoomID]*config.WatchedPolicyList),
+		protections:          make(map[string]Protection),
 		protectedRooms:       make(map[id.RoomID]*protectedRoomMeta),
 		wantToProtect:        make(map[id.RoomID]struct{}),
 		isJoining:            make(map[id.RoomID]struct{}),
@@ -273,4 +275,15 @@ func (pe *PolicyEvaluator) handlePowerLevels(ctx context.Context, evt *event.Eve
 	}
 	pe.Admins.ReplaceAll(admins)
 	return ""
+}
+
+func (pe *PolicyEvaluator) getPowerLevels(ctx context.Context, roomID id.RoomID) (*event.PowerLevelsEventContent, error) {
+	pl, err := pe.Bot.StateStore.GetPowerLevels(ctx, roomID)
+	if err != nil || pl == nil {
+		// Fallback to fetching from server
+		if err = pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &pl); err != nil {
+			return nil, err
+		}
+	}
+	return pl, err
 }

@@ -36,4 +36,31 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 			&bot.SendNoticeOpts{Mentions: &event.Mentions{Room: true}, SendAsText: true},
 		)
 	}
+	if pe.protections != nil && evt.Sender != pe.Bot.UserID {
+		pl, err := pe.getPowerLevels(ctx, evt.RoomID)
+		if err != nil || pl == nil {
+			pe.Bot.Log.Err(err).
+				Stringer("room_id", evt.RoomID).
+				Stringer("event_id", evt.ID).
+				Msg("Failed to fetch power levels")
+		}
+		if pl != nil {
+			// Don't act if the user is a room mod
+			if pl.GetUserLevel(evt.Sender) >= pl.Kick() {
+				return
+			}
+		}
+		for _, prot := range pe.protections {
+			hit, err := prot.Execute(ctx, pe, evt, pe.DryRun)
+			if err != nil {
+				pe.Bot.Log.Err(err).
+					Stringer("room_id", evt.RoomID).
+					Stringer("event_id", evt.ID).
+					Msg("Failed to execute protection")
+			}
+			if hit {
+				break
+			}
+		}
+	}
 }
