@@ -2,14 +2,18 @@ package config
 
 import (
 	"reflect"
+	"time"
 
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
 
 var (
-	StateWatchedLists   = event.Type{Type: "fi.mau.meowlnir.watched_lists", Class: event.StateEventType}
-	StateProtectedRooms = event.Type{Type: "fi.mau.meowlnir.protected_rooms", Class: event.StateEventType}
+	StateWatchedLists        = event.Type{Type: "fi.mau.meowlnir.watched_lists", Class: event.StateEventType}
+	StateProtectedRooms      = event.Type{Type: "fi.mau.meowlnir.protected_rooms", Class: event.StateEventType}
+	StatePassiveFailover     = event.Type{Type: "fi.mau.meowlnir.passive_failover", Class: event.StateEventType}
+	EventPassiveFailoverPing = event.Type{Type: "fi.mau.meowlnir.passive_failover.ping", Class: event.MessageEventType}
+	EventPassiveFailoverPong = event.Type{Type: "fi.mau.meowlnir.passive_failover.pong", Class: event.MessageEventType}
 )
 
 type WatchedPolicyList struct {
@@ -37,7 +41,25 @@ type ProtectedRoomsEventContent struct {
 	SkipACL []id.RoomID `json:"skip_acl"`
 }
 
+type PassiveFailoverContent struct {
+	RoomID   id.RoomID     `json:"room_id"`
+	Interval time.Duration `json:"interval"`
+	Timeout  time.Duration `json:"timeout"`
+	Primary  id.UserID     `json:"primary"`
+}
+
+type PassiveFailoverPing struct {
+	Target id.UserID `json:"target"`
+}
+
+type PassiveFailoverPong struct {
+	RelatesTo event.RelatesTo `json:"m.in_relation_to"`
+}
+
 func init() {
 	event.TypeMap[StateWatchedLists] = reflect.TypeOf(WatchedListsEventContent{})
 	event.TypeMap[StateProtectedRooms] = reflect.TypeOf(ProtectedRoomsEventContent{})
+	event.TypeMap[StatePassiveFailover] = reflect.TypeOf(PassiveFailoverContent{})
+	event.TypeMap[EventPassiveFailoverPing] = reflect.TypeOf(PassiveFailoverPing{})
+	event.TypeMap[EventPassiveFailoverPong] = reflect.TypeOf(PassiveFailoverPong{})
 }

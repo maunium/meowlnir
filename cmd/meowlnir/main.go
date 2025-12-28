@@ -64,12 +64,13 @@ type Meowlnir struct {
 
 	federationTokenCache *exsync.RingBuffer[string, federationTokenCacheValue]
 
-	PolicyStore               *policylist.Store
-	MapLock                   sync.RWMutex
-	Bots                      map[id.UserID]*bot.Bot
-	EvaluatorByProtectedRoom  map[id.RoomID]*policyeval.PolicyEvaluator
-	EvaluatorByManagementRoom map[id.RoomID]*policyeval.PolicyEvaluator
-	HackyAutoRedactPatterns   []glob.Glob
+	PolicyStore                  *policylist.Store
+	MapLock                      sync.RWMutex
+	Bots                         map[id.UserID]*bot.Bot
+	EvaluatorByProtectedRoom     map[id.RoomID]*policyeval.PolicyEvaluator
+	EvaluatorByManagementRoom    map[id.RoomID]*policyeval.PolicyEvaluator
+	EvaluatorByCommunicationRoom map[id.RoomID]*policyeval.PolicyEvaluator
+	HackyAutoRedactPatterns      []glob.Glob
 
 	appservicePingOnce sync.Once
 
@@ -195,6 +196,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	m.Bots = make(map[id.UserID]*bot.Bot)
 	m.EvaluatorByProtectedRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
 	m.EvaluatorByManagementRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
+	m.EvaluatorByCommunicationRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
 
 	m.federationTokenCache = exsync.NewRingBuffer[string, federationTokenCacheValue](100)
 
@@ -227,6 +229,28 @@ func (m *Meowlnir) claimProtectedRoom(roomID id.RoomID, eval *policyeval.PolicyE
 		return nil
 	}
 	m.EvaluatorByProtectedRoom[roomID] = eval
+	return eval
+}
+
+func (m *Meowlnir) claimCommunicationRoom(roomID id.RoomID, eval *policyeval.PolicyEvaluator, claim bool) *policyeval.PolicyEvaluator {
+	m.MapLock.Lock()
+	defer m.MapLock.Unlock()
+	_, isManagement := m.EvaluatorByManagementRoom[roomID]
+	if isManagement {
+		return nil
+	}
+	if existing, ok := m.EvaluatorByCommunicationRoom[roomID]; ok {
+		if claim {
+			return existing
+		}
+		if existing == eval {
+			delete(m.EvaluatorByCommunicationRoom, roomID)
+		}
+		return nil
+	} else if !claim {
+		return nil
+	}
+	m.EvaluatorByCommunicationRoom[roomID] = eval
 	return eval
 }
 
@@ -283,6 +307,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID, encrypted 
 		m.DB,
 		m.SynapseDB,
 		m.claimProtectedRoom,
+		m.claimCommunicationRoom,
 		m.createPuppetClient,
 		m.Config.Antispam.AutoRejectInvitesToken != "",
 		m.Config.Antispam.FilterLocalInvites,

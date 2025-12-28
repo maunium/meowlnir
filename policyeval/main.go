@@ -68,6 +68,18 @@ type PolicyEvaluator struct {
 	skipACLForRooms      []id.RoomID
 	protectedRoomsLock   sync.RWMutex
 
+	claimCommunication       func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator
+	passiveFailoverEvent     *config.PassiveFailoverContent
+	passiveFailoverTicker    *time.Ticker
+	passiveFailoverRoom      id.RoomID
+	passiveFailoverInterval  time.Duration
+	passiveFailoverTimeout   time.Duration
+	passiveFailoverPrimary   id.UserID
+	passiveFailoverLastPing  time.Time
+	passiveFailoverLastPong  time.Time
+	passiveFailoverLastEvent id.EventID
+	standby                  bool
+
 	pendingInvites     map[pendingInvite]struct{}
 	pendingInvitesLock sync.Mutex
 	AutoRejectInvites  bool
@@ -88,6 +100,7 @@ func NewPolicyEvaluator(
 	db *database.Database,
 	synapseDB *synapsedb.SynapseDB,
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
+	claimCommunication func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
 	createPuppetClient func(userID id.UserID) *mautrix.Client,
 	autoRejectInvites, filterLocalInvites, antispamNotify, dryRun bool,
 	hackyAutoRedactPatterns []glob.Glob,
@@ -113,6 +126,7 @@ func NewPolicyEvaluator(
 		isJoining:            make(map[id.RoomID]struct{}),
 		aclDeferChan:         make(chan struct{}, 1),
 		claimProtected:       claimProtected,
+		claimCommunication:   claimCommunication,
 		pendingInvites:       make(map[pendingInvite]struct{}),
 		createPuppetClient:   createPuppetClient,
 		AutoRejectInvites:    autoRejectInvites,
@@ -212,6 +226,12 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 		zerolog.Ctx(ctx).Info().Msg("No protected rooms event found in management room")
 	} else {
 		_, errorMsgs := pe.handleProtectedRooms(ctx, evt, true)
+		errors = append(errors, errorMsgs...)
+	}
+	if evt, ok := state[config.StatePassiveFailover][""]; !ok {
+		zerolog.Ctx(ctx).Info().Msg("No passive failover event found in management room")
+	} else {
+		_, errorMsgs := pe.handlePassiveFailover(ctx, evt)
 		errors = append(errors, errorMsgs...)
 	}
 	initDuration := time.Since(start)

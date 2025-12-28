@@ -57,12 +57,15 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 					}
 				}
 			}
-			for _, room := range rooms {
-				pe.ApplyBan(ctx, userID, room, recs.BanOrUnban, shouldRedact)
+			if !pe.standby {
+				for _, room := range rooms {
+					pe.ApplyBan(ctx, userID, room, recs.BanOrUnban, shouldRedact)
+				}
+				if shouldRedact {
+					go pe.RedactUser(context.WithoutCancel(ctx), userID, recs.BanOrUnban.Reason, true)
+				}
 			}
-			if shouldRedact {
-				go pe.RedactUser(context.WithoutCancel(ctx), userID, recs.BanOrUnban.Reason, true)
-			}
+			// Invite rejection and suspensions should still be done even in standby mode
 			if isNew {
 				go pe.RejectPendingInvites(context.WithoutCancel(ctx), userID, recs.BanOrUnban)
 			}

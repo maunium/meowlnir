@@ -42,9 +42,13 @@ func (m *Meowlnir) AddEventHandlers() {
 	// Management room config
 	m.EventProcessor.On(config.StateWatchedLists, m.HandleConfigChange)
 	m.EventProcessor.On(config.StateProtectedRooms, m.HandleConfigChange)
+	m.EventProcessor.On(config.StatePassiveFailover, m.HandleConfigChange)
 	m.EventProcessor.On(event.StatePowerLevels, m.HandleConfigChange)
 	m.EventProcessor.On(event.StateRoomName, m.HandleConfigChange)
 	m.EventProcessor.On(event.StateServerACL, m.HandleConfigChange)
+	// Passive failover handling
+	m.EventProcessor.On(config.EventPassiveFailoverPing, m.HandlePassiveFailoverPing)
+	m.EventProcessor.On(config.EventPassiveFailoverPong, m.HandlePassiveFailoverPong)
 	// General event handling
 	m.EventProcessor.On(event.StateMember, m.HandleMember)
 	m.EventProcessor.On(event.EventMessage, m.HandleMessage)
@@ -101,6 +105,28 @@ func (m *Meowlnir) HandleConfigChange(ctx context.Context, evt *event.Event) {
 		managementRoom.HandleConfigChange(ctx, evt)
 	} else if isProtected {
 		protectedRoom.HandleProtectedRoomMeta(ctx, evt)
+	}
+}
+
+func (m *Meowlnir) HandlePassiveFailoverPing(ctx context.Context, evt *event.Event) {
+	m.MapLock.RLock()
+	communicationRoom, isCommunication := m.EvaluatorByCommunicationRoom[evt.RoomID]
+	m.MapLock.RUnlock()
+	if isCommunication {
+		communicationRoom.HandlePassiveFailoverPing(ctx, evt)
+	} else {
+		m.Log.Warn().
+			Stringer("room_id", evt.RoomID).
+			Msg("Received passive failover ping in unknown communication room")
+	}
+}
+
+func (m *Meowlnir) HandlePassiveFailoverPong(ctx context.Context, evt *event.Event) {
+	m.MapLock.RLock()
+	communicationRoom, isCommunication := m.EvaluatorByCommunicationRoom[evt.RoomID]
+	m.MapLock.RUnlock()
+	if isCommunication {
+		communicationRoom.HandlePassiveFailoverPong(ctx, evt)
 	}
 }
 
