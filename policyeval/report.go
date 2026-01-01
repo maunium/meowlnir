@@ -52,10 +52,10 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderClient *mautr
 		return nil
 	}
 	fields := strings.Fields(reason)
-	cmd := strings.TrimPrefix(fields[0], "/")
+	cmd := strings.ToLower(strings.TrimPrefix(fields[0], "/"))
 	args := fields[1:]
-	switch strings.ToLower(cmd) {
-	case "ban":
+	switch cmd {
+	case "ban", "banserver":
 		if len(args) < 2 {
 			return mautrix.MInvalidParam.WithMessage("Not enough arguments for ban")
 		}
@@ -65,31 +65,46 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderClient *mautr
 				format.MarkdownMention(sender), format.MarkdownMention(targetUserID), args[0])
 			return mautrix.MNotFound.WithMessage(fmt.Sprintf("List with shortcode %q not found", args[0]))
 		}
-		match := pe.Store.MatchUser([]id.RoomID{list.RoomID}, targetUserID)
+		var (
+			target, targetPretty string
+			match                policylist.Match
+			policyType           policylist.EntityType
+		)
+		if cmd == "ban" {
+			target = targetUserID.String()
+			targetPretty = format.MarkdownMention(targetUserID)
+			match = pe.Store.MatchUser([]id.RoomID{list.RoomID}, targetUserID)
+			policyType = policylist.EntityTypeUser
+		} else {
+			target = targetUserID.Homeserver()
+			targetPretty = target
+			match = pe.Store.MatchServer([]id.RoomID{list.RoomID}, target)
+			policyType = policylist.EntityTypeServer
+		}
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			if rec.Recommendation == event.PolicyRecommendationUnban {
 				return mautrix.RespError{
 					ErrCode:    "FI.MAU.MEOWLNIR.UNBAN_RECOMMENDED",
-					Err:        fmt.Sprintf("%s has an unban recommendation: %s", targetUserID, rec.Reason),
+					Err:        fmt.Sprintf("%s has an unban recommendation: %s", target, rec.Reason),
 					StatusCode: http.StatusConflict,
 				}
 			} else {
 				return mautrix.RespError{
 					ErrCode:    "FI.MAU.MEOWLNIR.ALREADY_BANNED",
-					Err:        fmt.Sprintf("%s is already banned for: %s", targetUserID, rec.Reason),
+					Err:        fmt.Sprintf("%s is already banned for: %s", target, rec.Reason),
 					StatusCode: http.StatusConflict,
 				}
 			}
 		}
 		policy := &event.ModPolicyContent{
-			Entity:         string(targetUserID),
+			Entity:         target,
 			Reason:         strings.Join(args[1:], " "),
 			Recommendation: event.PolicyRecommendationBan,
 		}
-		resp, err := pe.SendPolicy(ctx, list.RoomID, policylist.EntityTypeUser, "", string(targetUserID), policy)
+		resp, err := pe.SendPolicy(ctx, list.RoomID, policyType, "", target, policy)
 		if err != nil {
 			pe.sendNotice(ctx, `Failed to handle %s's report of ||%s|| for %s: %v`,
-				format.MarkdownMention(sender), format.MarkdownMention(targetUserID),
+				format.MarkdownMention(sender), targetPretty,
 				format.MarkdownMentionRoomID(list.Name, list.RoomID), err)
 			return fmt.Errorf("failed to send policy: %w", err)
 		}
@@ -99,7 +114,7 @@ func (pe *PolicyEvaluator) HandleReport(ctx context.Context, senderClient *mautr
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent ban policy from report")
 		pe.sendNotice(ctx, `Processed %s's report of ||%s|| and sent a ban policy to %s for %s`,
-			format.MarkdownMention(sender), format.MarkdownMention(targetUserID),
+			format.MarkdownMention(sender), targetPretty,
 			format.MarkdownMentionRoomID(list.Name, list.RoomID), policy.Reason)
 	}
 	return nil
