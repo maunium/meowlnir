@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -378,17 +379,21 @@ func (mj *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 
 // NoMedia is a protection that redacts messages containing media of disallowed types.
 type NoMedia struct {
-	AllowImages         bool `json:"allow_images"`          // allow m.image
-	AllowVideos         bool `json:"allow_videos"`          // allow m.video
-	AllowAudio          bool `json:"allow_audio"`           // allow m.audio
-	AllowFiles          bool `json:"allow_files"`           // allow m.file
-	AllowStickers       bool `json:"allow_stickers"`        // allow m.sticker event type
-	DenyCustomReactions bool `json:"deny_custom_reactions"` // deny m.reaction events with mxc://-prefixed keys
+	AllowImages         bool        `json:"allow_images"`           // allow m.image
+	AllowVideos         bool        `json:"allow_videos"`           // allow m.video
+	AllowAudio          bool        `json:"allow_audio"`            // allow m.audio
+	AllowFiles          bool        `json:"allow_files"`            // allow m.file
+	AllowStickers       bool        `json:"allow_stickers"`         // allow m.sticker event type
+	DenyCustomReactions bool        `json:"deny_custom_reactions"`  // deny m.reaction events with mxc://-prefixed keys
+	IgnoreUsers         []id.UserID `json:"ignore_users,omitempty"` // users to ignore for this protection
 }
 
 func (nm *NoMedia) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
 	if evt.Type != event.EventMessage && evt.Type != event.EventSticker && evt.Type != event.EventReaction {
 		return false, nil // no-op
+	}
+	if slices.Contains(nm.IgnoreUsers, evt.Sender) {
+		return false, nil // ignored user
 	}
 
 	switch evt.Type {
