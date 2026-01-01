@@ -230,7 +230,18 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 	reevalMembers := make(map[id.UserID]struct{})
 	var wg sync.WaitGroup
 	for _, roomID := range content.Rooms {
-		if pe.IsProtectedRoom(roomID) {
+		pe.protectedRoomsLock.Lock()
+		meta, protected := pe.protectedRooms[roomID]
+		pe.protectedRoomsLock.Unlock()
+		if protected {
+			// Update the room's ACL application setting if applicable
+			applyACL := !slices.Contains(pe.skipACLForRooms, roomID)
+			if meta.ApplyACL != applyACL {
+				pe.protectedRoomsLock.Lock()
+				meta.ApplyACL = applyACL
+				pe.protectedRoomsLock.Unlock()
+				output = append(output, fmt.Sprintf("* Updated ACL application setting for protected room %s", format.MarkdownMentionRoomID("", roomID)))
+			}
 			continue
 		}
 		wg.Add(1)
