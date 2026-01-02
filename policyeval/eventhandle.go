@@ -77,6 +77,9 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 			pe.EvaluateUser(ctx, userID, false)
 		}
 		if pe.protections != nil {
+			if pe.Admins.Has(evt.Sender) {
+				return // Don't act if the user is a bot admin
+			}
 			pl, err := pe.getPowerLevels(ctx, evt.RoomID)
 			if err != nil || pl == nil {
 				pe.Bot.Log.Err(err).

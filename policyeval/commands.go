@@ -53,6 +53,9 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event, execProtections bool) {
 	pe.commandProcessor.Process(ctx, evt)
 	if execProtections && pe.protections != nil && evt.Sender != pe.Bot.UserID {
+		if pe.Admins.Has(evt.Sender) {
+			return // Don't act if the user is a bot admin
+		}
 		pl, err := pe.getPowerLevels(ctx, evt.RoomID)
 		if err != nil || pl == nil {
 			pe.Bot.Log.Err(err).

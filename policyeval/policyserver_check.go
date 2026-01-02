@@ -71,20 +71,22 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *pdu.PDU, roo
 			Stringer("room_id", pdu.RoomID).
 			Stringer("event_id", clientEvt.ID).
 			Logger().WithContext(ctx)
-		for name, prot := range evaluator.protections {
-			zerolog.Ctx(ctx).Trace().Str("protection", name).Msg("Evaluating protection")
-			rec, err := prot.Execute(ctx, evaluator, clientEvt, true)
-			if err != nil {
-				zerolog.Ctx(ctx).Err(err).
-					Stringer("room_id", pdu.RoomID).
-					Stringer("event_id", evtID).
-					Str("protection", name).
-					Msg("Failed to execute protection")
-				continue
-			}
-			zerolog.Ctx(ctx).Trace().Bool("spam", rec).Str("protection", name).Msg("Evaluated protection")
-			if rec {
-				return PSRecommendationSpam, nil
+		if !evaluator.Admins.Has(clientEvt.Sender) {
+			for name, prot := range evaluator.protections {
+				zerolog.Ctx(ctx).Trace().Str("protection", name).Msg("Evaluating protection")
+				rec, err := prot.Execute(ctx, evaluator, clientEvt, true)
+				if err != nil {
+					zerolog.Ctx(ctx).Err(err).
+						Stringer("room_id", pdu.RoomID).
+						Stringer("event_id", evtID).
+						Str("protection", name).
+						Msg("Failed to execute protection")
+					continue
+				}
+				zerolog.Ctx(ctx).Trace().Bool("spam", rec).Str("protection", name).Msg("Evaluated protection")
+				if rec {
+					return PSRecommendationSpam, nil
+				}
 			}
 		}
 	}
