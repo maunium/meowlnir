@@ -71,7 +71,7 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *pdu.PDU, roo
 			Stringer("room_id", pdu.RoomID).
 			Stringer("event_id", clientEvt.ID).
 			Logger().WithContext(ctx)
-		if !evaluator.Admins.Has(clientEvt.Sender) {
+		if evaluator.ShouldExecuteProtections(ctx, clientEvt) {
 			for name, prot := range evaluator.protections {
 				zerolog.Ctx(ctx).Trace().Str("protection", name).Msg("Evaluating protection")
 				rec, err := prot.Execute(ctx, evaluator, clientEvt, true)

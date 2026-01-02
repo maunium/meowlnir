@@ -76,23 +76,7 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 		if checkRules {
 			pe.EvaluateUser(ctx, userID, false)
 		}
-		if pe.protections != nil {
-			if pe.Admins.Has(evt.Sender) {
-				return // Don't act if the user is a bot admin
-			}
-			pl, err := pe.getPowerLevels(ctx, evt.RoomID)
-			if err != nil || pl == nil {
-				pe.Bot.Log.Err(err).
-					Stringer("room_id", evt.RoomID).
-					Stringer("event_id", evt.ID).
-					Msg("Failed to fetch power levels")
-			}
-			if pl != nil {
-				// Don't act if the user is a room mod
-				if pl.GetUserLevel(evt.Sender) >= pl.Kick() {
-					return
-				}
-			}
+		if pe.ShouldExecuteProtections(ctx, evt) {
 			for _, prot := range pe.protections {
 				_, err := prot.Execute(ctx, pe, evt, pe.DryRun)
 				if err != nil {

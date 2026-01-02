@@ -43,6 +43,28 @@ func useOrigin(trustServer bool, claimedOrigin time.Time) bool {
 	return !(claimedOrigin.After(now.Add(1*time.Hour)) || claimedOrigin.Before(now.Add(-1*time.Hour)))
 }
 
+// ShouldExecuteProtections determines if protections should be executed for a given event.
+func (pe *PolicyEvaluator) ShouldExecuteProtections(ctx context.Context, evt *event.Event) bool {
+	if pe.protections == nil || evt.Sender == pe.Bot.UserID || pe.Admins.Has(evt.Sender) {
+		return false
+	}
+	powerLevels, err := pe.Bot.StateStore.GetPowerLevels(ctx, evt.RoomID)
+	if err != nil {
+		pe.Bot.Log.Err(err).
+			Stringer("room_id", evt.RoomID).
+			Stringer("event_id", evt.ID).
+			Msg("failed to get power levels for protection execution check; assuming not exempt")
+		return true
+	}
+	if powerLevels == nil {
+		// No known power levels, assume not exempt
+		return true
+	}
+	// If this user can issue kicks we assume they're a room moderator and thus exempt.
+	// TODO: custom exemption levels per protection
+	return powerLevels.GetUserLevel(evt.Sender) >= powerLevels.Kick()
+}
+
 // Protection is an interface that defines the minimum exposed functionality required to define a protection.
 // All protection definitions must implement this interface in order to be used.
 type Protection interface {
