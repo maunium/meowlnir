@@ -48,7 +48,7 @@ func (pe *PolicyEvaluator) ShouldExecuteProtections(ctx context.Context, evt *ev
 	if pe.protections == nil || evt.Sender == pe.Bot.UserID || pe.Admins.Has(evt.Sender) {
 		return false
 	}
-	powerLevels, err := pe.Bot.StateStore.GetPowerLevels(ctx, evt.RoomID)
+	powerLevels, err := pe.getPowerLevels(ctx, evt.RoomID)
 	if err != nil {
 		pe.Bot.Log.Err(err).
 			Stringer("room_id", evt.RoomID).
