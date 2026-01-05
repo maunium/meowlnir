@@ -140,12 +140,7 @@ func (pe *PolicyEvaluator) maybeApplySuspend(ctx context.Context, userID id.User
 		return
 	}
 
-	var err error
-	if pe.Bot.SpecVersions.Supports(mautrix.FeatureAccountModeration) {
-		_, err = pe.Bot.UnstableSetSuspendedStatus(ctx, userID, true)
-	} else {
-		err = pe.Bot.SynapseAdmin.SuspendAccount(ctx, userID, synapseadmin.ReqSuspendUser{Suspend: true})
-	}
+	err := pe.setSuspendedStatus(ctx, userID, true)
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Stringer("user_id", userID).Msg("Failed to suspend user")
 		pe.sendNotice(ctx, "Failed to suspend %s: %v", format.MarkdownMention(userID), err)
@@ -153,6 +148,15 @@ func (pe *PolicyEvaluator) maybeApplySuspend(ctx context.Context, userID id.User
 		zerolog.Ctx(ctx).Info().Stringer("user_id", userID).Msg("Suspended user")
 		pe.sendNotice(ctx, "Suspended %s due to received ban policy", format.MarkdownMention(userID))
 	}
+}
+
+func (pe *PolicyEvaluator) setSuspendedStatus(ctx context.Context, userID id.UserID, suspended bool) error {
+	// Use the SynapseAdmin client even for the standard endpoint, as it might have a different access token.
+	_, err := pe.Bot.SynapseAdmin.Client.SetSuspendedStatus(ctx, userID, suspended)
+	if errors.Is(err, mautrix.MUnrecognized) {
+		err = pe.Bot.SynapseAdmin.SuspendAccount(ctx, userID, synapseadmin.ReqSuspendUser{Suspend: true})
+	}
+	return err
 }
 
 func (pe *PolicyEvaluator) ApplyBan(
