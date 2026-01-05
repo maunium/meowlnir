@@ -14,6 +14,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/glob"
+	"go.mau.fi/util/progver"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
@@ -318,7 +319,7 @@ var cmdKick = &CommandHandler{
 		for _, userID := range users {
 			successCount := 0
 			var rooms []id.RoomID
-			if targetRoom != "" {
+			if targetRoom == "" {
 				rooms = ce.Meta.getRoomsUserIsIn(userID)
 				if len(rooms) == 0 {
 					continue
@@ -639,7 +640,7 @@ var cmdSearch = &CommandHandler{
 	Func: func(ce *CommandEvent) {
 		target := ce.Args[0]
 		start := time.Now()
-		match := ce.Meta.Store.Search(nil, target)
+		match := ce.Meta.Store.Search(ce.Meta.GetWatchedListsForMatch(), target)
 		dur := time.Since(start)
 		if len(match) > 25 {
 			ce.Reply("Too many results (%d) in %s, please narrow your search", len(match), dur)
@@ -840,7 +841,7 @@ var cmdRoomDelete = &CommandHandler{
 	Aliases: []string{"purge", "block"},
 	Func: func(ce *CommandEvent) {
 		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!rooms %s [--async] <room ID>`", ce.Command)
+			ce.Reply("Usage: `!rooms %s [--force] [--async] <room ID>`", ce.Command)
 			return
 		}
 		if ce.Args[0] == "--confirm" {
@@ -862,17 +863,30 @@ var cmdRoomDelete = &CommandHandler{
 			ce.Meta.sendReactions(ce.Ctx, evtID, "/cancel", "/confirm")
 			return
 		}
-		roomID := id.RoomID(ce.RawArgs)
-		if ce.Meta.DryRun {
-			ce.Reply("Would have deleted room %s if dry run wasn't enabled", format.SafeMarkdownCode(roomID))
-			return
-		}
+		rawRoomID := ce.RawArgs
 		req := synapseadmin.ReqDeleteRoom{
 			Purge: true,
 			Block: ce.Command == "block",
 		}
-		if ce.Args[0] == "--async" {
-			roomID = id.RoomID(strings.TrimPrefix(ce.RawArgs, "--async "))
+		var async bool
+	Loop:
+		for _, arg := range ce.Args {
+			switch strings.ToLower(arg) {
+			case "--force":
+				req.ForcePurge = true
+			case "--async":
+				async = true
+			default:
+				break Loop
+			}
+			rawRoomID = strings.TrimPrefix(rawRoomID, arg+" ")
+		}
+		roomID := id.RoomID(rawRoomID)
+		if ce.Meta.DryRun {
+			ce.Reply("Would have deleted room %s if dry run wasn't enabled", format.SafeMarkdownCode(roomID))
+			return
+		}
+		if async {
 			resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoom(ce.Ctx, roomID, req)
 			if err != nil {
 				ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
@@ -930,6 +944,92 @@ var cmdDeactivate = &CommandHandler{
 	},
 }
 
+var cmdBotProfile = &CommandHandler{
+	Name:    "bot-profile",
+	Aliases: []string{"profile"},
+	Func: func(ce *CommandEvent) {
+		if len(ce.Args) < 2 {
+			ce.Reply("Usage: `!bot-profile <displayname|avatar> <new value>`")
+			return
+		}
+		val := strings.Join(ce.Args[1:], " ")
+		switch strings.ToLower(ce.Args[0]) {
+		case "displayname", "name":
+			err := ce.Meta.Bot.Intent.SetDisplayName(ce.Ctx, val)
+			if err != nil {
+				ce.Log.Err(err).Msg("Failed to update bot displayname")
+				ce.Reply("Failed to update displayname")
+				return
+			}
+			ce.Meta.Bot.Meta.Displayname = val
+		case "avatar", "avatar_url", "avatar-url":
+			parsed, err := id.ParseContentURI(val)
+			if err != nil {
+				ce.Reply("Malformed avatar URL %s: %v", format.SafeMarkdownCode(val), err)
+				return
+			}
+			err = ce.Meta.Bot.Intent.SetAvatarURL(ce.Ctx, parsed)
+			if err != nil {
+				ce.Log.Err(err).Msg("Failed to update bot avatar")
+				ce.Reply("Failed to update avatar")
+				return
+			}
+			ce.Meta.Bot.Meta.AvatarURL = parsed
+		default:
+			ce.Reply("Usage: `!bot-profile <displayname|avatar> <new value>`")
+			return
+		}
+		err := ce.Meta.DB.Bot.Put(ce.Ctx, ce.Meta.Bot.Meta)
+		if err != nil {
+			ce.Log.Err(err).Msg("Failed to save bot profile to database")
+		}
+	},
+}
+
+var cmdProvision = &CommandHandler{
+	Name: "provision",
+	Func: func(ce *CommandEvent) {
+		if ce.Meta.provisionM4A == nil {
+			ce.Reply("This is not the Meowlnir4All admin room")
+			return
+		} else if len(ce.Args) < 1 {
+			ce.Reply("Usage: `!provision [--force] <user ID>`")
+			return
+		}
+		force := strings.ToLower(ce.Args[0]) == "--force" && len(ce.Args) > 1
+		if force {
+			ce.Args = ce.Args[1:]
+		}
+		var ownerName string
+		owner := id.UserID(ce.Args[0])
+		if !force {
+			profile, err := ce.Meta.Bot.GetProfile(ce.Ctx, owner)
+			if err != nil || profile == nil || profile.DisplayName == "" {
+				ce.Reply("Profile not found for %s, are you sure the user ID is correct?", format.SafeMarkdownCode(owner))
+				return
+			}
+			if profile != nil {
+				ownerName = profile.DisplayName
+			}
+		}
+		if ownerName == "" {
+			ownerName = owner.String()
+		}
+		userID, roomID, err := ce.Meta.provisionM4A(ce.Ctx, owner)
+		if err != nil {
+			ce.Log.Err(err).Msg("Failed to provision new M4A bot")
+			ce.Reply("Failed to provision bot: %v", err)
+			return
+		}
+		ce.Reply(
+			"Successfully provisioned %s for %s with management room %s",
+			format.MarkdownMention(userID),
+			format.MarkdownMentionWithName(ownerName, owner),
+			format.MarkdownMentionRoomID("", roomID, ce.Meta.Bot.ServerName),
+		)
+	},
+}
+
 var cmdProtectRoom = &CommandHandler{
 	Name:    "protect",
 	Aliases: []string{"unprotect"},
@@ -980,6 +1080,15 @@ var cmdProtectRoom = &CommandHandler{
 	},
 }
 
+var VersionInfo progver.ProgramVersion
+
+var cmdVersion = &CommandHandler{
+	Name: "version",
+	Func: func(ce *CommandEvent) {
+		ce.Reply(VersionInfo.MarkdownDescription())
+	},
+}
+
 var cmdHelp = &CommandHandler{
 	Name: "help",
 	Func: func(ce *CommandEvent) {
@@ -1000,7 +1109,10 @@ var cmdHelp = &CommandHandler{
 				"* `!search <pattern>` - Search for rules by a pattern in all lists\n" +
 				"* `!send-as-bot <room> <message>` - Send a message as the bot\n" +
 				"* `![un]suspend <user ID>` - Suspend or unsuspend a user\n" +
+				"* `!deactivate <user ID> [--erase]` - Deactivate a user\n" +
+				"* `!bot-profile <displayname/avatar> <new value>` - Update the bot profile\n" +
 				"* `!rooms <...>` - Manage rooms\n" +
+				"* `!version` - Check the running Meowlnir version\n" +
 				"* `!help <command>` - Show detailed help for a command\n" +
 				"* `!help` - Show this help message\n" +
 				"\n" +

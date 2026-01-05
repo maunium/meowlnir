@@ -3,6 +3,7 @@ package config
 import (
 	up "go.mau.fi/util/configupgrade"
 	"go.mau.fi/util/random"
+	"maunium.net/go/mautrix/federation"
 )
 
 var Upgrader = &up.StructUpgrader{
@@ -32,6 +33,7 @@ func upgradeConfig(helper up.Helper) {
 
 	generateOrCopy(helper, "meowlnir", "management_secret")
 	generateOrCopy(helper, "meowlnir", "data_secret")
+	helper.Copy(up.Bool, "meowlnir", "federation_auth")
 	helper.Copy(up.Bool, "meowlnir", "dry_run")
 	helper.Copy(up.Bool, "meowlnir", "untrusted")
 	helper.Copy(up.Str|up.Null, "meowlnir", "report_room")
@@ -40,6 +42,13 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.List, "meowlnir", "hacky_rule_filter")
 	helper.Copy(up.List, "meowlnir", "hacky_redact_patterns")
 	helper.Copy(up.Map, "meowlnir", "admin_tokens")
+
+	helper.Copy(up.Str|up.Null, "meowlnir4all", "admin_room")
+	helper.Copy(up.Str, "meowlnir4all", "localpart_template")
+	helper.Copy(up.Str|up.Null, "meowlnir4all", "displayname")
+	helper.Copy(up.Str|up.Null, "meowlnir4all", "avatar_url")
+	helper.Copy(up.Str, "meowlnir4all", "room_name")
+	helper.Copy(up.List, "meowlnir4all", "default_watched_lists")
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "antispam_secret"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "antispam", "secret")
@@ -51,6 +60,11 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Bool, "antispam", "notify_management_room")
 
 	helper.Copy(up.Bool, "policy_server", "always_redact")
+	if sk, ok := helper.Get(up.Str, "policy_server", "signing_key"); ok && sk != "generate" {
+		helper.Set(up.Str, sk, "policy_server", "signing_key")
+	} else {
+		helper.Set(up.Str, federation.GenerateSigningKey().SynapseString(), "policy_server", "signing_key")
+	}
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "pickle_key"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "encryption", "pickle_key")

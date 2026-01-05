@@ -23,7 +23,8 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 	))
 
 	policyServerRouter := http.NewServeMux()
-	policyServerRouter.HandleFunc("POST /unstable/org.matrix.msc4284/event/{event_id}/check", m.PostMSC4284EventCheck)
+	policyServerRouter.HandleFunc("POST /unstable/org.matrix.msc4284/event/{event_id}/check", m.PostMSC4284LegacyEventCheck)
+	policyServerRouter.HandleFunc("POST /unstable/org.matrix.msc4284/sign", m.PostMSC4284Sign)
 	m.AS.Router.Handle("/_matrix/policy/", exhttp.ApplyMiddleware(
 		http.StripPrefix("/_matrix/policy", policyServerRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "policy server").Logger()),
@@ -54,11 +55,25 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 		SecretAuth(m.loadSecret(m.Config.Meowlnir.DataSecret)),
 	))
 
+	mxauthRouter := http.NewServeMux()
+	mxauthRouter.HandleFunc("GET /v1/match/{entityType}/{entity}", m.MatchPolicy)
+	mxauthRouter.HandleFunc("GET /v1/management_rooms", m.GetManagementRoomsForUser)
+	m.AS.Router.Handle("/_meowlnir/mxauth/", exhttp.ApplyMiddleware(
+		http.StripPrefix("/_meowlnir/mxauth", mxauthRouter),
+		hlog.NewHandler(m.Log.With().Str("component", "mxauth api").Logger()),
+		hlog.RequestIDHandler("request_id", "X-Request-ID"),
+		exhttp.CORSMiddleware,
+		requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
+		m.MatrixFederationOAuth,
+	))
+
 	managementRouter := http.NewServeMux()
 	managementRouter.HandleFunc("GET /v1/bots", m.GetBots)
 	managementRouter.HandleFunc("PUT /v1/bot/{username}", m.PutBot)
+	managementRouter.HandleFunc("DELETE /v1/bot/{username}", m.DeleteBot)
 	managementRouter.HandleFunc("POST /v1/bot/{username}/verify", m.PostVerifyBot)
 	managementRouter.HandleFunc("PUT /v1/management_room/{roomID}", m.PutManagementRoom)
+	managementRouter.HandleFunc("DELETE /v1/management_room/{roomID}", m.DeleteManagementRoom)
 	m.AS.Router.Handle("/_meowlnir/", exhttp.ApplyMiddleware(
 		http.StripPrefix("/_meowlnir", managementRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "management api").Logger()),

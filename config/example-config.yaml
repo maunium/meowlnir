@@ -25,6 +25,9 @@ meowlnir:
     management_secret: generate
     # Secret used for the /_meowlnir/data API. Same rules apply as for management_secret.
     data_secret: generate
+    # Should the /_meowlnir/mxauth APIs be enabled, which allow querying certain data using any Matrix account?
+    # This is necessary for the management web interface.
+    federation_auth: false
     # If dry run is set to true, meowlnir won't take any actual actions,
     # but will do everything else as if it was going to take actions.
     dry_run: false
@@ -65,6 +68,34 @@ meowlnir:
     admin_tokens:
         "@abuse:example.com": admin_token
 
+# Settings for provisioning new bots using the !provision command.
+# None of this is relevant unless you offer moderation bots to other users.
+meowlnir4all:
+    # The management room ID that is allowed to use the !provision command.
+    admin_room: null
+    # The user ID template for new bots
+    # {{ uuidgen }} will be replaced with a random UUIDv4.
+    # {{ randstr n }} will be replaced with a random lowercase alphanumeric string of length n.
+    # {{ .OwnerLocalpart }} will be replaced with the localpart of the owner of the bot.
+    # {{ .OwnerDomain }} will be replaced with the server name of the owner of the bot.
+    localpart_template: "meowlnir_{{ uuidgen }}"
+    # The default displayname for new bots.
+    displayname: "Administrator"
+    # The default avatar URL for new bots.
+    avatar_url: "mxc://matrix.org/NZGChxcCXbBvgkCNZTLXlpux"
+    # The default room name for new management rooms.
+    room_name: "Meowlnir Management Room"
+    # The default lists to subscribe new bots to.
+    default_watched_lists:
+    - name: CME bans
+      room_id: "!fTjMjIzNKEsFlUIiru:neko.dev"
+      shortcode: cme
+      auto_unban: true
+    - name: Cat's Active Threats
+      room_id: "!QJKZNWnsItkUuthamp:feline.support"
+      shortcode: cat
+      auto_unban: true
+
 antispam:
     # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.
     secret: generate
@@ -84,6 +115,8 @@ policy_server:
     # If enabled, always issue redactions for events that are blocked by the policy server.
     # This is useful to prevent failed events from reaching servers that do not yet respect policy servers.
     always_redact: true
+    # The Synapse-style private signing key for the policy server. If set to generate, a new random key will be generated.
+    signing_key: generate
 
 # Encryption settings.
 encryption:

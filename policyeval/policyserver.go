@@ -1,18 +1,14 @@
 package policyeval
 
 import (
-	"context"
 	"slices"
 	"sync"
 	"time"
 
-	"github.com/rs/zerolog"
 	"go.mau.fi/util/exsync"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
-
-	"go.mau.fi/meowlnir/policylist"
 )
 
 type psCacheEntry struct {
@@ -25,6 +21,7 @@ type psCacheEntry struct {
 type PolicyServer struct {
 	Federation     *federation.Client
 	ServerAuth     *federation.ServerAuth
+	SigningKey     *federation.SigningKey
 	eventCache     map[id.EventID]*psCacheEntry
 	redactionCache *exsync.Set[id.EventID]
 	cacheLock      sync.Mutex
@@ -34,18 +31,15 @@ type PolicyServer struct {
 	lastCacheClear time.Time
 }
 
-func NewPolicyServer(serverName string) *PolicyServer {
-	inMemCache := federation.NewInMemoryCache()
-	fed := federation.NewClient(serverName, nil, inMemCache)
+func NewPolicyServer(fed *federation.Client, serverAuth *federation.ServerAuth, signingKey *federation.SigningKey) *PolicyServer {
 	return &PolicyServer{
 		eventCache:     make(map[id.EventID]*psCacheEntry),
 		redactionCache: exsync.NewSet[id.EventID](),
 		Federation:     fed,
-		ServerAuth: federation.NewServerAuth(fed, inMemCache, func(auth federation.XMatrixAuth) string {
-			return auth.Destination
-		}),
-		CacheMaxSize: 1000,
-		CacheMaxAge:  5 * time.Minute,
+		ServerAuth:     serverAuth,
+		CacheMaxSize:   1000,
+		CacheMaxAge:    5 * time.Minute,
+		SigningKey:     signingKey,
 	}
 }
 
@@ -92,31 +86,11 @@ const (
 	PSRecommendationSpam PSRecommendation = "spam"
 )
 
-type PolicyServerResponse struct {
+type LegacyPolicyServerResponse struct {
 	Recommendation PSRecommendation `json:"recommendation"`
 }
 
-func (ps *PolicyServer) getRecommendation(pdu *event.Event, evaluator *PolicyEvaluator) (PSRecommendation, policylist.Match) {
-	watchedLists := evaluator.GetWatchedLists()
-	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
-	if match != nil {
-		rec := match.Recommendations().BanOrUnban
-		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
-			return PSRecommendationSpam, match
-		}
-	}
-	match = evaluator.Store.MatchServer(watchedLists, pdu.Sender.Homeserver())
-	if match != nil {
-		rec := match.Recommendations().BanOrUnban
-		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
-			return PSRecommendationSpam, match
-		}
-	}
-	// TODO check protections
-	return PSRecommendationOk, nil
-}
-
-func (ps *PolicyServer) HandleCachedCheck(evtID id.EventID) *PolicyServerResponse {
+func (ps *PolicyServer) HandleLegacyCachedCheck(evtID id.EventID) *LegacyPolicyServerResponse {
 	r := ps.getCache(evtID, nil)
 	if r == nil {
 		return nil
@@ -127,47 +101,5 @@ func (ps *PolicyServer) HandleCachedCheck(evtID id.EventID) *PolicyServerRespons
 		return nil
 	}
 	r.LastAccessed = time.Now()
-	return &PolicyServerResponse{Recommendation: r.Recommendation}
-}
-
-func (ps *PolicyServer) HandleCheck(
-	ctx context.Context,
-	evtID id.EventID,
-	pdu *event.Event,
-	evaluator *PolicyEvaluator,
-	redact bool,
-	caller string,
-) (res *PolicyServerResponse, err error) {
-	log := zerolog.Ctx(ctx).With().
-		Stringer("room_id", pdu.RoomID).
-		Stringer("event_id", evtID).
-		Logger()
-	r := ps.getCache(evtID, pdu)
-	finalRec := r.Recommendation
-	r.Lock.Lock()
-	defer func() {
-		r.Lock.Unlock()
-		// TODO if event is older than when the process was started, check if it was already redacted on the server
-		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact && ps.redactionCache.Add(pdu.ID) {
-			go func() {
-				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
-					log.Error().Err(err).Msg("Failed to redact event")
-				}
-			}()
-		}
-	}()
-
-	if r.Recommendation == "" {
-		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
-		rec, match := ps.getRecommendation(pdu, evaluator)
-		finalRec = rec
-		if rec == PSRecommendationSpam {
-			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
-			r.Recommendation = rec
-		} else {
-			log.Trace().Msg("Event accepted")
-		}
-	}
-	r.LastAccessed = time.Now()
-	return &PolicyServerResponse{Recommendation: r.Recommendation}, nil
+	return &LegacyPolicyServerResponse{Recommendation: r.Recommendation}
 }

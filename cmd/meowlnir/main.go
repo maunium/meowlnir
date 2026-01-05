@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,6 +21,7 @@ import (
 	_ "go.mau.fi/util/dbutil/litestream"
 	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/exslices"
+	"go.mau.fi/util/exsync"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/glob"
 	"go.mau.fi/util/ptr"
@@ -28,6 +30,7 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	cryptoupgrade "maunium.net/go/mautrix/crypto/sql_store_upgrade"
+	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
 	"maunium.net/go/mautrix/sqlstatestore"
 
@@ -43,7 +46,7 @@ import (
 
 var configPath = flag.MakeFull("c", "config", "Path to the config file", "config.yaml").String()
 var noSaveConfig = flag.MakeFull("n", "no-update", "Don't update the config file", "false").Bool()
-var version = flag.MakeFull("v", "version", "Print the version and exit", "false").Bool()
+var wantVersion = flag.MakeFull("v", "version", "Print the version and exit", "false").Bool()
 var writeExampleConfig = flag.MakeFull("e", "generate-example-config", "Save the example config to the config path and quit.", "false").Bool()
 var wantHelp, _ = flag.MakeHelpFlag()
 
@@ -56,7 +59,10 @@ type Meowlnir struct {
 	CryptoStoreDB  *dbutil.Database
 	AS             *appservice.AppService
 	EventProcessor *appservice.EventProcessor
+	Federation     *federation.Client
 	PolicyServer   *policyeval.PolicyServer
+
+	federationTokenCache *exsync.RingBuffer[string, federationTokenCacheValue]
 
 	PolicyStore               *policylist.Store
 	MapLock                   sync.RWMutex
@@ -95,6 +101,11 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	m.Config = loadConfig(configPath, noSaveConfig)
 
 	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
+	// This is not technically necessary as policyeval/serveracl.go already ignores the local server,
+	// but it makes it more explicit in logs that the policy is ignored.
+	if !slices.Contains(policylist.HackyRuleFilter, m.Config.Homeserver.Domain) {
+		policylist.HackyRuleFilter = append(policylist.HackyRuleFilter, m.Config.Homeserver.Domain)
+	}
 	policylist.HackyRuleFilterHashes = exslices.CastFunc(policylist.HackyRuleFilter, func(s string) [32]byte {
 		return util.SHA256String(s)
 	})
@@ -107,8 +118,8 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	exzerolog.SetupDefaults(m.Log)
 
 	m.Log.Info().
-		Str("version", VersionWithCommit).
-		Time("built_at", ParsedBuildTime).
+		Str("version", VersionInfo.FormattedVersion).
+		Time("built_at", VersionInfo.BuildTime).
 		Str("go_version", runtime.Version()).
 		Msg("Initializing Meowlnir")
 
@@ -160,7 +171,20 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to create Matrix appservice")
 		os.Exit(13)
 	}
-	m.PolicyServer = policyeval.NewPolicyServer(m.Config.Homeserver.Domain)
+	var pskey *federation.SigningKey
+	if m.Config.PolicyServer.SigningKey != "" {
+		pskey, err = federation.ParseSynapseKey(m.Config.PolicyServer.SigningKey)
+		if err != nil {
+			m.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to parse policy server signing key")
+			os.Exit(10)
+		}
+	}
+	inMemCache := federation.NewInMemoryCache()
+	m.Federation = federation.NewClient(m.Config.Homeserver.Domain, nil, inMemCache)
+	serverAuth := federation.NewServerAuth(m.Federation, inMemCache, func(auth federation.XMatrixAuth) string {
+		return auth.Destination
+	})
+	m.PolicyServer = policyeval.NewPolicyServer(m.Federation, serverAuth, pskey)
 	m.AS.Log = m.Log.With().Str("component", "matrix").Logger()
 	m.AS.StateStore = m.StateStore
 	m.EventProcessor = appservice.NewEventProcessor(m.AS)
@@ -171,6 +195,8 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	m.Bots = make(map[id.UserID]*bot.Bot)
 	m.EvaluatorByProtectedRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
 	m.EvaluatorByManagementRoom = make(map[id.RoomID]*policyeval.PolicyEvaluator)
+
+	m.federationTokenCache = exsync.NewRingBuffer[string, federationTokenCacheValue](100)
 
 	var compiledGlobs []glob.Glob
 	for _, pattern := range m.Config.Meowlnir.HackyRedactPatterns {
@@ -210,8 +236,11 @@ func (m *Meowlnir) createPuppetClient(userID id.UserID) *mautrix.Client {
 	return cli
 }
 
-func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
+func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) (*bot.Bot, error) {
 	intent := m.AS.Intent(id.NewUserID(db.Username, m.AS.HomeserverDomain))
+	if intent == nil {
+		return nil, fmt.Errorf("got nil intent for %s", db.Username)
+	}
 	wrapped := bot.NewBot(
 		db, intent, m.Log.With().Str("bot", db.Username).Logger(),
 		m.DB, m.EventProcessor, m.CryptoStoreDB, m.Config.Encryption.PickleKey,
@@ -228,13 +257,12 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) *bot.Bot {
 
 	managementRooms, err := m.DB.ManagementRoom.GetAll(ctx, db.Username)
 	if err != nil {
-		wrapped.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to get management room list")
-		os.Exit(15)
+		return nil, fmt.Errorf("failed to get management room list: %w", err)
 	}
 	for _, mr := range managementRooms {
 		m.EvaluatorByManagementRoom[mr.RoomID] = m.newPolicyEvaluator(wrapped, mr.RoomID, mr.Encrypted)
 	}
-	return wrapped
+	return wrapped, nil
 }
 
 func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID, encrypted bool) *policyeval.PolicyEvaluator {
@@ -242,11 +270,16 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID, encrypted 
 	if m.Config.Meowlnir.RoomBanRoom == roomID {
 		roomHashes = m.RoomHashes
 	}
+	var m4aInit func(context.Context, id.UserID) (id.UserID, id.RoomID, error)
+	if m.Config.Meowlnir4All.AdminRoom == roomID {
+		m4aInit = m.provisionM4ABot
+	}
 	return policyeval.NewPolicyEvaluator(
 		bot, m.PolicyStore,
 		roomID,
 		encrypted,
 		m.Config.Meowlnir.Untrusted,
+		m4aInit,
 		m.DB,
 		m.SynapseDB,
 		m.claimProtectedRoom,
@@ -316,7 +349,13 @@ func (m *Meowlnir) Run(ctx context.Context) {
 		os.Exit(15)
 	}
 	for _, dbBot := range bots {
-		m.initBot(ctx, dbBot)
+		_, err = m.initBot(ctx, dbBot)
+		if err != nil {
+			m.Log.WithLevel(zerolog.FatalLevel).Err(err).
+				Str("bot_username", dbBot.Username).
+				Msg("Failed to initialize bot")
+			os.Exit(15)
+		}
 	}
 
 	m.EventProcessor.Start(ctx)
@@ -393,7 +432,6 @@ func loadConfig(path string, noSave bool) *config.Config {
 }
 
 func main() {
-	initVersion()
 	flag.SetHelpTitles(
 		"meowlnir - An opinionated Matrix moderation bot.",
 		"meowlnir [-hnve] [-c <path>]",
@@ -405,8 +443,8 @@ func main() {
 	} else if *wantHelp {
 		flag.PrintHelp()
 		os.Exit(0)
-	} else if *version {
-		fmt.Println(VersionDescription)
+	} else if *wantVersion {
+		fmt.Println(VersionInfo.VersionDescription)
 		os.Exit(0)
 	} else if *writeExampleConfig {
 		if *configPath != "-" && *configPath != "/dev/stdout" && *configPath != "/dev/stderr" {

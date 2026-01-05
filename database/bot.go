@@ -21,6 +21,9 @@ const (
 			avatar_url=excluded.avatar_url,
 			recovery_key=excluded.recovery_key
 	`
+	deleteBotQuery = `
+		DELETE FROM bot WHERE username=$1
+	`
 )
 
 type BotQuery struct {
@@ -33,6 +36,10 @@ func (bq *BotQuery) Put(ctx context.Context, bot *Bot) error {
 
 func (bq *BotQuery) GetAll(ctx context.Context) ([]*Bot, error) {
 	return bq.QueryMany(ctx, getAllBotsQuery)
+}
+
+func (bq *BotQuery) Delete(ctx context.Context, username string) error {
+	return bq.Exec(ctx, deleteBotQuery, username)
 }
 
 type Bot struct {

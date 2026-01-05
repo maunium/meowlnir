@@ -25,10 +25,15 @@ func (pe *PolicyEvaluator) IsWatchingList(roomID id.RoomID) bool {
 	return watched && (meta.InRoom || !pe.Untrusted)
 }
 
-func (pe *PolicyEvaluator) GetWatchedListMeta(roomID id.RoomID) *config.WatchedPolicyList {
+func (pe *PolicyEvaluator) GetWatchedListMetaEvenIfNotInRoom(roomID id.RoomID) *config.WatchedPolicyList {
 	pe.watchedListsLock.RLock()
 	meta := pe.watchedListsMap[roomID]
 	pe.watchedListsLock.RUnlock()
+	return meta
+}
+
+func (pe *PolicyEvaluator) GetWatchedListMeta(roomID id.RoomID) *config.WatchedPolicyList {
+	meta := pe.GetWatchedListMetaEvenIfNotInRoom(roomID)
 	if meta != nil && !meta.InRoom && pe.Untrusted {
 		return nil
 	}
@@ -63,10 +68,9 @@ func (pe *PolicyEvaluator) GetWatchedListsForACLs() []id.RoomID {
 }
 
 func (pe *PolicyEvaluator) GetWatchedListsForMatch() []id.RoomID {
-	if pe.Untrusted {
-		return pe.GetWatchedLists()
-	}
-	return nil
+	pe.watchedListsLock.RLock()
+	defer pe.watchedListsLock.RUnlock()
+	return pe.watchedListsNA
 }
 
 func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Event, isInitial bool) (output, errors []string) {
@@ -116,6 +120,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 		}
 	}
 	wg.Wait()
+	watchedListIncludingNonApply := make([]id.RoomID, 0, len(content.Lists))
 	watchedList := make([]id.RoomID, 0, len(content.Lists))
 	aclWatchedList := make([]id.RoomID, 0, len(content.Lists))
 	watchedMap := make(map[id.RoomID]*config.WatchedPolicyList, len(content.Lists))
@@ -126,10 +131,13 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 			_, listFailed := failed[listInfo.RoomID]
 			listInfo.InRoom = !listFailed
 			watchedMap[listInfo.RoomID] = &listInfo
-			if !listInfo.DontApply && !listFailed {
-				watchedList = append(watchedList, listInfo.RoomID)
-				if !listInfo.DontApplyACL {
-					aclWatchedList = append(aclWatchedList, listInfo.RoomID)
+			if !listFailed {
+				watchedListIncludingNonApply = append(watchedListIncludingNonApply, listInfo.RoomID)
+				if !listInfo.DontApply {
+					watchedList = append(watchedList, listInfo.RoomID)
+					if !listInfo.DontApplyACL {
+						aclWatchedList = append(aclWatchedList, listInfo.RoomID)
+					}
 				}
 			}
 		}
@@ -140,6 +148,7 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 	oldFullWatchedList := slices.Collect(maps.Keys(pe.watchedListsMap))
 	pe.watchedListsMap = watchedMap
 	pe.watchedListsList = watchedList
+	pe.watchedListsNA = watchedListIncludingNonApply
 	pe.watchedListsForACLs = aclWatchedList
 	pe.watchedListsEvent = content
 	pe.watchedListsLock.Unlock()
@@ -147,11 +156,11 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 		unsubscribed, subscribed := exslices.Diff(oldWatchedList, watchedList)
 		noApplyUnsubscribed, noApplySubscribed := exslices.Diff(oldFullWatchedList, slices.Collect(maps.Keys(pe.watchedListsMap)))
 		for _, roomID := range subscribed {
-			output = append(output, fmt.Sprintf("* Subscribed to %s", format.MarkdownMentionRoomID(pe.GetWatchedListMeta(roomID).Name, roomID)))
+			output = append(output, fmt.Sprintf("* Subscribed to %s", format.MarkdownMentionRoomID(pe.GetWatchedListMetaEvenIfNotInRoom(roomID).Name, roomID)))
 		}
 		for _, roomID := range noApplySubscribed {
 			if !slices.Contains(subscribed, roomID) {
-				output = append(output, fmt.Sprintf("* Subscribed to %s without applying policies", format.MarkdownMentionRoomID(pe.GetWatchedListMeta(roomID).Name, roomID)))
+				output = append(output, fmt.Sprintf("* Subscribed to %s without applying policies", format.MarkdownMentionRoomID(pe.GetWatchedListMetaEvenIfNotInRoom(roomID).Name, roomID)))
 			}
 		}
 		for _, roomID := range unsubscribed {
@@ -165,12 +174,12 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 		aclUnsubscribed, aclSubscribed := exslices.Diff(oldACLWatchedList, aclWatchedList)
 		for _, roomID := range aclSubscribed {
 			if !slices.Contains(subscribed, roomID) {
-				output = append(output, fmt.Sprintf("* Subscribed to server ACLs in %s", format.MarkdownMentionRoomID(pe.GetWatchedListMeta(roomID).Name, roomID)))
+				output = append(output, fmt.Sprintf("* Subscribed to server ACLs in %s", format.MarkdownMentionRoomID(pe.GetWatchedListMetaEvenIfNotInRoom(roomID).Name, roomID)))
 			}
 		}
 		for _, roomID := range aclUnsubscribed {
 			if !slices.Contains(unsubscribed, roomID) {
-				output = append(output, fmt.Sprintf("* Unsubscribed from server ACLs in %s", format.MarkdownMentionRoomID(pe.GetWatchedListMeta(roomID).Name, roomID)))
+				output = append(output, fmt.Sprintf("* Unsubscribed from server ACLs in %s", format.MarkdownMentionRoomID(pe.GetWatchedListMetaEvenIfNotInRoom(roomID).Name, roomID)))
 			}
 		}
 		go func(ctx context.Context) {

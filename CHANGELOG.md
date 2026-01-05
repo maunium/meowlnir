@@ -1,3 +1,37 @@
+# v25.12
+
+* Updated Docker image to Alpine 3.23.
+* Added endpoints for deleting bots and management rooms.
+* Added endpoint for fetching own management rooms using a Matrix access token.
+  * The Matrix-authed endpoints are disabled by default and can be enabled in
+    the config. They will be used for a management web interface in the future.
+* Changed `!match` and `!search` command to always only look in watched lists,
+  regardless of `untrusted` flag.
+* Fixed new bans trying to ban users in rooms that were unprotected earlier.
+
+# v25.11
+
+* Added flag for force purging a room.
+* Added support for new `/sign` endpoint for [MSC4284] policy servers
+  (thanks to [@nexy7574] in [#44]).
+* Fixed bots trying to remove bans made by other bots on the same Meowlnir
+  instance when a policy is removed.
+* Fixed kick command not reading room parameter correctly
+  (thanks to [@nexy7574] in [#45]).
+* Removed unnecessary 10 second sleep when first creating a bot.
+
+[#44]: https://github.com/maunium/meowlnir/pull/44
+[#45]: https://github.com/maunium/meowlnir/pull/45
+
+# v25.10
+
+* Switched to calendar versioning.
+* Added `untrusted` flag to enforce membership checks before accessing policy
+  list cache.
+* Added automatic bot provisioning command with configuration defined in the
+  `meowlnir4all` section.
+* Added command to change bot profile from management room.
+
 # v0.8.0 (2025-09-16)
 
 * Added PDU validation to policy server.

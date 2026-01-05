@@ -42,12 +42,14 @@ type PolicyEvaluator struct {
 	Admins            *exsync.Set[id.UserID]
 	RoomHashes        *roomhash.Map
 	Untrusted         bool
+	provisionM4A      func(context.Context, id.UserID) (id.UserID, id.RoomID, error)
 
 	commandProcessor *commands.Processor[*PolicyEvaluator]
 
 	watchedListsEvent   *config.WatchedListsEventContent
 	watchedListsMap     map[id.RoomID]*config.WatchedPolicyList
 	watchedListsList    []id.RoomID
+	watchedListsNA      []id.RoomID
 	watchedListsForACLs []id.RoomID
 	watchedListsLock    sync.RWMutex
 
@@ -82,6 +84,7 @@ func NewPolicyEvaluator(
 	managementRoom id.RoomID,
 	requireEncryption bool,
 	untrusted bool,
+	provisionM4A func(context.Context, id.UserID) (id.UserID, id.RoomID, error),
 	db *database.Database,
 	synapseDB *synapsedb.SynapseDB,
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
@@ -99,6 +102,7 @@ func NewPolicyEvaluator(
 		ManagementRoom:       managementRoom,
 		RequireEncryption:    requireEncryption,
 		Untrusted:            untrusted,
+		provisionM4A:         provisionM4A,
 		Admins:               exsync.NewSet[id.UserID](),
 		commandProcessor:     commands.NewProcessor[*PolicyEvaluator](bot.Client),
 		protectedRoomMembers: make(map[id.UserID][]id.RoomID),
@@ -143,8 +147,11 @@ func NewPolicyEvaluator(
 		cmdSendAsBot,
 		cmdSuspend,
 		cmdDeactivate,
+		cmdBotProfile,
 		cmdRooms,
+		cmdProvision,
 		cmdProtectRoom,
+		cmdVersion,
 		cmdHelp,
 	)
 	go pe.aclDeferLoop()
@@ -221,16 +228,22 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 	}
 	protectedRoomsCount := len(pe.protectedRooms)
 	pe.protectedRoomsLock.Unlock()
+	var msg string
 	if len(errors) > 0 {
-		pe.sendNotice(ctx,
-			"Errors occurred during initialization:\n\n%s\n\nProtecting %d rooms with %d users (%d all time) using %d lists.",
+		msg = fmt.Sprintf("Errors occurred during initialization:\n\n%s\n\nProtecting %d rooms with %d users (%d all time) using %d lists.",
 			strings.Join(errors, "\n"), protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
 	} else {
-		pe.sendNotice(ctx,
-			"Initialization completed successfully (took %s to load data and %s to evaluate rules). "+
-				"Protecting %d rooms with %d users (%d all time) using %d lists.",
+		msg = fmt.Sprintf("Initialization completed successfully (took %s to load data and %s to evaluate rules). "+
+			"Protecting %d rooms with %d users (%d all time) using %d lists.",
 			initDuration, evalDuration, protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
 	}
+	if pe.policyServer.SigningKey != nil {
+		msg += fmt.Sprintf("\n\nPolicy server signatures are enabled with the public key `%s`.", pe.policyServer.SigningKey.Pub)
+	}
+	if pe.DryRun {
+		msg += "\n\n**Dry run mode is enabled, no actions will be taken.**"
+	}
+	pe.sendNotice(ctx, msg)
 	return nil
 }
 
