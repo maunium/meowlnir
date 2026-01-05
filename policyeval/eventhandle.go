@@ -76,6 +76,23 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 		if checkRules {
 			pe.EvaluateUser(ctx, userID, false)
 		}
+		if evt.Unsigned.PrevContent != nil && evt.Sender != pe.Bot.UserID {
+			_ = evt.Unsigned.PrevContent.ParseRaw(event.StateMember)
+			prevContent := evt.Unsigned.PrevContent.AsMember()
+			if content.Membership == event.MembershipBan && prevContent.Membership != event.MembershipBan {
+				pe.Bot.Log.Debug().
+					Stringer("user_id", userID).
+					Stringer("room_id", evt.RoomID).
+					Msg("Prompting ban propagation")
+				pe.propagateBan(ctx, evt)
+			} else if content.Membership == event.MembershipLeave && prevContent.Membership == event.MembershipBan {
+				pe.Bot.Log.Debug().
+					Stringer("user_id", userID).
+					Stringer("room_id", evt.RoomID).
+					Msg("Prompting unban propagation")
+				pe.propagateUnban(ctx, evt)
+			}
+		}
 	}
 }
 
