@@ -910,9 +910,7 @@ var cmdSuspend = &CommandHandler{
 	Name:    "suspend",
 	Aliases: []string{"unsuspend"},
 	Func: func(ce *CommandEvent) {
-		err := ce.Meta.Bot.SynapseAdmin.SuspendAccount(ce.Ctx, id.UserID(ce.Args[0]), synapseadmin.ReqSuspendUser{
-			Suspend: ce.Command != "unsuspend",
-		})
+		err := ce.Meta.setSuspendedStatus(ce.Ctx, id.UserID(ce.Args[0]), ce.Command != "unsuspend")
 		if err != nil {
 			ce.Reply("Failed to %s: %v", ce.Command, err)
 		} else {
