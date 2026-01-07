@@ -213,10 +213,17 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 	pe.protectedRoomsLock.Lock()
 	pe.protectedRoomsEvent = content
 	pe.skipACLForRooms = content.SkipACL
-	for roomID := range pe.protectedRooms {
+	for roomID, meta := range pe.protectedRooms {
 		if !slices.Contains(content.Rooms, roomID) {
 			pe.unlockedUnmarkProtectedRoom(roomID)
 			output = append(output, fmt.Sprintf("* Stopped protecting room %s", format.MarkdownMentionRoomID("", roomID)))
+		} else if applyACL := !slices.Contains(content.SkipACL, roomID); applyACL != meta.ApplyACL {
+			meta.ApplyACL = applyACL
+			if applyACL {
+				output = append(output, fmt.Sprintf("* Started updating ACLs in %s", format.MarkdownMentionRoomID("", roomID)))
+			} else {
+				output = append(output, fmt.Sprintf("* Stopped updating ACLs in %s", format.MarkdownMentionRoomID("", roomID)))
+			}
 		}
 	}
 	for roomID := range pe.wantToProtect {

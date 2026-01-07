@@ -49,6 +49,7 @@ type PolicyEvaluator struct {
 	watchedListsEvent   *config.WatchedListsEventContent
 	watchedListsMap     map[id.RoomID]*config.WatchedPolicyList
 	watchedListsList    []id.RoomID
+	watchedListsNA      []id.RoomID
 	watchedListsForACLs []id.RoomID
 	watchedListsLock    sync.RWMutex
 	protections         map[string]Protection
