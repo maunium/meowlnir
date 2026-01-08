@@ -54,15 +54,24 @@ func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event)
 	pe.commandProcessor.Process(ctx, evt)
 }
 
+type JoinArgs struct {
+	Rooms []event.MSC4391RoomIDOrString `json:"rooms"`
+}
+
 var cmdJoin = &CommandHandler{
-	Name: "join",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
+	Name:        "join",
+	Description: event.MakeExtensibleText("Join rooms by ID or alias. Doesn't do anything else than join."),
+	Parameters: []*event.MSC4391Parameter{{
+		Key:    "rooms",
+		Schema: event.ArraySchema(event.ParameterSchemaJoinableRoom),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *JoinArgs) {
+		if len(args.Rooms) == 0 {
 			ce.Reply("Usage: `!join <room ID>...`")
 			return
 		}
-		for _, arg := range ce.Args {
-			joinIdentifier, via := resolveRoomIDOrAlias(ce, arg)
+		for _, arg := range args.Rooms {
+			joinIdentifier, via := resolveRoomIDOrAlias(ce, string(arg))
 			if joinIdentifier == "" {
 				continue
 			}
@@ -76,18 +85,23 @@ var cmdJoin = &CommandHandler{
 			}
 		}
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
 var cmdKnock = &CommandHandler{
-	Name: "knock",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
+	Name:        "knock",
+	Description: event.MakeExtensibleText("Request to join a knockable room by ID or alias"),
+	Parameters: []*event.MSC4391Parameter{{
+		Key:    "rooms",
+		Schema: event.ArraySchema(event.ParameterSchemaJoinableRoom),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *JoinArgs) {
+		if len(args.Rooms) == 0 {
 			ce.Reply("Usage: `!knock <rooms...>`")
 			return
 		}
-		for _, arg := range ce.Args {
-			joinIdentifier, via := resolveRoomIDOrAlias(ce, arg)
+		for _, arg := range args.Rooms {
+			joinIdentifier, via := resolveRoomIDOrAlias(ce, string(arg))
 			if joinIdentifier == "" {
 				continue
 			}
@@ -101,67 +115,101 @@ var cmdKnock = &CommandHandler{
 			}
 		}
 		ce.React(SuccessReaction)
-	},
+	}),
+}
+
+type LeaveArgs struct {
+	Rooms []*event.MSC4391RoomIDValue `json:"rooms"`
 }
 
 var cmdLeave = &CommandHandler{
-	Name: "leave",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
+	Name:        "leave",
+	Description: event.MakeExtensibleText("Leave a room by ID (not alias)"),
+	Parameters: []*event.MSC4391Parameter{{
+		Key:    "rooms",
+		Schema: event.ArraySchema(event.BotArgumentTypeRoomID.Schema()),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *LeaveArgs) {
+		if len(args.Rooms) == 0 {
 			ce.Reply("Usage: `!leave <room ID>...`")
 			return
 		}
-		for _, arg := range ce.Args {
-			target := resolveRoom(ce, arg)
+		for _, arg := range args.Rooms {
+			target := resolveRoom(ce, arg.RoomID.String())
 			if target == "" {
 				continue
 			}
 			_, err := ce.Meta.Bot.LeaveRoom(ce.Ctx, target)
 			if err != nil {
-				ce.Reply("Failed to leave room %s: %v", format.SafeMarkdownCode(arg), err)
+				ce.Reply("Failed to leave room %s: %v", format.SafeMarkdownCode(arg.RoomID), err)
 			} else {
-				ce.Reply("Left room %s", format.SafeMarkdownCode(arg))
+				ce.Reply("Left room %s", format.SafeMarkdownCode(arg.RoomID))
 			}
 		}
-	},
+	}),
+}
+
+type PowerLevelArgs struct {
+	Room  event.MSC4391RoomIDOrString `json:"room"`
+	Key   string                      `json:"key"`
+	Level int                         `json:"level"`
 }
 
 var cmdPowerLevel = &CommandHandler{
-	Name:    "powerlevel",
-	Aliases: []string{"pl"},
-	Func: func(ce *CommandEvent) {
-
-		if len(ce.Args) < 1 {
+	Name:        "powerlevel",
+	Aliases:     []string{"pl"},
+	Description: event.MakeExtensibleText("Adjust power levels in protected rooms"),
+	Parameters: []*event.MSC4391Parameter{{
+		Key: "room",
+		Schema: event.UnionSchema(
+			event.LiteralSchema("all"),
+			event.BotArgumentTypeRoomID.Schema(),
+		),
+	}, {
+		Key: "key",
+		Schema: event.UnionSchema(
+			event.LiteralSchema("invite"),
+			event.LiteralSchema("kick"),
+			event.LiteralSchema("ban"),
+			event.LiteralSchema("redact"),
+			event.LiteralSchema("users_default"),
+			event.LiteralSchema("state_default"),
+			event.LiteralSchema("events_default"),
+			event.LiteralSchema("notifications.room"),
+			event.BotArgumentTypeUserID.Schema(),
+			event.BotArgumentTypeString.Schema(),
+		),
+	}, {
+		Key:    "level",
+		Schema: event.BotArgumentTypeInteger.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args PowerLevelArgs) {
+		if len(args.Key) == 0 || len(args.Room) == 0 {
 			ce.Reply("Usage: `!powerlevel <room|all> <key> <level>`")
 			return
 		}
 		var rooms []id.RoomID
-		if ce.Args[0] == "all" {
+		if args.Room == "all" {
 			rooms = ce.Meta.GetProtectedRooms()
 		} else {
-			room := resolveRoom(ce, ce.Args[0])
+			room := resolveRoom(ce, string(args.Room))
 			if room == "" {
 				return
 			}
 			rooms = []id.RoomID{room}
 		}
-		key := ce.Args[1]
-		level, err := strconv.Atoi(ce.Args[2])
-		if err != nil {
-			ce.Reply("Invalid power level %s: %v", format.SafeMarkdownCode(ce.Args[2]), err)
-			return
-		}
+		level := args.Level
 		for _, room := range rooms {
 			var pls event.PowerLevelsEventContent
 			// No need to fetch the create event here, this is a manual update that is allowed to fail if the user holds it wrong
-			err = ce.Meta.Bot.Client.StateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
+			err := ce.Meta.Bot.Client.StateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
 				ce.Reply("Failed to get power levels in %s: %v", format.SafeMarkdownCode(room), err)
 				return
 			}
 			const MagicUnsetValue = -1644163703
 			var oldLevel int
-			switch strings.ToLower(key) {
+			switch strings.ToLower(args.Key) {
 			case "invite":
 				oldLevel = pls.Invite()
 				pls.InvitePtr = &level
@@ -187,28 +235,28 @@ var cmdPowerLevel = &CommandHandler{
 				oldLevel = pls.Notifications.Room()
 				pls.Notifications.RoomPtr = &level
 			default:
-				if strings.HasPrefix(key, "@") {
-					oldLevel = pls.GetUserLevel(id.UserID(key))
-					pls.SetUserLevel(id.UserID(key), level)
-				} else if strings.ContainsRune(key, '.') {
+				if strings.HasPrefix(args.Key, "@") {
+					oldLevel = pls.GetUserLevel(id.UserID(args.Key))
+					pls.SetUserLevel(id.UserID(args.Key), level)
+				} else if strings.ContainsRune(args.Key, '.') {
 					if pls.Events == nil {
 						pls.Events = make(map[string]int)
 					}
 					var ok bool
-					oldLevel, ok = pls.Events[key]
+					oldLevel, ok = pls.Events[args.Key]
 					if !ok {
 						oldLevel = MagicUnsetValue
 					}
-					pls.Events[key] = level
+					pls.Events[args.Key] = level
 				} else {
-					ce.Reply("Invalid power level key %s", format.SafeMarkdownCode(key))
+					ce.Reply("Invalid power level key %s", format.SafeMarkdownCode(args.Key))
 					return
 				}
 			}
 			if oldLevel == level && oldLevel != MagicUnsetValue {
 				ce.Reply(
 					"Power level for %s in %s is already set to %s",
-					format.SafeMarkdownCode(key),
+					format.SafeMarkdownCode(args.Key),
 					format.SafeMarkdownCode(room),
 					format.SafeMarkdownCode(strconv.Itoa(level)),
 				)
@@ -221,7 +269,7 @@ var cmdPowerLevel = &CommandHandler{
 			}
 		}
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
 var cmdRedact = &CommandHandler{
