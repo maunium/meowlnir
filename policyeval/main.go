@@ -13,6 +13,7 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/event/cmdschema"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/bot"
@@ -255,7 +256,7 @@ func (pe *PolicyEvaluator) syncCommandDescriptions(ctx context.Context, state ma
 		delete(state, stateKey)
 		evt := state[stateKey]
 		if evt != nil {
-			content, _ := evt.Content.Parsed.(*event.MSC4391BotCommandEventContent)
+			content, _ := evt.Content.Parsed.(*cmdschema.EventContent)
 			if spec.Equals(content) {
 				continue
 			}
