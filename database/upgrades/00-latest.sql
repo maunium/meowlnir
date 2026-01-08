@@ -1,13 +1,15 @@
--- v0 -> v1 (compatible with v1+): Latest schema
+-- v0 -> v2 (compatible with v1+): Latest schema
 CREATE TABLE bot (
     username     TEXT PRIMARY KEY NOT NULL,
     displayname  TEXT NOT NULL,
-    avatar_url   TEXT NOT NULL
+    avatar_url   TEXT NOT NULL,
+    recovery_key TEXT
 );
 
 CREATE TABLE management_room (
-    room_id      TEXT PRIMARY KEY NOT NULL,
-    bot_username TEXT NOT NULL,
+    room_id      TEXT    PRIMARY KEY NOT NULL,
+    bot_username TEXT    NOT NULL,
+    encrypted    BOOLEAN NOT NULL DEFAULT true,
 
     CONSTRAINT management_room_bot_fkey FOREIGN KEY (bot_username) REFERENCES bot (username)
         ON UPDATE CASCADE ON DELETE CASCADE

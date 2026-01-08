@@ -21,10 +21,20 @@ meowlnir:
 
     # Management secret used for the management API. If set to generate, a random secret will be generated.
     # If prefixed with sha256:, the rest of the string will be hex-decoded and used as the hash of the secret.
+    # Can also be set to `disable` to disable the API entirely.
     management_secret: generate
+    # Secret used for the /_meowlnir/data API. Same rules apply as for management_secret.
+    data_secret: generate
+    # Should the /_meowlnir/mxauth APIs be enabled, which allow querying certain data using any Matrix account?
+    # This is necessary for the management web interface.
+    federation_auth: false
     # If dry run is set to true, meowlnir won't take any actual actions,
     # but will do everything else as if it was going to take actions.
     dry_run: false
+    # Should all bots be considered as untrusted?
+    # This will enable some additional checks, e.g. to prevent subscribing to a policy list without being in the room
+    # if another bot has subscribed to it. In the future, this will be configurable per bot.
+    untrusted: false
 
     # Which management room should handle requests to the Matrix report API?
     report_room: '!roomid:example.com'
@@ -47,6 +57,45 @@ meowlnir:
     hacky_redact_patterns:
     - "spam"
 
+    # If you don't want to or can't give your moderation bot the admin flag in Synapse, but still want
+    # to be able to use admin API features, you can specify a custom admin access token here for each bot.
+    # This is required when using MAS, as only special tokens have admin API access there.
+    # If this is not specified, the bot will try to use its own as_token for admin API access.
+    #
+    # Example command for MAS-CLI how to generate an admin compatibility token:
+    # mas-cli manage issue-compatibility-token <Username_Localpart> --device-id <Device_ID> --yes-i-want-to-grant-synapse-admin-privileges
+    # https://element-hq.github.io/matrix-authentication-service/reference/cli/manage.html#manage-issue-compatibility-token
+    admin_tokens:
+        "@abuse:example.com": admin_token
+
+# Settings for provisioning new bots using the !provision command.
+# None of this is relevant unless you offer moderation bots to other users.
+meowlnir4all:
+    # The management room ID that is allowed to use the !provision command.
+    admin_room: null
+    # The user ID template for new bots
+    # {{ uuidgen }} will be replaced with a random UUIDv4.
+    # {{ randstr n }} will be replaced with a random lowercase alphanumeric string of length n.
+    # {{ .OwnerLocalpart }} will be replaced with the localpart of the owner of the bot.
+    # {{ .OwnerDomain }} will be replaced with the server name of the owner of the bot.
+    localpart_template: "meowlnir_{{ uuidgen }}"
+    # The default displayname for new bots.
+    displayname: "Administrator"
+    # The default avatar URL for new bots.
+    avatar_url: "mxc://matrix.org/NZGChxcCXbBvgkCNZTLXlpux"
+    # The default room name for new management rooms.
+    room_name: "Meowlnir Management Room"
+    # The default lists to subscribe new bots to.
+    default_watched_lists:
+    - name: CME bans
+      room_id: "!fTjMjIzNKEsFlUIiru:neko.dev"
+      shortcode: cme
+      auto_unban: true
+    - name: Cat's Active Threats
+      room_id: "!QJKZNWnsItkUuthamp:feline.support"
+      shortcode: cat
+      auto_unban: true
+
 antispam:
     # Secret used for the synapse-http-antispam API. Same rules apply as for management_secret under meowlnir.
     secret: generate
@@ -58,12 +107,16 @@ antispam:
     # appservice set up for bridges, you can reuse that token. If not, just follow the same
     # instructions: https://docs.mau.fi/bridges/general/double-puppeting.html
     auto_reject_invites_token:
+    # Should the management room receive a notice about blocked invites?
+    notify_management_room: false
 
 # Configuration for the policy server.
 policy_server:
     # If enabled, always issue redactions for events that are blocked by the policy server.
     # This is useful to prevent failed events from reaching servers that do not yet respect policy servers.
     always_redact: true
+    # The Synapse-style private signing key for the policy server. If set to generate, a new random key will be generated.
+    signing_key: generate
 
 # Encryption settings.
 encryption:

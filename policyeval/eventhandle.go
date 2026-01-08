@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/exfmt"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/config"
@@ -19,7 +22,7 @@ func (pe *PolicyEvaluator) HandleConfigChange(ctx context.Context, evt *event.Ev
 	var errorMsg, successMsg string
 	switch evt.Type {
 	case event.StatePowerLevels:
-		errorMsg = pe.handlePowerLevels(evt)
+		errorMsg = pe.handlePowerLevels(ctx, evt)
 	case config.StateWatchedLists:
 		successMsgs, errorMsgs := pe.handleWatchedLists(ctx, evt, false)
 		successMsg = strings.Join(successMsgs, "\n")
@@ -57,15 +60,15 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 			return
 		}
 		if isProtecting && (content.Membership == event.MembershipLeave || content.Membership == event.MembershipBan) {
-			pe.sendNotice(ctx, "⚠️ Bot was removed from [%s](%s)", evt.RoomID, evt.RoomID.URI().MatrixToURL())
+			pe.sendNotice(ctx, "⚠️ Bot was removed from %s", format.MarkdownMentionRoomID("", evt.RoomID))
 		} else if wantToProtect && (content.Membership == event.MembershipJoin || content.Membership == event.MembershipInvite) {
 			_, err := pe.Bot.JoinRoomByID(ctx, evt.RoomID)
 			if err != nil {
-				pe.sendNotice(ctx, "Failed to join room [%s](%s): %v", evt.RoomID, evt.RoomID.URI().MatrixToURL(), err)
+				pe.sendNotice(ctx, "Failed to join room %s: %v", format.MarkdownMentionRoomID("", evt.RoomID), err)
 			} else if _, errMsg := pe.tryProtectingRoom(ctx, nil, evt.RoomID, true); errMsg != "" {
 				pe.sendNotice(ctx, "Retried protecting room after joining room, but failed: %s", strings.TrimPrefix(errMsg, "* "))
 			} else {
-				pe.sendNotice(ctx, "Bot was invited to room, now protecting [%s](%s)", evt.RoomID, evt.RoomID.URI().MatrixToURL())
+				pe.sendNotice(ctx, "Bot was invited to room, now protecting %s", format.MarkdownMentionRoomID("", evt.RoomID))
 			}
 		}
 	} else {
@@ -111,6 +114,14 @@ func removeActionString(rec event.PolicyRecommendation) string {
 
 func noopSendNotice(_ context.Context, _ string, _ ...any) id.EventID { return "" }
 
+func oldEventNotice(timestamp int64) string {
+	age := time.Since(time.UnixMilli(timestamp))
+	if age > 5*time.Minute {
+		return fmt.Sprintf(" %s ago", exfmt.DurationCustom(age, nil, exfmt.Day, time.Hour, time.Minute))
+	}
+	return ""
+}
+
 func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoom id.RoomID, added, removed *policylist.Policy) {
 	policyRoomMeta := pe.GetWatchedListMeta(policyRoom)
 	if policyRoomMeta == nil {
@@ -129,34 +140,39 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 	if removedAndAddedAreEquivalent {
 		if removed.Reason == added.Reason {
 			sendNotice(ctx,
-				"[%s] [%s](%s) re-%s ||`%s`|| for `%s`",
-				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
-				addActionString(added.Recommendation), added.EntityOrHash(), added.Reason)
+				"[%s] %s re-%s ||`%s`|| for `%s`%s",
+				policyRoomMeta.Name, format.MarkdownMention(added.Sender),
+				addActionString(added.Recommendation), added.EntityOrHash(), added.Reason,
+				oldEventNotice(added.Timestamp),
+			)
 		} else {
 			sendNotice(ctx,
-				"[%s] [%s](%s) changed the %s reason for ||`%s`|| from `%s` to `%s`",
-				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
-				changeActionString(added.Recommendation), added.EntityOrHash(), removed.Reason, added.Reason)
+				"[%s] %s changed the %s reason for ||`%s`|| from `%s` to `%s`%s",
+				policyRoomMeta.Name, format.MarkdownMention(added.Sender),
+				changeActionString(added.Recommendation), added.EntityOrHash(), removed.Reason, added.Reason,
+				oldEventNotice(added.Timestamp),
+			)
 		}
 	} else {
 		if removed != nil {
 			sendNotice(ctx,
-				"[%s] [%s](%s) %s %ss matching ||`%s`|| for `%s`",
-				policyRoomMeta.Name, removed.Sender, removed.Sender.URI().MatrixToURL(),
+				"[%s] %s %s %ss matching ||`%s`|| for `%s`%s",
+				policyRoomMeta.Name, format.MarkdownMention(removed.Sender),
 				removeActionString(removed.Recommendation), removed.EntityType, removed.EntityOrHash(), removed.Reason,
+				oldEventNotice(removed.Timestamp),
 			)
 			if !policyRoomMeta.DontApply {
 				pe.EvaluateRemovedRule(ctx, removed)
 			}
 		}
 		if added != nil {
-			var suffix string
+			suffix := oldEventNotice(added.Timestamp)
 			if added.Ignored {
-				suffix = " (rule was ignored)"
+				suffix += " (rule was ignored)"
 			}
 			sendNotice(ctx,
-				"[%s] [%s](%s) %s %ss matching ||`%s`|| for `%s`%s",
-				policyRoomMeta.Name, added.Sender, added.Sender.URI().MatrixToURL(),
+				"[%s] %s %s %ss matching ||`%s`|| for `%s`%s",
+				policyRoomMeta.Name, format.MarkdownMention(added.Sender),
 				addActionString(added.Recommendation), added.EntityType, added.EntityOrHash(), added.Reason,
 				suffix,
 			)

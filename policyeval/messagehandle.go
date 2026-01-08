@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 
 	"go.mau.fi/meowlnir/bot"
 )
@@ -27,10 +28,10 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 		pe.Bot.SendNoticeOpts(
 			ctx, pe.ManagementRoom,
 			fmt.Sprintf(
-				`@room [%s](%s) [pinged](%s) the bot in [%s](%s)`,
-				evt.Sender, evt.Sender.URI().MatrixToURL(),
+				`@room %s [pinged](%s) the bot in %s`,
+				format.MarkdownMention(evt.Sender),
 				evt.RoomID.EventURI(evt.ID).MatrixToURL(),
-				evt.RoomID, evt.RoomID.URI().MatrixToURL(),
+				format.MarkdownMentionRoomID("", evt.RoomID),
 			),
 			&bot.SendNoticeOpts{Mentions: &event.Mentions{Room: true}, SendAsText: true},
 		)

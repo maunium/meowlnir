@@ -41,6 +41,7 @@ func NewBot(
 	ep *appservice.EventProcessor,
 	cryptoStoreDB *dbutil.Database,
 	pickleKey string,
+	adminToken string,
 ) *Bot {
 	client := intent.Client
 	client.SetAppServiceDeviceID = true
@@ -60,12 +61,25 @@ func NewBot(
 		helper.LoginAs = &mautrix.ReqLogin{InitialDeviceDisplayName: "Meowlnir"}
 		client.Crypto = helper
 	}
+	adminClient := &synapseadmin.Client{Client: client}
+	if adminToken != "" {
+		adminClient.Client = &mautrix.Client{
+			HomeserverURL:      client.HomeserverURL,
+			AccessToken:        adminToken,
+			UserAgent:          client.UserAgent,
+			Client:             client.Client,
+			Log:                client.Log,
+			DefaultHTTPRetries: client.DefaultHTTPRetries,
+			DefaultHTTPBackoff: client.DefaultHTTPBackoff,
+			IgnoreRateLimit:    client.IgnoreRateLimit,
+		}
+	}
 	return &Bot{
 		Meta:           bot,
 		Client:         client,
 		Intent:         intent,
 		Log:            log,
-		SynapseAdmin:   &synapseadmin.Client{Client: client},
+		SynapseAdmin:   adminClient,
 		ServerName:     client.UserID.Homeserver(),
 		CryptoStore:    cryptoStore,
 		CryptoHelper:   helper,
@@ -77,12 +91,15 @@ func NewBot(
 var MinSpecVersion = mautrix.SpecV111
 
 func (bot *Bot) Init(ctx context.Context) {
+	triedToRegister := false
 	for {
 		resp, err := bot.Client.Versions(ctx)
 		if err != nil {
-			if errors.Is(err, mautrix.MForbidden) {
+			if errors.Is(err, mautrix.MForbidden) && !triedToRegister {
 				bot.Log.Debug().Msg("M_FORBIDDEN in /versions, trying to register before retrying")
 				bot.ensureRegistered(ctx)
+				triedToRegister = true
+				continue
 			}
 			bot.Log.Err(err).Msg("Failed to connect to homeserver, retrying in 10 seconds...")
 			time.Sleep(10 * time.Second)
@@ -126,7 +143,7 @@ func (bot *Bot) Init(ctx context.Context) {
 	bot.Mach.ShareKeysMinTrust = id.TrustStateCrossSignedTOFU
 	bot.eventProcessor.OnDeviceList(bot.Mach.HandleDeviceLists)
 
-	hasKeys, isVerified, err := bot.GetVerificationStatus(ctx)
+	hasKeys, isVerified, err := bot.Mach.GetOwnVerificationStatus(ctx)
 	if err != nil {
 		bot.Log.Err(err).Msg("Failed to check verification status")
 	} else if !hasKeys {

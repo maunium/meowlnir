@@ -9,8 +9,10 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/dbutil"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/config"
@@ -31,10 +33,27 @@ func (pe *PolicyEvaluator) IsProtectedRoom(roomID id.RoomID) bool {
 	return protected
 }
 
+func (pe *PolicyEvaluator) GetProtectedRoomCreateEvent(roomID id.RoomID) *event.CreateEventContent {
+	pe.protectedRoomsLock.RLock()
+	meta, ok := pe.protectedRooms[roomID]
+	pe.protectedRoomsLock.RUnlock()
+	if !ok {
+		return nil
+	}
+	return meta.Create
+}
+
 func (pe *PolicyEvaluator) HandleProtectedRoomMeta(ctx context.Context, evt *event.Event) {
 	switch evt.Type {
 	case event.StatePowerLevels:
 		pe.handleProtectedRoomPowerLevels(ctx, evt)
+	case event.StateCreate:
+		pe.protectedRoomsLock.Lock()
+		meta, ok := pe.protectedRooms[evt.RoomID]
+		if ok {
+			meta.Create = evt.Content.AsCreate()
+		}
+		pe.protectedRoomsLock.Unlock()
 	case event.StateRoomName:
 		pe.protectedRoomsLock.Lock()
 		meta, ok := pe.protectedRooms[evt.RoomID]
@@ -62,6 +81,12 @@ func (pe *PolicyEvaluator) HandleProtectedRoomMeta(ctx context.Context, evt *eve
 
 func (pe *PolicyEvaluator) handleProtectedRoomPowerLevels(ctx context.Context, evt *event.Event) {
 	powerLevels := evt.Content.AsPowerLevels()
+	err := pe.Bot.Intent.FillPowerLevelCreateEvent(ctx, evt.RoomID, powerLevels)
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).
+			Stringer("room_id", evt.RoomID).
+			Msg("Failed to get create event for power levels in protected room power level handler")
+	}
 	ownLevel := powerLevels.GetUserLevel(pe.Bot.UserID)
 	minLevel := max(powerLevels.Ban(), powerLevels.Redact())
 	pe.protectedRoomsLock.RLock()
@@ -72,13 +97,13 @@ func (pe *PolicyEvaluator) handleProtectedRoomPowerLevels(ctx context.Context, e
 		minLevel = max(minLevel, powerLevels.GetEventLevel(event.StateServerACL))
 	}
 	if isProtecting && ownLevel < minLevel {
-		pe.sendNotice(ctx, "⚠️ Bot no longer has sufficient power level in [%s](%s) (have %d, minimum %d)", evt.RoomID, evt.RoomID.URI().MatrixToURL(), ownLevel, minLevel)
+		pe.sendNotice(ctx, "⚠️ Bot no longer has sufficient power level in %s (have %d, minimum %d)", format.MarkdownMentionRoomID("", evt.RoomID), ownLevel, minLevel)
 	} else if wantToProtect && ownLevel >= minLevel {
 		_, errMsg := pe.tryProtectingRoom(ctx, nil, evt.RoomID, true)
 		if errMsg != "" {
 			pe.sendNotice(ctx, "Retried protecting room after power level change, but failed: %s", strings.TrimPrefix(errMsg, "* "))
 		} else {
-			pe.sendNotice(ctx, "Power levels corrected, now protecting [%s](%s)", evt.RoomID, evt.RoomID.URI().MatrixToURL())
+			pe.sendNotice(ctx, "Power levels corrected, now protecting %s", format.MarkdownMentionRoomID("", evt.RoomID))
 		}
 	}
 }
@@ -103,7 +128,7 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 		return nil, "* The management room can't be a protected room"
 	} else if claimer := pe.claimProtected(roomID, pe, true); claimer != pe {
 		if claimer != nil && claimer.Bot.UserID == pe.Bot.UserID {
-			return nil, fmt.Sprintf("* Room [%s](%s) is already protected by [%s](%s)", roomID, roomID.URI().MatrixToURL(), claimer.ManagementRoom, claimer.ManagementRoom.URI().MatrixToURL())
+			return nil, fmt.Sprintf("* Room %s is already protected by %s", format.MarkdownMentionRoomID("", roomID), format.MarkdownMentionRoomID("", claimer.ManagementRoom))
 		} else {
 			if claimer != nil {
 				zerolog.Ctx(ctx).Debug().
@@ -113,7 +138,7 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 			} else {
 				zerolog.Ctx(ctx).Warn().Msg("Failed to protect room, but no existing claimer found, likely a management room")
 			}
-			return nil, fmt.Sprintf("* Room [%s](%s) is already protected by another bot", roomID, roomID.URI().MatrixToURL())
+			return nil, fmt.Sprintf("* Room %s is already protected by another bot", format.MarkdownMentionRoomID("", roomID))
 		}
 	}
 	var err error
@@ -132,22 +157,27 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 		defer unlock()
 		_, err = pe.Bot.JoinRoom(ctx, roomID.String(), nil)
 		if err != nil {
-			return nil, fmt.Sprintf("* Bot is not in protected room [%s](%s) and joining failed: %v", roomID, roomID.URI().MatrixToURL(), err)
+			return nil, fmt.Sprintf("* Bot is not in protected room %s and joining failed: %v", format.MarkdownMentionRoomID("", roomID), err)
 		}
+	}
+	createEvt, err := pe.Bot.FullStateEvent(ctx, roomID, event.StateCreate, "")
+	if err != nil {
+		return nil, fmt.Sprintf("* Failed to get create event for %s: %v", format.MarkdownMentionRoomID("", roomID), err)
 	}
 	var powerLevels event.PowerLevelsEventContent
 	err = pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &powerLevels)
 	if err != nil {
-		return nil, fmt.Sprintf("* Failed to get power levels for [%s](%s): %v", roomID, roomID.URI().MatrixToURL(), err)
+		return nil, fmt.Sprintf("* Failed to get power levels for %s: %v", format.MarkdownMentionRoomID("", roomID), err)
 	}
+	powerLevels.CreateEvent = createEvt
 	ownLevel := powerLevels.GetUserLevel(pe.Bot.UserID)
 	minLevel := max(powerLevels.Ban(), powerLevels.Redact())
 	if ownLevel < minLevel && !pe.DryRun {
-		return nil, fmt.Sprintf("* Bot does not have sufficient power level in [%s](%s) (have %d, minimum %d)", roomID, roomID.URI().MatrixToURL(), ownLevel, minLevel)
+		return nil, fmt.Sprintf("* Bot does not have sufficient power level in %s (have %d, minimum %d)", format.MarkdownMentionRoomID("", roomID), ownLevel, minLevel)
 	}
 	members, err := pe.Bot.Members(ctx, roomID)
 	if err != nil {
-		return nil, fmt.Sprintf("* Failed to get room members for [%s](%s): %v", roomID, roomID.URI().MatrixToURL(), err)
+		return nil, fmt.Sprintf("* Failed to get room members for %s: %v", format.MarkdownMentionRoomID("", roomID), err)
 	}
 	var name event.RoomNameEventContent
 	err = pe.Bot.StateEvent(ctx, roomID, event.StateRoomName, "", &name)
@@ -160,7 +190,7 @@ func (pe *PolicyEvaluator) tryProtectingRoom(ctx context.Context, joinedRooms *m
 		zerolog.Ctx(ctx).Warn().Err(err).Stringer("room_id", roomID).Msg("Failed to get server ACL")
 	}
 	slices.Sort(acl.Deny)
-	pe.markAsProtectedRoom(roomID, name.Name, &acl, members.Chunk)
+	pe.markAsProtectedRoom(roomID, name.Name, &acl, createEvt.Content.AsCreate(), members.Chunk)
 	if doReeval {
 		memberIDs := make([]id.UserID, len(members.Chunk))
 		for i, member := range members.Chunk {
@@ -180,11 +210,22 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 	pe.protectedRoomsLock.Lock()
 	pe.protectedRoomsEvent = content
 	pe.skipACLForRooms = content.SkipACL
-	for roomID := range pe.protectedRooms {
+	for roomID, meta := range pe.protectedRooms {
 		if !slices.Contains(content.Rooms, roomID) {
-			delete(pe.protectedRooms, roomID)
-			pe.claimProtected(roomID, pe, false)
-			output = append(output, fmt.Sprintf("* Stopped protecting room [%s](%s)", roomID, roomID.URI().MatrixToURL()))
+			pe.unlockedUnmarkProtectedRoom(roomID)
+			output = append(output, fmt.Sprintf("* Stopped protecting room %s", format.MarkdownMentionRoomID("", roomID)))
+		} else if applyACL := !slices.Contains(content.SkipACL, roomID); applyACL != meta.ApplyACL {
+			meta.ApplyACL = applyACL
+			if applyACL {
+				output = append(output, fmt.Sprintf("* Started updating ACLs in %s", format.MarkdownMentionRoomID("", roomID)))
+			} else {
+				output = append(output, fmt.Sprintf("* Stopped updating ACLs in %s", format.MarkdownMentionRoomID("", roomID)))
+			}
+		}
+	}
+	for roomID := range pe.wantToProtect {
+		if !slices.Contains(content.Rooms, roomID) {
+			delete(pe.wantToProtect, roomID)
 		}
 	}
 	pe.protectedRoomsLock.Unlock()
@@ -200,7 +241,7 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 			continue
 		}
 		wg.Add(1)
-		go func() {
+		doLoad := func() {
 			defer wg.Done()
 			members, errMsg := pe.tryProtectingRoom(ctx, joinedRooms, roomID, false)
 			outLock.Lock()
@@ -212,9 +253,15 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 				for _, member := range members.Chunk {
 					reevalMembers[id.UserID(member.GetStateKey())] = struct{}{}
 				}
-				output = append(output, fmt.Sprintf("* Started protecting room [%s](%s)", roomID, roomID.URI().MatrixToURL()))
+				output = append(output, fmt.Sprintf("* Started protecting room %s", format.MarkdownMentionRoomID("", roomID)))
 			}
-		}()
+		}
+		if pe.DB.Dialect == dbutil.SQLite {
+			// Load rooms synchronously on SQLite to avoid lots of things trying to write at once
+			doLoad()
+		} else {
+			go doLoad()
+		}
 	}
 	wg.Wait()
 	if len(reevalMembers) > 0 {
@@ -230,13 +277,34 @@ func (pe *PolicyEvaluator) markAsWantToProtect(roomID id.RoomID) {
 	pe.wantToProtect[roomID] = struct{}{}
 }
 
-func (pe *PolicyEvaluator) markAsProtectedRoom(roomID id.RoomID, name string, acl *event.ServerACLEventContent, evts []*event.Event) {
+func (pe *PolicyEvaluator) markAsProtectedRoom(
+	roomID id.RoomID,
+	name string,
+	acl *event.ServerACLEventContent,
+	create *event.CreateEventContent,
+	evts []*event.Event,
+) {
 	pe.protectedRoomsLock.Lock()
 	defer pe.protectedRoomsLock.Unlock()
-	pe.protectedRooms[roomID] = &protectedRoomMeta{Name: name, ACL: acl, ApplyACL: !slices.Contains(pe.skipACLForRooms, roomID)}
+	pe.protectedRooms[roomID] = &protectedRoomMeta{
+		Name:     name,
+		ACL:      acl,
+		Create:   create,
+		ApplyACL: !slices.Contains(pe.skipACLForRooms, roomID),
+	}
 	delete(pe.wantToProtect, roomID)
 	for _, evt := range evts {
 		pe.unlockedUpdateUser(id.UserID(evt.GetStateKey()), evt.RoomID, evt.Content.AsMember().Membership)
+	}
+}
+
+func (pe *PolicyEvaluator) unlockedUnmarkProtectedRoom(roomID id.RoomID) {
+	delete(pe.protectedRooms, roomID)
+	pe.claimProtected(roomID, pe, false)
+	for userID, members := range pe.protectedRoomMembers {
+		if idx := slices.Index(members, roomID); idx >= 0 {
+			pe.protectedRoomMembers[userID] = slices.Delete(members, idx, idx+1)
+		}
 	}
 }
 

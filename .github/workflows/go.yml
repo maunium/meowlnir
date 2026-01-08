@@ -11,14 +11,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ["1.23", "1.24"]
-    name: Lint ${{ matrix.go-version == '1.24' && '(latest)' || '(old)' }}
+        go-version: ["1.24", "1.25"]
+    name: Lint ${{ matrix.go-version == '1.25' && '(latest)' || '(old)' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
@@ -31,6 +31,10 @@ jobs:
           go install golang.org/x/tools/cmd/goimports@latest
           go install honnef.co/go/tools/cmd/staticcheck@latest
           export PATH="$HOME/go/bin:$PATH"
+
+      - name: Enable jsonv2
+        run: export GOEXPERIMENT=jsonv2
+        if: matrix.go-version == '1.25'
 
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1

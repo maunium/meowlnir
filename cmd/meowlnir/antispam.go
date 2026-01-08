@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
 
@@ -15,6 +16,10 @@ type ReqUserMayInvite struct {
 	Inviter id.UserID `json:"inviter"`
 	Invitee id.UserID `json:"invitee"`
 	Room    id.RoomID `json:"room_id"`
+}
+
+type ReqFederatedUserMayInvite struct {
+	Event *event.Event `json:"event"`
 }
 
 type ReqUserMayJoinRoom struct {
@@ -33,6 +38,8 @@ func (m *Meowlnir) PostCallback(w http.ResponseWriter, r *http.Request) {
 	switch cbType {
 	case "user_may_invite":
 		m.PostUserMayInvite(w, r)
+	case "federated_user_may_invite":
+		m.PostFederatedUserMayInvite(w, r)
 	case "accept_make_join":
 		m.PostAcceptMakeJoin(w, r)
 	case "user_may_join_room":
@@ -114,7 +121,31 @@ func (m *Meowlnir) PostUserMayInvite(w http.ResponseWriter, r *http.Request) {
 		mautrix.MNotFound.WithMessage("Antispam configuration issue: policy list not found").Write(w)
 		return
 	}
-	errResp := mgmtRoom.HandleUserMayInvite(r.Context(), req.Inviter, req.Invitee, req.Room)
+	errResp := mgmtRoom.HandleUserMayInvite(r.Context(), req.Inviter, req.Invitee, req.Room, "")
+	if errResp != nil {
+		errResp.Write(w)
+	} else {
+		exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
+	}
+}
+
+func (m *Meowlnir) PostFederatedUserMayInvite(w http.ResponseWriter, r *http.Request) {
+	var req ReqFederatedUserMayInvite
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Msg("Failed to parse request body")
+		mautrix.MNotJSON.WithMessage("Antispam request error: invalid JSON").Write(w)
+		return
+	}
+
+	m.MapLock.RLock()
+	mgmtRoom, ok := m.EvaluatorByManagementRoom[id.RoomID(r.PathValue("policyListID"))]
+	m.MapLock.RUnlock()
+	if !ok {
+		mautrix.MNotFound.WithMessage("Antispam configuration issue: policy list not found").Write(w)
+		return
+	}
+	errResp := mgmtRoom.HandleFederatedUserMayInvite(r.Context(), req.Event)
 	if errResp != nil {
 		errResp.Write(w)
 	} else {

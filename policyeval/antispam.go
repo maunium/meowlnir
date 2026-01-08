@@ -10,6 +10,7 @@ import (
 	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/bot"
@@ -23,7 +24,19 @@ type pendingInvite struct {
 	Room    id.RoomID
 }
 
-func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, invitee id.UserID, roomID id.RoomID) *mautrix.RespError {
+func (pe *PolicyEvaluator) HandleFederatedUserMayInvite(ctx context.Context, evt *event.Event) *mautrix.RespError {
+	var roomCreator id.UserID
+	for _, stateEvt := range evt.Unsigned.InviteRoomState {
+		switch stateEvt.Type {
+		case event.StateCreate:
+			roomCreator = stateEvt.Sender
+		}
+		// TODO also do things like checking room name
+	}
+	return pe.HandleUserMayInvite(ctx, evt.Sender, id.UserID(evt.GetStateKey()), evt.RoomID, roomCreator)
+}
+
+func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, invitee id.UserID, roomID id.RoomID, roomCreator id.UserID) *mautrix.RespError {
 	inviterServer := inviter.Homeserver()
 	// We only care about federated invites.
 	if inviterServer == pe.Bot.ServerName && !pe.FilterLocalInvites {
@@ -35,10 +48,9 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		Stringer("invitee", invitee).
 		Stringer("room_id", roomID).
 		Logger()
-	if invitee.Homeserver() != pe.Bot.ServerName {
-		// This shouldn't happen
-		// TODO this check should be removed if multi-server support is added
-		log.Warn().Msg("Ignoring invite to non-local user")
+	if invitee.Homeserver() != pe.Bot.ServerName && inviterServer != pe.Bot.ServerName {
+		// This should never happen
+		log.Warn().Msg("Ignoring non-local invite")
 		return nil
 	}
 	lists := pe.GetWatchedLists()
@@ -46,15 +58,15 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 	var rec *policylist.Policy
 
 	defer func() {
-		if rec != nil {
+		if rec != nil && pe.AntispamNotifyRoom {
 			go pe.Bot.SendNoticeOpts(
 				context.WithoutCancel(ctx),
 				pe.ManagementRoom,
 				fmt.Sprintf(
-					"Blocked ||[%s](%s)|| from inviting [%s](%s) to [%s](%s) due to policy banning ||`%s`|| for `%s`",
-					inviter, inviter.URI().MatrixToURL(),
-					invitee, invitee.URI().MatrixToURL(),
-					roomID, roomID.URI().MatrixToURL(),
+					"Blocked ||%s|| from inviting %s to %s due to policy banning ||`%s`|| for `%s`",
+					format.MarkdownMention(inviter),
+					format.MarkdownMention(invitee),
+					format.MarkdownMentionRoomID("", roomID),
 					rec.EntityOrHash(), rec.Reason,
 				),
 				// Don't mention users
@@ -90,12 +102,18 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 	// Parsing room IDs is generally not allowed, but in this case,
 	// if a room was created on a banned server, there's no reason to allow invites to it.
 	_, _, roomServer := id.ParseCommonIdentifier(roomID)
-	if rec = pe.Store.MatchServer(lists, roomServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
-		log.Debug().
-			Str("policy_entity", rec.EntityOrHash()).
-			Str("policy_reason", rec.Reason).
-			Msg("Blocking invite to room on banned server")
-		return ptr.Ptr(mautrix.MForbidden.WithMessage("Inviting users to this room is not allowed"))
+	if roomServer == "" {
+		// If the room ID has no server part, check the create event sender (MSC4311).
+		roomServer = roomCreator.Homeserver()
+	}
+	if roomServer != "" {
+		if rec = pe.Store.MatchServer(lists, roomServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+			log.Debug().
+				Str("policy_entity", rec.EntityOrHash()).
+				Str("policy_reason", rec.Reason).
+				Msg("Blocking invite to room on banned server")
+			return ptr.Ptr(mautrix.MForbidden.WithMessage("Inviting users to this room is not allowed"))
+		}
 	}
 
 	rec = nil
@@ -135,9 +153,9 @@ func (pe *PolicyEvaluator) HandleAcceptMakeJoin(ctx context.Context, roomID id.R
 			Msg("Blocking restricted join from banned user")
 		go pe.sendNotice(
 			context.WithoutCancel(ctx),
-			"Blocked ||[%s](%s)|| from joining [%s](%s) due to policy banning ||`%s`|| for `%s`",
-			userID, userID.URI().MatrixToURL(),
-			roomID, roomID.URI().MatrixToURL(),
+			"Blocked ||%s|| from joining %s due to policy banning ||`%s`|| for `%s`",
+			format.MarkdownMention(userID),
+			format.MarkdownMentionRoomID("", roomID),
 			rec.EntityOrHash(), rec.Reason,
 		)
 		return ptr.Ptr(mautrix.MForbidden.WithMessage("You're banned from this room"))
@@ -232,13 +250,18 @@ func (pe *PolicyEvaluator) RejectPendingInvites(ctx context.Context, inviter id.
 				successfullyRejected++
 			}
 		}
-		pe.sendNotice(
+		pe.Bot.SendNoticeOpts(
 			ctx,
-			"Rejected %d/%d invites to [%s](%s) from ||[%s](%s)|| due to policy banning ||`%s`|| for `%s`",
-			successfullyRejected, len(rooms),
-			userID, userID.URI().MatrixToURL(),
-			inviter, inviter.URI().MatrixToURL(),
-			rec.EntityOrHash(), rec.Reason,
+			pe.ManagementRoom,
+			fmt.Sprintf(
+				"Rejected %d/%d invites to %s from ||%s|| due to policy banning ||`%s`|| for `%s`",
+				successfullyRejected, len(rooms),
+				format.MarkdownMention(userID),
+				format.MarkdownMention(inviter),
+				rec.EntityOrHash(), rec.Reason,
+			),
+			// Don't mention users
+			&bot.SendNoticeOpts{Mentions: &event.Mentions{}},
 		)
 	}
 }

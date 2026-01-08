@@ -2,21 +2,26 @@ package main
 
 import (
 	"context"
-	"crypto/hmac"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	"go.mau.fi/util/exhttp"
+	"go.mau.fi/util/exslices"
 	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
+	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/database"
-	"go.mau.fi/meowlnir/util"
+	"go.mau.fi/meowlnir/policylist"
 )
 
 type RespManagementRoom struct {
@@ -24,6 +29,7 @@ type RespManagementRoom struct {
 	ProtectedRooms []id.RoomID `json:"protected_rooms"`
 	WatchedLists   []id.RoomID `json:"watched_lists"`
 	Admins         []id.UserID `json:"admins"`
+	BotUserID      id.UserID   `json:"bot_user_id,omitempty"`
 }
 
 type RespBot struct {
@@ -39,28 +45,6 @@ type RespGetBots struct {
 	Bots []*RespBot `json:"bots"`
 }
 
-func (m *Meowlnir) ManagementAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if !hmac.Equal(authHash[:], m.ManagementSecret[:]) {
-			mautrix.MUnknownToken.WithMessage("Invalid management secret").Write(w)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (m *Meowlnir) AntispamAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHash := util.SHA256String(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if !hmac.Equal(authHash[:], m.AntispamSecret[:]) {
-			mautrix.MUnknown.WithMessage("Invalid antispam secret").Write(w)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
 	m.MapLock.RLock()
 	bots := slices.Collect(maps.Values(m.Bots))
@@ -71,7 +55,7 @@ func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
 		var verified, csSetUp bool
 		if m.Config.Encryption.Enable {
 			var err error
-			verified, csSetUp, err = bot.GetVerificationStatus(r.Context())
+			verified, csSetUp, err = bot.Mach.GetOwnVerificationStatus(r.Context())
 			if err != nil {
 				hlog.FromRequest(r).Err(err).Str("bot_username", bot.Meta.Username).Msg("Failed to get bot verification status")
 				mautrix.MUnknown.WithMessage("Failed to get bot verification status").Write(w)
@@ -102,9 +86,118 @@ func (m *Meowlnir) GetBots(w http.ResponseWriter, r *http.Request) {
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
 
+type RespGetManagementRoomsForUser struct {
+	Rooms map[id.RoomID]*RespManagementRoom `json:"rooms"`
+}
+
+func (m *Meowlnir) GetManagementRoomsForUser(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(contextKeyUserID).(id.UserID)
+	if !ok {
+		mautrix.MUnknown.WithMessage("Failed to get user ID from context").Write(w)
+		return
+	}
+	rooms := make(map[id.RoomID]*RespManagementRoom)
+	m.MapLock.RLock()
+	for _, room := range m.EvaluatorByManagementRoom {
+		if room.Admins.Has(userID) {
+			rooms[room.ManagementRoom] = &RespManagementRoom{
+				RoomID:         room.ManagementRoom,
+				ProtectedRooms: room.GetProtectedRooms(),
+				WatchedLists:   room.GetWatchedLists(),
+				Admins:         room.Admins.AsList(),
+				BotUserID:      room.Bot.UserID,
+			}
+		}
+	}
+	m.MapLock.RUnlock()
+	exhttp.WriteJSONResponse(w, http.StatusOK, &RespGetManagementRoomsForUser{
+		Rooms: rooms,
+	})
+}
+
 type ReqPutBot struct {
 	Displayname *string        `json:"displayname"`
 	AvatarURL   *id.ContentURI `json:"avatar_url"`
+}
+
+func (m *Meowlnir) provisionM4ABot(ctx context.Context, owner id.UserID) (id.UserID, id.RoomID, error) {
+	localpart, err := m.Config.Meowlnir4All.FormatLocalpart(owner)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to format localpart: %w", err)
+	}
+	userID := id.NewUserID(localpart, m.AS.HomeserverDomain)
+	m.MapLock.Lock()
+	unlockMapLock := sync.OnceFunc(m.MapLock.Unlock)
+	defer unlockMapLock()
+	if _, ok := m.Bots[userID]; ok {
+		return "", "", fmt.Errorf("duplicate bot user ID %s", userID)
+	}
+	dbBot := &database.Bot{
+		Username:    localpart,
+		Displayname: m.Config.Meowlnir4All.DisplayName,
+		AvatarURL:   m.Config.Meowlnir4All.AvatarURL,
+	}
+	err = m.DB.Bot.Put(ctx, dbBot)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to save bot to database: %w", err)
+	}
+	bot, err := m.initBot(ctx, dbBot)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to initialize bot: %w", err)
+	}
+	unlockMapLock()
+	bot.Meta.RecoveryKey, err = bot.Mach.GenerateAndVerifyWithRecoveryKey(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate recovery key: %w", err)
+	}
+	err = m.DB.Bot.Put(ctx, bot.Meta)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to save bot recovery key to database: %w", err)
+	}
+	for _, list := range m.Config.Meowlnir4All.DefaultWatchedLists {
+		_, err = bot.Intent.JoinRoomByID(ctx, list.RoomID)
+		if err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).
+				Stringer("bot_user_id", bot.UserID).
+				Stringer("list_room_id", list.RoomID).
+				Msg("Failed to join new M4A bot to default watched list")
+		}
+	}
+	resp, err := bot.Intent.CreateRoom(ctx, &mautrix.ReqCreateRoom{
+		Name:   m.Config.Meowlnir4All.RoomName,
+		Invite: []id.UserID{owner},
+		Preset: "trusted_private_chat",
+		InitialState: []*event.Event{{
+			Type: config.StateProtectedRooms,
+			Content: event.Content{
+				Parsed: &config.ProtectedRoomsEventContent{
+					Rooms:   []id.RoomID{},
+					SkipACL: []id.RoomID{},
+				},
+			},
+		}, {
+			Type: config.StateWatchedLists,
+			Content: event.Content{
+				Parsed: &config.WatchedListsEventContent{
+					Lists: m.Config.Meowlnir4All.DefaultWatchedLists,
+				},
+			},
+		}},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create management room: %w", err)
+	}
+	mr := &database.ManagementRoom{
+		RoomID:      resp.RoomID,
+		BotUsername: bot.Meta.Username,
+		Encrypted:   false,
+	}
+	err = m.DB.ManagementRoom.Put(ctx, mr)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to save management room to database: %w", err)
+	}
+	m.loadManagementRoom(context.WithoutCancel(ctx), mr.RoomID, bot, mr.Encrypted)
+	return userID, mr.RoomID, nil
 }
 
 func (m *Meowlnir) PutBot(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +224,12 @@ func (m *Meowlnir) PutBot(w http.ResponseWriter, r *http.Request) {
 			mautrix.MUnknown.WithMessage("Failed to save new bot to database").Write(w)
 			return
 		}
-		bot = m.initBot(r.Context(), dbBot)
+		bot, err = m.initBot(r.Context(), dbBot)
+		if err != nil {
+			hlog.FromRequest(r).Err(err).Msg("Failed to initialize bot")
+			mautrix.MUnknown.WithMessage("Failed to initialize new bot").Write(w)
+			return
+		}
 	} else {
 		if req.Displayname != nil && bot.Meta.Displayname != *req.Displayname {
 			err = bot.Intent.SetDisplayName(r.Context(), *req.Displayname)
@@ -159,6 +257,33 @@ func (m *Meowlnir) PutBot(w http.ResponseWriter, r *http.Request) {
 	exhttp.WriteJSONResponse(w, http.StatusOK, bot.Meta)
 }
 
+var ErrBotInUse = mautrix.RespError{ErrCode: "FI.MAU.MEOWLNIR.BOT_IN_USE", StatusCode: http.StatusConflict}
+
+func (m *Meowlnir) DeleteBot(w http.ResponseWriter, r *http.Request) {
+	userID := id.NewUserID(r.PathValue("username"), m.AS.HomeserverDomain)
+	m.MapLock.Lock()
+	defer m.MapLock.Unlock()
+	bot, ok := m.Bots[userID]
+	if !ok {
+		mautrix.MNotFound.WithMessage("Bot not found").Write(w)
+		return
+	}
+	for _, eval := range m.EvaluatorByManagementRoom {
+		if eval.Bot == bot {
+			ErrBotInUse.WithMessage("The bot is still used in %s", eval.ManagementRoom).Write(w)
+			return
+		}
+	}
+	err := m.DB.Bot.Delete(r.Context(), bot.Meta.Username)
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Msg("Failed to delete bot from database")
+		mautrix.MUnknown.WithMessage("Failed to delete bot from database").Write(w)
+		return
+	}
+	delete(m.Bots, userID)
+	exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
+}
+
 var (
 	ErrAlreadyVerified = mautrix.RespError{
 		ErrCode:    "FI.MAU.MEOWLNIR.ALREADY_VERIFIED",
@@ -175,6 +300,7 @@ var (
 type ReqVerifyBot struct {
 	RecoveryKey   string `json:"recovery_key"`
 	Generate      bool   `json:"generate"`
+	Save          bool   `json:"save"`
 	ForceGenerate bool   `json:"force_generate"`
 	ForceVerify   bool   `json:"force_verify"`
 }
@@ -205,7 +331,7 @@ func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
 		mautrix.MNotFound.WithMessage("Bot not found").Write(w)
 		return
 	}
-	hasKeys, isVerified, err := bot.GetVerificationStatus(r.Context())
+	hasKeys, isVerified, err := bot.Mach.GetOwnVerificationStatus(r.Context())
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to get bot verification status")
 		mautrix.MUnknown.WithMessage("Failed to get bot verification status").Write(w)
@@ -218,15 +344,15 @@ func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Generate {
-		recoveryKey, err := bot.GenerateRecoveryKey(r.Context())
+		req.RecoveryKey, err = bot.Mach.GenerateAndVerifyWithRecoveryKey(r.Context())
 		if err != nil {
 			hlog.FromRequest(r).Err(err).Msg("Failed to generate recovery key")
 			mautrix.MUnknown.WithMessage("Failed to generate recovery key: " + err.Error()).Write(w)
 		} else {
-			exhttp.WriteJSONResponse(w, http.StatusCreated, &RespVerifyBot{RecoveryKey: recoveryKey})
+			exhttp.WriteJSONResponse(w, http.StatusCreated, &RespVerifyBot{RecoveryKey: req.RecoveryKey})
 		}
 	} else {
-		err = bot.VerifyWithRecoveryKey(r.Context(), req.RecoveryKey)
+		err = bot.Mach.VerifyWithRecoveryKey(r.Context(), req.RecoveryKey)
 		if err != nil {
 			hlog.FromRequest(r).Err(err).Msg("Failed to verify bot with recovery key")
 			mautrix.MUnknown.WithMessage("Failed to verify bot with recovery key: " + err.Error()).Write(w)
@@ -234,10 +360,18 @@ func (m *Meowlnir) PostVerifyBot(w http.ResponseWriter, r *http.Request) {
 			exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 		}
 	}
+	if req.Save {
+		bot.Meta.RecoveryKey = req.RecoveryKey
+		err = m.DB.Bot.Put(r.Context(), bot.Meta)
+		if err != nil {
+			hlog.FromRequest(r).Err(err).Msg("Failed to save bot recovery key to database")
+		}
+	}
 }
 
 type ReqPutManagementRoom struct {
 	BotUsername string `json:"bot_username"`
+	Encrypted   *bool  `json:"encrypted,omitempty"`
 }
 
 func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
@@ -260,16 +394,79 @@ func (m *Meowlnir) PutManagementRoom(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to join room")
 	}
-	err = m.DB.ManagementRoom.Put(r.Context(), roomID, bot.Meta.Username)
+	mr := &database.ManagementRoom{
+		RoomID:      roomID,
+		BotUsername: bot.Meta.Username,
+		Encrypted:   req.Encrypted == nil || *req.Encrypted,
+	}
+	err = m.DB.ManagementRoom.Put(r.Context(), mr)
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to save management room to database")
 		mautrix.MUnknown.WithMessage("Failed to save management room to database").Write(w)
 		return
 	}
-	didUpdate := m.loadManagementRoom(context.WithoutCancel(r.Context()), roomID, bot)
+	didUpdate := m.loadManagementRoom(context.WithoutCancel(r.Context()), roomID, bot, mr.Encrypted)
 	if didUpdate {
 		exhttp.WriteEmptyJSONResponse(w, http.StatusCreated)
 	} else {
 		exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
 	}
+}
+
+func (m *Meowlnir) DeleteManagementRoom(w http.ResponseWriter, r *http.Request) {
+	roomID := id.RoomID(r.PathValue("roomID"))
+	m.MapLock.Lock()
+	defer m.MapLock.Unlock()
+	eval, ok := m.EvaluatorByManagementRoom[roomID]
+	if !ok {
+		mautrix.MNotFound.WithMessage("Management room not found").Write(w)
+		return
+	}
+	err := m.DB.ManagementRoom.Delete(r.Context(), roomID)
+	if err != nil {
+		hlog.FromRequest(r).Err(err).Msg("Failed to delete management room from database")
+		mautrix.MUnknown.WithMessage("Failed to delete management room from database").Write(w)
+		return
+	}
+	delete(m.EvaluatorByManagementRoom, roomID)
+	for protectedRoomID, room := range m.EvaluatorByProtectedRoom {
+		if room == eval {
+			delete(m.EvaluatorByProtectedRoom, protectedRoomID)
+		}
+	}
+	exhttp.WriteEmptyJSONResponse(w, http.StatusOK)
+}
+
+func (m *Meowlnir) getPolicyListIDs(r *http.Request) []id.RoomID {
+	listIDs := exslices.CastFuncFilter(r.URL.Query()["list_id"], func(s string) (id.RoomID, bool) {
+		return id.RoomID(s), strings.HasPrefix(s, "!")
+	})
+	if len(listIDs) == 0 {
+		listIDs = m.PolicyStore.GetAllLists()
+	}
+	return listIDs
+}
+
+func (m *Meowlnir) MatchPolicy(w http.ResponseWriter, r *http.Request) {
+	entityType := policylist.EntityType(r.PathValue("entityType"))
+	entity := r.PathValue("entity")
+	if !entityType.IsValid() {
+		mautrix.MInvalidParam.WithMessage("Invalid entity type").Write(w)
+		return
+	}
+	match := m.PolicyStore.Match(m.getPolicyListIDs(r), entityType, entity)
+	exhttp.WriteJSONResponse(w, http.StatusOK, match)
+}
+
+func (m *Meowlnir) ListPolicies(w http.ResponseWriter, r *http.Request) {
+	entityType := policylist.EntityType(r.PathValue("entityType"))
+	if !entityType.IsValid() {
+		mautrix.MInvalidParam.WithMessage("Invalid entity type").Write(w)
+		return
+	} else if entityType != policylist.EntityTypeServer {
+		mautrix.MInvalidParam.WithMessage("Only server policies can be listed").Write(w)
+		return
+	}
+	rules := m.PolicyStore.ListServerRules(m.getPolicyListIDs(r))
+	exhttp.WriteJSONResponse(w, http.StatusOK, rules)
 }

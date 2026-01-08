@@ -5,40 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/rs/zerolog/hlog"
-	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/exhttp"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/id"
 )
-
-type contextKey int
-
-const contextKeyUserClient contextKey = iota
-
-func (m *Meowlnir) ClientAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if authToken == "" {
-			mautrix.MMissingToken.WithMessage("Missing access token").Write(w)
-			return
-		}
-		client := exerrors.Must(m.AS.NewExternalMautrixClient("", authToken, ""))
-		resp, err := client.Whoami(r.Context())
-		if err != nil {
-			if errors.Is(err, mautrix.MUnknownToken) {
-				mautrix.MUnknownToken.WithMessage("Unknown access token").Write(w)
-			} else {
-				mautrix.MUnknown.WithMessage("Failed to validate access token").Write(w)
-			}
-			return
-		}
-		client.UserID = resp.UserID
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), contextKeyUserClient, client)))
-	})
-}
 
 func (m *Meowlnir) PostReport(w http.ResponseWriter, r *http.Request) {
 	var req mautrix.ReqReport
