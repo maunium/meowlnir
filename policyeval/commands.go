@@ -328,17 +328,13 @@ var cmdRedactRecent = &CommandHandler{
 		Optional: true,
 	}},
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *RedactRecentParams) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `!redact-recent <room ID> <since duration> [reason]`")
-			return
-		}
 		room := resolveRoom(ce, args.Target)
 		if room == "" {
 			return
 		}
 		since, err := time.ParseDuration(args.Since)
 		if err != nil {
-			ce.Reply("Invalid duration %s: %v", format.SafeMarkdownCode(ce.Args[1]), err)
+			ce.Reply("Invalid duration %s: %v", format.SafeMarkdownCode(args.Since), err)
 			return
 		}
 		redactedCount, err := ce.Meta.redactRecentMessages(ce.Ctx, room, "", since, false, args.Reason)
@@ -392,7 +388,7 @@ var cmdKick = &CommandHandler{
 		users := slices.Collect(ce.Meta.findMatchingUsers(pattern, nil, true))
 		if len(users) > 10 && !args.Force {
 			// TODO replace the force flag with a reaction confirmation
-			ce.Reply("%d users matching %s found, use `--force` to kick all of them.", len(users), format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("%d users matching %s found, use `--force` to kick all of them.", len(users), format.SafeMarkdownCode(args.Target))
 			return
 		}
 		for _, userID := range users {
@@ -425,7 +421,7 @@ var cmdKick = &CommandHandler{
 			ce.Reply("Kicked %s from %d rooms: %s", format.SafeMarkdownCode(userID), successCount, strings.Join(roomStrings, ", "))
 		}
 		if len(users) == 0 {
-			ce.Reply("No users matching %s found in any rooms", format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("No users matching %s found in any rooms", format.SafeMarkdownCode(args.Target))
 			return
 		}
 		ce.React(SuccessReaction)
@@ -473,39 +469,58 @@ func (pe *PolicyEvaluator) deduplicatePolicy(
 	}
 }
 
+type BanParams struct {
+	List   string `json:"list"`
+	Entity string `json:"entity"`
+	Reason string `json:"reason"`
+	Hash   bool   `json:"hash"`
+}
+
+var cmdTakedown *CommandHandler
 var cmdBan = &CommandHandler{
-	Name:    "ban",
-	Aliases: []string{"takedown"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `%s [--hash] <list shortcode> <entity> [reason]`", ce.Command)
-			return
-		}
-		hash := ce.Args[0] == "--hash"
-		if hash {
-			ce.Args = ce.Args[1:]
-		}
-		list := ce.Meta.FindListByShortcode(ce.Args[0])
+	Name:        "ban",
+	Description: event.MakeExtensibleText("Send a ban policy to a policy list"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "list",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}, {
+		Key: "entity",
+		Schema: cmdschema.Union(
+			cmdschema.PrimitiveTypeUserID.Schema(),
+			cmdschema.PrimitiveTypeServerName.Schema(),
+			cmdschema.PrimitiveTypeString.Schema(),
+		),
+	}, {
+		Key:      "reason",
+		Schema:   cmdschema.PrimitiveTypeString.Schema(),
+		Optional: true,
+	}, {
+		Key:      "hash",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *BanParams) {
+		list := ce.Meta.FindListByShortcode(args.List)
 		if list == nil {
-			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("List %s not found", format.SafeMarkdownCode(args.List))
 			return
 		}
-		entity, entityType, ok := resolveEntity(ce, ce.Args[1])
+		entity, entityType, ok := resolveEntity(ce, args.Entity)
 		if !ok {
 			return
 		}
 		policy := &event.ModPolicyContent{
 			Entity:         entity,
-			Reason:         strings.Join(ce.Args[2:], " "),
+			Reason:         args.Reason,
 			Recommendation: event.PolicyRecommendationBan,
 		}
-		if hash {
+		if args.Hash {
 			targetHash := util.SHA256String(policy.Entity)
 			policy.UnstableHashes = &event.PolicyHashes{
 				SHA256: base64.StdEncoding.EncodeToString(targetHash[:]),
 			}
 		}
-		if ce.Command == "takedown" {
+		if ce.Handler == cmdTakedown {
 			policy.Recommendation = event.PolicyRecommendationUnstableTakedown
 		}
 		existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy, entityType)
@@ -513,7 +528,7 @@ var cmdBan = &CommandHandler{
 			return
 		}
 		target := policy.Entity
-		if hash {
+		if args.Hash {
 			policy.Entity = ""
 		}
 		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
@@ -527,23 +542,21 @@ var cmdBan = &CommandHandler{
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent ban policy from command")
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
+var cmdRemoveBan, cmdRemoveUnban *CommandHandler
 var cmdRemovePolicy = &CommandHandler{
-	Name:    "remove-policy",
-	Aliases: []string{"remove-ban", "remove-unban"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `!remove-policy <list> <entity>`")
-			return
-		}
-		list := ce.Meta.FindListByShortcode(ce.Args[0])
+	Name:        "remove-policy",
+	Description: event.MakeExtensibleText("Remove a policy from a policy list"),
+	Parameters:  cmdBan.Parameters[:2],
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *BanParams) {
+		list := ce.Meta.FindListByShortcode(args.List)
 		if list == nil {
-			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("List %s not found", format.SafeMarkdownCode(args.List))
 			return
 		}
-		target, entityType, ok := resolveEntity(ce, ce.Args[1])
+		target, entityType, ok := resolveEntity(ce, args.Entity)
 		if !ok {
 			return
 		}
@@ -561,10 +574,10 @@ var cmdRemovePolicy = &CommandHandler{
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			existingStateKey = rec.StateKey
 			// TODO: handle wildcards and multiple matches, etc
-			if ce.Command == "remove-unban" && rec.Recommendation != event.PolicyRecommendationUnban {
+			if ce.Handler == cmdRemoveUnban && rec.Recommendation != event.PolicyRecommendationUnban {
 				ce.Reply("%s does not have an unban recommendation", format.SafeMarkdownCode(target))
 				return
-			} else if ce.Command == "remove-ban" && rec.Recommendation != event.PolicyRecommendationBan {
+			} else if ce.Handler == cmdRemoveBan && rec.Recommendation != event.PolicyRecommendationBan {
 				ce.Reply("%s does not have a ban recommendation", format.SafeMarkdownCode(target))
 				return
 			}
@@ -579,28 +592,49 @@ var cmdRemovePolicy = &CommandHandler{
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Removed policy from command")
 		ce.React(SuccessReaction)
-	},
+	}),
+}
+
+func init() {
+	cmdRemoveBan = &CommandHandler{
+		Name:        "remove-ban",
+		Description: event.MakeExtensibleText("Remove a ban policy from a policy list"),
+		Parameters:  cmdRemovePolicy.Parameters,
+		Func:        cmdRemovePolicy.Func,
+	}
+
+	cmdRemoveUnban = &CommandHandler{
+		Name:        "remove-unban",
+		Description: event.MakeExtensibleText("Remove an unban policy from a policy list"),
+		Parameters:  cmdRemovePolicy.Parameters,
+		Func:        cmdRemovePolicy.Func,
+	}
+
+	cmdTakedown = &CommandHandler{
+		Name:        "takedown",
+		Description: event.MakeExtensibleText("Send a takedown policy to a policy list"),
+		Parameters:  cmdBan.Parameters,
+		Func:        cmdBan.Func,
+	}
 }
 
 var cmdAddUnban = &CommandHandler{
-	Name: "add-unban",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `!add-unban <list shortcode> <entity> <reason>`")
-			return
-		}
-		list := ce.Meta.FindListByShortcode(ce.Args[0])
+	Name:        "add-unban",
+	Description: event.MakeExtensibleText("Add an unban policy to a policy list"),
+	Parameters:  cmdBan.Parameters[:3],
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *BanParams) {
+		list := ce.Meta.FindListByShortcode(args.List)
 		if list == nil {
-			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("List %s not found", format.SafeMarkdownCode(args.List))
 			return
 		}
-		entity, entityType, ok := resolveEntity(ce, ce.Args[1])
+		entity, entityType, ok := resolveEntity(ce, args.Entity)
 		if !ok {
 			return
 		}
 		policy := &event.ModPolicyContent{
 			Entity:         entity,
-			Reason:         strings.Join(ce.Args[2:], " "),
+			Reason:         args.Reason,
 			Recommendation: event.PolicyRecommendationUnban,
 		}
 		existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy, entityType)
@@ -618,7 +652,7 @@ var cmdAddUnban = &CommandHandler{
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent unban policy from command")
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
 func doMatch(ce *CommandEvent, target string) {
@@ -697,27 +731,41 @@ func doMatch(ce *CommandEvent, target string) {
 	}
 }
 
+type MatchParams struct {
+	Entities []string `json:"entity"`
+}
+
 var cmdMatch = &CommandHandler{
-	Name: "match",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!match <entity>...`")
-			return
+	Name:        "match",
+	Description: event.MakeExtensibleText("Search for policies which the given entity would match"),
+	Parameters: []*cmdschema.Parameter{{
+		Key: "entity",
+		Schema: cmdschema.Array(cmdschema.Union(
+			cmdschema.PrimitiveTypeUserID.Schema(),
+			cmdschema.PrimitiveTypeServerName.Schema(),
+			cmdschema.PrimitiveTypeString.Schema(),
+		)),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *MatchParams) {
+		for _, arg := range args.Entities {
+			doMatch(ce, arg)
 		}
-		if ce.Args[0] == "--whitespace" {
-			doMatch(ce, strings.TrimPrefix(ce.RawArgs, "--whitespace "))
-		} else {
-			for _, arg := range ce.Args {
-				doMatch(ce, arg)
-			}
-		}
-	},
+	}),
+}
+
+type SearchParams struct {
+	Pattern string `json:"pattern"`
 }
 
 var cmdSearch = &CommandHandler{
-	Name: "search",
-	Func: func(ce *CommandEvent) {
-		target := ce.Args[0]
+	Name:        "search",
+	Description: event.MakeExtensibleText("Search for policies whose target entity matches a given glob pattern"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "pattern",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *SearchParams) {
+		target := args.Pattern
 		start := time.Now()
 		match := ce.Meta.Store.Search(ce.Meta.GetWatchedListsForMatch(), target)
 		dur := time.Since(start)
@@ -764,30 +812,39 @@ var cmdSearch = &CommandHandler{
 				ce.Reply("No users matching %s found in protected rooms", format.SafeMarkdownCode(target))
 			}
 		}
-	},
+	}),
+}
+
+type SendAsBotParams struct {
+	Room    cmdschema.RoomIDOrString `json:"room"`
+	Message string                   `json:"message"`
 }
 
 var cmdSendAsBot = &CommandHandler{
-	Name: "send-as-bot",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `!send-as-bot <room ID> <message>`")
-			return
-		}
-		target := resolveRoom(ce, ce.Args[0])
+	Name:        "send-as-bot",
+	Description: event.MakeExtensibleText("Send a message to a room as the bot user"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "room",
+		Schema: cmdschema.ParameterSchemaJoinableRoom,
+	}, {
+		Key:    "message",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *SendAsBotParams) {
+		target := resolveRoom(ce, args.Room)
 		if target == "" {
 			return
 		}
 		resp, err := ce.Meta.Bot.SendMessageEvent(ce.Ctx, target, event.EventMessage, &event.MessageEventContent{
 			MsgType: event.MsgText,
-			Body:    strings.Join(ce.Args[1:], " "),
+			Body:    args.Message,
 		})
 		if err != nil {
 			ce.Reply("Failed to send message to %s: %v", format.MarkdownMentionRoomID("", target), err)
 		} else {
 			ce.Reply("Sent message to %s: [%s](%s)", format.MarkdownMentionRoomID("", target), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
 		}
-	},
+	}),
 }
 
 const roomsHelp = "Available `!rooms` subcommands:\n\n" +
@@ -1155,7 +1212,9 @@ var cmdProtectRoom = &CommandHandler{
 var VersionInfo progver.ProgramVersion
 
 var cmdVersion = &CommandHandler{
-	Name: "version",
+	Name:        "version",
+	Description: event.MakeExtensibleText("View the running Meowlnir version"),
+	Parameters:  []*cmdschema.Parameter{},
 	Func: func(ce *CommandEvent) {
 		ce.Reply(VersionInfo.MarkdownDescription())
 	},
