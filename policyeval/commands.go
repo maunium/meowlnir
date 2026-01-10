@@ -1009,8 +1009,16 @@ var cmdRoomDelete = &CommandHandler{
 				AllowMarkdown: true,
 				Extra: map[string]any{
 					commands.ReactionCommandsKey: map[string]any{
-						"/confirm": fmt.Sprintf("!rooms %s %s", ce.Command, roomID),
-						"/cancel":  "",
+						"/confirm": event.MSC4391BotCommandInputCustom[*RoomDeleteParams]{
+							Command: fmt.Sprintf("rooms %s", ce.Command),
+							Arguments: &RoomDeleteParams{
+								RoomID:  args.RoomID,
+								Force:   args.Force,
+								Async:   args.Async,
+								Confirm: false,
+							},
+						},
+						"/cancel": "",
 					},
 				},
 			})
