@@ -13,6 +13,7 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/event/cmdschema"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/bot"
@@ -140,17 +141,22 @@ func NewPolicyEvaluator(
 		cmdRedactRecent,
 		cmdKick,
 		cmdBan,
+		cmdTakedown,
 		cmdRemovePolicy,
+		cmdRemoveBan,
+		cmdRemoveUnban,
 		cmdAddUnban,
 		cmdMatch,
 		cmdSearch,
 		cmdSendAsBot,
 		cmdSuspend,
+		cmdUnsuspend,
 		cmdDeactivate,
 		cmdBotProfile,
 		cmdRooms,
 		cmdProvision,
 		cmdProtectRoom,
+		cmdUnprotectRoom,
 		cmdVersion,
 		cmdHelp,
 	)
@@ -244,7 +250,55 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 		msg += "\n\n**Dry run mode is enabled, no actions will be taken.**"
 	}
 	pe.sendNotice(ctx, msg)
+	pe.syncCommandDescriptions(ctx, state[event.StateMSC4391BotCommand])
 	return nil
+}
+
+func (pe *PolicyEvaluator) syncCommandDescriptions(ctx context.Context, state map[string]*event.Event) {
+	log := zerolog.Ctx(ctx)
+	for _, spec := range pe.commandProcessor.AllSpecs() {
+		if err := spec.Validate(); err != nil {
+			panic(fmt.Errorf("invalid command spec for command %q: %w", spec.Command, err))
+		}
+		stateKey := spec.StateKey(pe.Bot.UserID)
+		delete(state, stateKey)
+		evt := state[stateKey]
+		if evt != nil {
+			content, _ := evt.Content.Parsed.(*cmdschema.EventContent)
+			if spec.Equals(content) {
+				continue
+			}
+		}
+		resp, err := pe.Bot.SendStateEvent(ctx, pe.ManagementRoom, event.StateMSC4391BotCommand, stateKey, spec)
+		if err != nil {
+			log.Err(err).
+				Str("command", spec.Command).
+				Str("state_key", stateKey).
+				Msg("Failed to send bot command state event")
+		} else {
+			log.Debug().
+				Str("command", spec.Command).
+				Str("state_key", stateKey).
+				Stringer("event_id", resp.EventID).
+				Msg("Updated bot command state event")
+		}
+	}
+	for stateKey, evt := range state {
+		if len(evt.Content.Raw) == 0 {
+			continue
+		}
+		resp, err := pe.Bot.SendStateEvent(ctx, pe.ManagementRoom, event.StateMSC4391BotCommand, stateKey, struct{}{})
+		if err != nil {
+			log.Err(err).
+				Str("state_key", stateKey).
+				Msg("Failed to remove obsolete bot command state event")
+		} else {
+			log.Debug().
+				Str("state_key", stateKey).
+				Stringer("event_id", resp.EventID).
+				Msg("Removed obsolete bot command state event")
+		}
+	}
 }
 
 func (pe *PolicyEvaluator) handlePowerLevels(ctx context.Context, evt *event.Event) string {
