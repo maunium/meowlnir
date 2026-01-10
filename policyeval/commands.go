@@ -1042,59 +1042,92 @@ var cmdRoomDelete = &CommandHandler{
 	},
 }
 
+type SuspendParams struct {
+	UserID id.UserID `json:"user"`
+}
+
 var cmdSuspend = &CommandHandler{
-	Name:    "suspend",
-	Aliases: []string{"unsuspend"},
-	Func: func(ce *CommandEvent) {
-		err := ce.Meta.setSuspendedStatus(ce.Ctx, id.UserID(ce.Args[0]), ce.Command != "unsuspend")
+	Name:        "suspend",
+	Description: event.MakeExtensibleText("Suspend a local account"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "user",
+		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *SuspendParams) {
+		err := ce.Meta.setSuspendedStatus(ce.Ctx, args.UserID, ce.Command != "unsuspend")
 		if err != nil {
 			ce.Reply("Failed to %s: %v", ce.Command, err)
 		} else {
 			ce.React(SuccessReaction)
 		}
-	},
+	}),
+}
+
+var cmdUnsuspend = &CommandHandler{
+	Name:        "unsuspend",
+	Description: event.MakeExtensibleText("Unsuspend a local account"),
+	Parameters:  cmdSuspend.Parameters,
+	Func:        cmdSuspend.Func,
+}
+
+type DeactivateParams struct {
+	UserID id.UserID `json:"user"`
+	Erase  bool      `json:"erase"`
 }
 
 var cmdDeactivate = &CommandHandler{
-	Name: "deactivate",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) > 1 && ce.Args[1] != "--erase" {
-			ce.Reply("Usage: `!deactivate <user ID> [--erase]`")
-			return
-		}
-		err := ce.Meta.Bot.SynapseAdmin.DeactivateAccount(ce.Ctx, id.UserID(ce.Args[0]), synapseadmin.ReqDeleteUser{
-			Erase: len(ce.Args) > 1 && ce.Args[1] == "--erase",
+	Name:        "deactivate",
+	Description: event.MakeExtensibleText("Permanently deactivate a local account"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "user",
+		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
+	}, {
+		Key:      "erase",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *DeactivateParams) {
+		err := ce.Meta.Bot.SynapseAdmin.DeactivateAccount(ce.Ctx, args.UserID, synapseadmin.ReqDeleteUser{
+			Erase: args.Erase,
 		})
 		if err != nil {
 			ce.Reply("Failed to deactivate: %v", err)
 		} else {
 			ce.React(SuccessReaction)
 		}
-	},
+	}),
+}
+
+type BotProfileParams struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
 }
 
 var cmdBotProfile = &CommandHandler{
-	Name:    "bot-profile",
-	Aliases: []string{"profile"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `!bot-profile <displayname|avatar> <new value>`")
-			return
-		}
-		val := strings.Join(ce.Args[1:], " ")
-		switch strings.ToLower(ce.Args[0]) {
+	Name:        "bot-profile",
+	Aliases:     []string{"profile"},
+	Description: event.MakeExtensibleText("Change the profile of the bot"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "field",
+		Schema: cmdschema.Enum("displayname", "name", "avatar", "avatar_url"),
+	}, {
+		Key:    "value",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *BotProfileParams) {
+		switch strings.ToLower(args.Field) {
 		case "displayname", "name":
-			err := ce.Meta.Bot.Intent.SetDisplayName(ce.Ctx, val)
+			err := ce.Meta.Bot.Intent.SetDisplayName(ce.Ctx, args.Value)
 			if err != nil {
 				ce.Log.Err(err).Msg("Failed to update bot displayname")
 				ce.Reply("Failed to update displayname")
 				return
 			}
-			ce.Meta.Bot.Meta.Displayname = val
+			ce.Meta.Bot.Meta.Displayname = args.Value
 		case "avatar", "avatar_url", "avatar-url":
-			parsed, err := id.ParseContentURI(val)
+			parsed, err := id.ParseContentURI(args.Value)
 			if err != nil {
-				ce.Reply("Malformed avatar URL %s: %v", format.SafeMarkdownCode(val), err)
+				ce.Reply("Malformed avatar URL %s: %v", format.SafeMarkdownCode(args.Value), err)
 				return
 			}
 			err = ce.Meta.Bot.Intent.SetAvatarURL(ce.Ctx, parsed)
@@ -1112,29 +1145,35 @@ var cmdBotProfile = &CommandHandler{
 		if err != nil {
 			ce.Log.Err(err).Msg("Failed to save bot profile to database")
 		}
-	},
+	}),
+}
+
+type ProvisionParams struct {
+	UserID id.UserID `json:"user"`
+	Force  bool      `json:"force"`
 }
 
 var cmdProvision = &CommandHandler{
-	Name: "provision",
-	Func: func(ce *CommandEvent) {
+	Name:        "provision",
+	Description: event.MakeExtensibleText("Provision a new Meowlnir4All bot for the given user"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "user",
+		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
+	}, {
+		Key:      "force",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ProvisionParams) {
 		if ce.Meta.provisionM4A == nil {
 			ce.Reply("This is not the Meowlnir4All admin room")
 			return
-		} else if len(ce.Args) < 1 {
-			ce.Reply("Usage: `!provision [--force] <user ID>`")
-			return
-		}
-		force := strings.ToLower(ce.Args[0]) == "--force" && len(ce.Args) > 1
-		if force {
-			ce.Args = ce.Args[1:]
 		}
 		var ownerName string
-		owner := id.UserID(ce.Args[0])
-		if !force {
-			profile, err := ce.Meta.Bot.GetProfile(ce.Ctx, owner)
+		if !args.Force {
+			profile, err := ce.Meta.Bot.GetProfile(ce.Ctx, args.UserID)
 			if err != nil || profile == nil || profile.DisplayName == "" {
-				ce.Reply("Profile not found for %s, are you sure the user ID is correct?", format.SafeMarkdownCode(owner))
+				ce.Reply("Profile not found for %s, are you sure the user ID is correct?", format.SafeMarkdownCode(args.UserID))
 				return
 			}
 			if profile != nil {
@@ -1142,9 +1181,9 @@ var cmdProvision = &CommandHandler{
 			}
 		}
 		if ownerName == "" {
-			ownerName = owner.String()
+			ownerName = args.UserID.String()
 		}
-		userID, roomID, err := ce.Meta.provisionM4A(ce.Ctx, owner)
+		userID, roomID, err := ce.Meta.provisionM4A(ce.Ctx, args.UserID)
 		if err != nil {
 			ce.Log.Err(err).Msg("Failed to provision new M4A bot")
 			ce.Reply("Failed to provision bot: %v", err)
@@ -1153,10 +1192,10 @@ var cmdProvision = &CommandHandler{
 		ce.Reply(
 			"Successfully provisioned %s for %s with management room %s",
 			format.MarkdownMention(userID),
-			format.MarkdownMentionWithName(ownerName, owner),
+			format.MarkdownMentionWithName(ownerName, args.UserID),
 			format.MarkdownMentionRoomID("", roomID, ce.Meta.Bot.ServerName),
 		)
-	},
+	}),
 }
 
 var cmdProtectRoom = &CommandHandler{
