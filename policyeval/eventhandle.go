@@ -22,7 +22,7 @@ func (pe *PolicyEvaluator) HandleConfigChange(ctx context.Context, evt *event.Ev
 	var errorMsg, successMsg string
 	switch evt.Type {
 	case event.StatePowerLevels:
-		errorMsg = pe.handlePowerLevels(ctx, evt)
+		_, errorMsg = pe.handlePowerLevels(ctx, evt)
 	case config.StateWatchedLists:
 		successMsgs, errorMsgs := pe.handleWatchedLists(ctx, evt, false)
 		successMsg = strings.Join(successMsgs, "\n")

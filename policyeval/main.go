@@ -203,9 +203,11 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 		return fmt.Errorf("failed to get management room state: %w", err)
 	}
 	var errors []string
+	var pls *event.PowerLevelsEventContent
+	var errMsg string
 	if evt, ok := state[event.StatePowerLevels][""]; !ok {
 		return fmt.Errorf("no power level event found in management room")
-	} else if errMsg := pe.handlePowerLevels(ctx, evt); errMsg != "" {
+	} else if pls, errMsg = pe.handlePowerLevels(ctx, evt); errMsg != "" {
 		errors = append(errors, errMsg)
 	}
 	if evt, ok := state[config.StateWatchedLists][""]; !ok {
@@ -250,7 +252,9 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 		msg += "\n\n**Dry run mode is enabled, no actions will be taken.**"
 	}
 	pe.sendNotice(ctx, msg)
-	pe.syncCommandDescriptions(ctx, state[event.StateMSC4391BotCommand])
+	if pls.GetUserLevel(pe.Bot.UserID) >= pls.GetEventLevel(event.StateMSC4391BotCommand) {
+		pe.syncCommandDescriptions(ctx, state[event.StateMSC4391BotCommand])
+	}
 	return nil
 }
 
@@ -301,10 +305,10 @@ func (pe *PolicyEvaluator) syncCommandDescriptions(ctx context.Context, state ma
 	}
 }
 
-func (pe *PolicyEvaluator) handlePowerLevels(ctx context.Context, evt *event.Event) string {
+func (pe *PolicyEvaluator) handlePowerLevels(ctx context.Context, evt *event.Event) (*event.PowerLevelsEventContent, string) {
 	content, ok := evt.Content.Parsed.(*event.PowerLevelsEventContent)
 	if !ok {
-		return "* Failed to parse power level event"
+		return nil, "* Failed to parse power level event"
 	}
 	err := pe.Bot.Intent.FillPowerLevelCreateEvent(ctx, evt.RoomID, content)
 	if err != nil {
@@ -326,5 +330,5 @@ func (pe *PolicyEvaluator) handlePowerLevels(ctx context.Context, evt *event.Eve
 		}
 	}
 	pe.Admins.ReplaceAll(admins)
-	return ""
+	return content, ""
 }
