@@ -156,6 +156,7 @@ func NewPolicyEvaluator(
 		cmdRooms,
 		cmdProvision,
 		cmdProtectRoom,
+		cmdUnprotectRoom,
 		cmdVersion,
 		cmdHelp,
 	)
@@ -256,6 +257,9 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 func (pe *PolicyEvaluator) syncCommandDescriptions(ctx context.Context, state map[string]*event.Event) {
 	log := zerolog.Ctx(ctx)
 	for _, spec := range pe.commandProcessor.AllSpecs() {
+		if err := spec.Validate(); err != nil {
+			panic(fmt.Errorf("invalid command spec for command %q: %w", spec.Command, err))
+		}
 		stateKey := spec.StateKey(pe.Bot.UserID)
 		delete(state, stateKey)
 		evt := state[stateKey]

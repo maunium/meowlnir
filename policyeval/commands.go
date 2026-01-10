@@ -595,29 +595,6 @@ var cmdRemovePolicy = &CommandHandler{
 	}),
 }
 
-func init() {
-	cmdRemoveBan = &CommandHandler{
-		Name:        "remove-ban",
-		Description: event.MakeExtensibleText("Remove a ban policy from a policy list"),
-		Parameters:  cmdRemovePolicy.Parameters,
-		Func:        cmdRemovePolicy.Func,
-	}
-
-	cmdRemoveUnban = &CommandHandler{
-		Name:        "remove-unban",
-		Description: event.MakeExtensibleText("Remove an unban policy from a policy list"),
-		Parameters:  cmdRemovePolicy.Parameters,
-		Func:        cmdRemovePolicy.Func,
-	}
-
-	cmdTakedown = &CommandHandler{
-		Name:        "takedown",
-		Description: event.MakeExtensibleText("Send a takedown policy to a policy list"),
-		Parameters:  cmdBan.Parameters,
-		Func:        cmdBan.Func,
-	}
-}
-
 var cmdAddUnban = &CommandHandler{
 	Name:        "add-unban",
 	Description: event.MakeExtensibleText("Add an unban policy to a policy list"),
@@ -857,13 +834,17 @@ const roomsHelp = "Available `!rooms` subcommands:\n\n" +
 	"* `!rooms unprotect <room ID or alias>...` - Stop protecting a room.\n"
 
 var cmdRooms = &CommandHandler{
-	Name:    "rooms",
-	Aliases: []string{"room"},
+	Name:        "rooms",
+	Aliases:     []string{"room"},
+	Description: event.MakeExtensibleText("Manage various things related to rooms"),
+	Parameters:  []*cmdschema.Parameter{},
 	Subcommands: []*CommandHandler{
 		cmdListProtectedRooms,
 		cmdProtectRoom,
+		cmdUnprotectRoom,
 		cmdRoomInfo,
 		cmdRoomDelete,
+		cmdRoomBlock,
 		cmdRoomDeleteStatus,
 		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
 	},
@@ -873,7 +854,9 @@ var cmdRooms = &CommandHandler{
 }
 
 var cmdListProtectedRooms = &CommandHandler{
-	Name: "list",
+	Name:        "list",
+	Description: event.MakeExtensibleText("View the list of rooms protected by this bot"),
+	Parameters:  []*cmdschema.Parameter{},
 	Func: func(ce *CommandEvent) {
 		var buf strings.Builder
 		buf.WriteString("Protected rooms:\n\n")
@@ -904,14 +887,19 @@ func formatRoomInfo(info *synapseadmin.RoomInfo) string {
 	)
 }
 
+type RoomInfoParams struct {
+	Room cmdschema.RoomIDOrString `json:"room"`
+}
+
 var cmdRoomInfo = &CommandHandler{
-	Name: "info",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
-		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!rooms info <room ID or alias>`")
-			return
-		}
-		roomID := resolveRoom(ce, ce.RawArgs)
+	Name:        "info",
+	Description: event.MakeExtensibleText("View the info of a room using the Synapse admin API"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "room",
+		Schema: cmdschema.ParameterSchemaJoinableRoom,
+	}},
+	Func: commands.WithParsedArgs(func(ce *commands.Event[*PolicyEvaluator], args *RoomInfoParams) {
+		roomID := resolveRoom(ce, args.Room)
 		if roomID == "" {
 			return
 		}
@@ -921,7 +909,7 @@ var cmdRoomInfo = &CommandHandler{
 			return
 		}
 		ce.Reply(formatRoomInfo(roomInfo))
-	},
+	}),
 }
 
 func formatDeleteResult(resp synapseadmin.RespDeleteRoomResult) string {
@@ -952,16 +940,21 @@ func formatDeleteResult(resp synapseadmin.RespDeleteRoomResult) string {
 	return strings.Join(parts, "\n")
 }
 
+type RoomDeleteStatusParams struct {
+	DeleteID string `json:"delete_id"`
+}
+
 var cmdRoomDeleteStatus = &CommandHandler{
-	Name: "delete-status",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!rooms delete-status <delete ID>`")
-			return
-		}
-		resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoomStatus(ce.Ctx, ce.Args[0])
+	Name:        "delete-status",
+	Description: event.MakeExtensibleText("Check the status of an async room deletion"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "delete_id",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *RoomDeleteStatusParams) {
+		resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoomStatus(ce.Ctx, args.DeleteID)
 		if err != nil {
-			ce.Reply("Failed to get delete status for %s: %v", format.SafeMarkdownCode(ce.Args[0]), err)
+			ce.Reply("Failed to get delete status for %s: %v", format.SafeMarkdownCode(args.DeleteID), err)
 		} else if resp.Status == "complete" {
 			ce.Reply("Deletion is complete:\n\n%s", formatDeleteResult(resp.ShutdownRoom))
 		} else if resp.Status == "failed" {
@@ -969,23 +962,48 @@ var cmdRoomDeleteStatus = &CommandHandler{
 		} else {
 			ce.Reply("Deletion is still in progress (%s)", resp.Status)
 		}
-	},
+	}),
+}
+
+type RoomDeleteParams struct {
+	RoomID  cmdschema.RoomIDValue `json:"room_id"`
+	Force   bool                  `json:"force"`
+	Async   bool                  `json:"async"`
+	Confirm bool                  `json:"confirm"`
+}
+
+var cmdRoomBlock = &CommandHandler{
+	Name:        "block",
+	Description: event.MakeExtensibleText("Delete and block a room using the Synapse admin API"),
 }
 
 var cmdRoomDelete = &CommandHandler{
-	Name:    "delete",
-	Aliases: []string{"purge", "block"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!rooms %s [--force] [--async] <room ID>`", ce.Command)
-			return
-		}
-		if ce.Args[0] == "--confirm" {
+	Name:        "delete",
+	Aliases:     []string{"purge"},
+	Description: event.MakeExtensibleText("Delete a room using the Synapse admin API"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "room_id",
+		Schema: cmdschema.PrimitiveTypeRoomID.Schema(),
+	}, {
+		Key:      "async",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}, {
+		Key:      "confirm",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}, {
+		Key:      "force",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *RoomDeleteParams) {
+		roomID := args.RoomID.RoomID
+		if args.Confirm {
 			andBlock := ""
-			if ce.Command == "block" {
+			if ce.Handler == cmdRoomBlock {
 				andBlock = " and block"
 			}
-			roomID := strings.TrimPrefix(ce.RawArgs, "--confirm ")
 			evtID := ce.Respond(fmt.Sprintf("Really purge%s %s?", andBlock, format.SafeMarkdownCode(roomID)), commands.ReplyOpts{
 				Reply:         true,
 				AllowMarkdown: true,
@@ -999,30 +1017,16 @@ var cmdRoomDelete = &CommandHandler{
 			ce.Meta.sendReactions(ce.Ctx, evtID, "/cancel", "/confirm")
 			return
 		}
-		rawRoomID := ce.RawArgs
 		req := synapseadmin.ReqDeleteRoom{
-			Purge: true,
-			Block: ce.Command == "block",
+			Purge:      true,
+			ForcePurge: args.Force,
+			Block:      ce.Handler == cmdRoomBlock,
 		}
-		var async bool
-	Loop:
-		for _, arg := range ce.Args {
-			switch strings.ToLower(arg) {
-			case "--force":
-				req.ForcePurge = true
-			case "--async":
-				async = true
-			default:
-				break Loop
-			}
-			rawRoomID = strings.TrimPrefix(rawRoomID, arg+" ")
-		}
-		roomID := id.RoomID(rawRoomID)
 		if ce.Meta.DryRun {
 			ce.Reply("Would have deleted room %s if dry run wasn't enabled", format.SafeMarkdownCode(roomID))
 			return
 		}
-		if async {
+		if args.Async {
 			resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoom(ce.Ctx, roomID, req)
 			if err != nil {
 				ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
@@ -1039,7 +1043,7 @@ var cmdRoomDelete = &CommandHandler{
 				ce.Reply("Successfully deleted room %s\n\n%s", format.SafeMarkdownCode(roomID), formatDeleteResult(resp))
 			}
 		}
-	},
+	}),
 }
 
 type SuspendParams struct {
@@ -1198,14 +1202,23 @@ var cmdProvision = &CommandHandler{
 	}),
 }
 
+type ProtectRoomParams struct {
+	Rooms []cmdschema.RoomIDOrString `json:"room"`
+}
+
+var cmdUnprotectRoom = &CommandHandler{
+	Name:        "unprotect",
+	Description: event.MakeExtensibleText("Remove a room from the protected rooms list"),
+}
+
 var cmdProtectRoom = &CommandHandler{
-	Name:    "protect",
-	Aliases: []string{"unprotect"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 1 {
-			ce.Reply("Usage: `!rooms <protect/unprotect> <room ID or alias>...`")
-			return
-		}
+	Name:        "protect",
+	Description: event.MakeExtensibleText("Add rooms to the protected rooms list"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "room",
+		Schema: cmdschema.Array(cmdschema.ParameterSchemaJoinableRoom),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ProtectRoomParams) {
 		ce.Meta.protectedRoomsLock.RLock()
 		evtContent := ce.Meta.protectedRoomsEvent
 		if evtContent == nil {
@@ -1215,13 +1228,13 @@ var cmdProtectRoom = &CommandHandler{
 		contentCopy.Rooms = slices.Clone(contentCopy.Rooms)
 		ce.Meta.protectedRoomsLock.RUnlock()
 		changed := false
-		for _, room := range ce.Args {
+		for _, room := range args.Rooms {
 			roomID := resolveRoom(ce, room)
 			if roomID == "" {
 				continue
 			}
 			itemIdx := slices.Index(contentCopy.Rooms, roomID)
-			if ce.Command == "protect" {
+			if ce.Handler != cmdUnprotectRoom {
 				if itemIdx >= 0 {
 					ce.Reply("%s is already protected", format.SafeMarkdownCode(roomID))
 					continue
@@ -1245,7 +1258,7 @@ var cmdProtectRoom = &CommandHandler{
 			}
 			ce.React(SuccessReaction)
 		}
-	},
+	}),
 }
 
 var VersionInfo progver.ProgramVersion
@@ -1259,10 +1272,23 @@ var cmdVersion = &CommandHandler{
 	},
 }
 
+type HelpParams struct {
+	Command string `json:"command"`
+}
+
 var cmdHelp = &CommandHandler{
-	Name: "help",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
+	Name:        "help",
+	Description: event.MakeExtensibleText("Show help for commands"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:      "command",
+		Schema:   cmdschema.Enum("rooms"),
+		Optional: true,
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *HelpParams) {
+		switch args.Command {
+		case "rooms":
+			ce.Reply(roomsHelp)
+		case "":
 			ce.Reply("Available commands:\n" +
 				"* `!join <rooms...>` - Join a room\n" +
 				"* `!knock <rooms...>` - Ask to join a room\n" +
@@ -1288,15 +1314,10 @@ var cmdHelp = &CommandHandler{
 				"\n" +
 				"All fields that want a room will accept both room IDs and aliases.\n",
 			)
-		} else {
-			switch strings.ToLower(strings.TrimLeft(ce.Args[0], "!")) {
-			case "rooms":
-				ce.Reply(roomsHelp)
-			default:
-				ce.Reply("No help page for %s", format.SafeMarkdownCode(ce.Args[0]))
-			}
+		default:
+			ce.Reply("No help page for %s", format.SafeMarkdownCode(args.Command))
 		}
-	},
+	}),
 }
 
 func resolveRoomFull(ce *CommandEvent, room string) (roomID id.RoomID, roomAlias id.RoomAlias, via []string) {
@@ -1389,4 +1410,33 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 		stateKey = base64.StdEncoding.EncodeToString(stateKeyHash[:])
 	}
 	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), stateKey, content)
+}
+
+func init() {
+	cmdRemoveBan = &CommandHandler{
+		Name:        "remove-ban",
+		Description: event.MakeExtensibleText("Remove a ban policy from a policy list"),
+		Parameters:  cmdRemovePolicy.Parameters,
+		Func:        cmdRemovePolicy.Func,
+	}
+
+	cmdRemoveUnban = &CommandHandler{
+		Name:        "remove-unban",
+		Description: event.MakeExtensibleText("Remove an unban policy from a policy list"),
+		Parameters:  cmdRemovePolicy.Parameters,
+		Func:        cmdRemovePolicy.Func,
+	}
+
+	cmdTakedown = &CommandHandler{
+		Name:        "takedown",
+		Description: event.MakeExtensibleText("Send a takedown policy to a policy list"),
+		Parameters:  cmdBan.Parameters,
+		Func:        cmdBan.Func,
+	}
+
+	cmdRoomBlock.Parameters = cmdRoomDelete.Parameters
+	cmdRoomBlock.Func = cmdRoomDelete.Func
+
+	cmdUnprotectRoom.Parameters = cmdProtectRoom.Parameters
+	cmdUnprotectRoom.Func = cmdProtectRoom.Func
 }
