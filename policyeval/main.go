@@ -265,8 +265,8 @@ func (pe *PolicyEvaluator) syncCommandDescriptions(ctx context.Context, state ma
 			panic(fmt.Errorf("invalid command spec for command %q: %w", spec.Command, err))
 		}
 		stateKey := spec.StateKey(pe.Bot.UserID)
-		delete(state, stateKey)
 		evt := state[stateKey]
+		delete(state, stateKey)
 		if evt != nil {
 			content, _ := evt.Content.Parsed.(*cmdschema.EventContent)
 			if spec.Equals(content) {
