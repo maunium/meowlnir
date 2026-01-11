@@ -276,6 +276,7 @@ var cmdRedact = &CommandHandler{
 		Schema:   cmdschema.PrimitiveTypeString.Schema(),
 		Optional: true,
 	}},
+	TailParam: "reason",
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *RedactArgs) {
 		var target *id.MatrixURI
 		var err error
@@ -327,6 +328,7 @@ var cmdRedactRecent = &CommandHandler{
 		Schema:   cmdschema.PrimitiveTypeString.Schema(),
 		Optional: true,
 	}},
+	TailParam: "reason",
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *RedactRecentParams) {
 		room := resolveRoom(ce, args.Target)
 		if room == "" {
@@ -376,6 +378,7 @@ var cmdKick = &CommandHandler{
 		Schema:   cmdschema.ParameterSchemaJoinableRoom,
 		Optional: true,
 	}},
+	TailParam: "reason",
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *KickParams) {
 		var targetRoom id.RoomID
 		if args.Room != "" {
@@ -476,7 +479,10 @@ type BanParams struct {
 	Hash   bool   `json:"hash"`
 }
 
-var cmdTakedown *CommandHandler
+var cmdTakedown = &CommandHandler{
+	Name:        "takedown",
+	Description: event.MakeExtensibleText("Send a takedown policy to a policy list"),
+}
 var cmdBan = &CommandHandler{
 	Name:        "ban",
 	Description: event.MakeExtensibleText("Send a ban policy to a policy list"),
@@ -499,6 +505,7 @@ var cmdBan = &CommandHandler{
 		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
 		Optional: true,
 	}},
+	TailParam: "reason",
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *BanParams) {
 		list := ce.Meta.FindListByShortcode(args.List)
 		if list == nil {
@@ -545,7 +552,14 @@ var cmdBan = &CommandHandler{
 	}),
 }
 
-var cmdRemoveBan, cmdRemoveUnban *CommandHandler
+var cmdRemoveBan = &CommandHandler{
+	Name:        "remove-ban",
+	Description: event.MakeExtensibleText("Remove a ban policy from a policy list"),
+}
+var cmdRemoveUnban = &CommandHandler{
+	Name:        "remove-unban",
+	Description: event.MakeExtensibleText("Remove an unban policy from a policy list"),
+}
 var cmdRemovePolicy = &CommandHandler{
 	Name:        "remove-policy",
 	Description: event.MakeExtensibleText("Remove a policy from a policy list"),
@@ -1058,6 +1072,10 @@ type SuspendParams struct {
 	UserID id.UserID `json:"user"`
 }
 
+var cmdUnsuspend = &CommandHandler{
+	Name:        "unsuspend",
+	Description: event.MakeExtensibleText("Unsuspend a local account"),
+}
 var cmdSuspend = &CommandHandler{
 	Name:        "suspend",
 	Description: event.MakeExtensibleText("Suspend a local account"),
@@ -1066,20 +1084,13 @@ var cmdSuspend = &CommandHandler{
 		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
 	}},
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *SuspendParams) {
-		err := ce.Meta.setSuspendedStatus(ce.Ctx, args.UserID, ce.Command != "unsuspend")
+		err := ce.Meta.setSuspendedStatus(ce.Ctx, args.UserID, ce.Handler != cmdUnsuspend)
 		if err != nil {
 			ce.Reply("Failed to %s: %v", ce.Command, err)
 		} else {
 			ce.React(SuccessReaction)
 		}
 	}),
-}
-
-var cmdUnsuspend = &CommandHandler{
-	Name:        "unsuspend",
-	Description: event.MakeExtensibleText("Unsuspend a local account"),
-	Parameters:  cmdSuspend.Parameters,
-	Func:        cmdSuspend.Func,
 }
 
 type DeactivateParams struct {
@@ -1292,6 +1303,7 @@ var cmdHelp = &CommandHandler{
 		Schema:   cmdschema.Enum("rooms"),
 		Optional: true,
 	}},
+	TailParam: "command",
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *HelpParams) {
 		switch args.Command {
 		case "rooms":
@@ -1421,30 +1433,10 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 }
 
 func init() {
-	cmdRemoveBan = &CommandHandler{
-		Name:        "remove-ban",
-		Description: event.MakeExtensibleText("Remove a ban policy from a policy list"),
-		Parameters:  cmdRemovePolicy.Parameters,
-		Func:        cmdRemovePolicy.Func,
-	}
-
-	cmdRemoveUnban = &CommandHandler{
-		Name:        "remove-unban",
-		Description: event.MakeExtensibleText("Remove an unban policy from a policy list"),
-		Parameters:  cmdRemovePolicy.Parameters,
-		Func:        cmdRemovePolicy.Func,
-	}
-
-	cmdTakedown = &CommandHandler{
-		Name:        "takedown",
-		Description: event.MakeExtensibleText("Send a takedown policy to a policy list"),
-		Parameters:  cmdBan.Parameters,
-		Func:        cmdBan.Func,
-	}
-
-	cmdRoomBlock.Parameters = cmdRoomDelete.Parameters
-	cmdRoomBlock.Func = cmdRoomDelete.Func
-
-	cmdUnprotectRoom.Parameters = cmdProtectRoom.Parameters
-	cmdUnprotectRoom.Func = cmdProtectRoom.Func
+	cmdRemoveBan.CopyFrom(cmdRemovePolicy)
+	cmdRemoveUnban.CopyFrom(cmdRemovePolicy)
+	cmdTakedown.CopyFrom(cmdBan)
+	cmdRoomBlock.CopyFrom(cmdRoomDelete)
+	cmdUnprotectRoom.CopyFrom(cmdProtectRoom)
+	cmdUnsuspend.CopyFrom(cmdSuspend)
 }
