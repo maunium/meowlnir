@@ -10,6 +10,8 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/meowlnir/policyeval"
 )
 
 type ReqUserMayInvite struct {
@@ -162,11 +164,22 @@ func (m *Meowlnir) PostAcceptMakeJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pathID := r.PathValue("policyListID")
+	var mgmtRoom *policyeval.PolicyEvaluator
+	var ok bool
 	m.MapLock.RLock()
-	mgmtRoom, ok := m.EvaluatorByManagementRoom[id.RoomID(r.PathValue("policyListID"))]
+	if pathID == "auto" {
+		mgmtRoom, ok = m.EvaluatorByProtectedRoom[req.RoomID]
+	} else {
+		mgmtRoom, ok = m.EvaluatorByManagementRoom[id.RoomID(pathID)]
+	}
 	m.MapLock.RUnlock()
 	if !ok {
-		mautrix.MNotFound.WithMessage("Antispam configuration issue: policy list not found").Write(w)
+		if pathID == "auto" {
+			mautrix.MNotFound.WithMessage("Antispam configured to auto-route accept_make_join, but the room is not protected").Write(w)
+		} else {
+			mautrix.MNotFound.WithMessage("Antispam configuration issue: policy list not found").Write(w)
+		}
 		return
 	}
 	errResp := mgmtRoom.HandleAcceptMakeJoin(r.Context(), req.RoomID, req.UserID)
