@@ -269,7 +269,7 @@ func (pe *PolicyEvaluator) syncCommandDescriptions(ctx context.Context, state ma
 		delete(state, stateKey)
 		if evt != nil {
 			content, _ := evt.Content.Parsed.(*cmdschema.EventContent)
-			if spec.Equals(content) {
+			if evt.Sender == pe.Bot.UserID && spec.Equals(content) {
 				continue
 			}
 		}
@@ -288,7 +288,7 @@ func (pe *PolicyEvaluator) syncCommandDescriptions(ctx context.Context, state ma
 		}
 	}
 	for stateKey, evt := range state {
-		if len(evt.Content.Raw) == 0 {
+		if len(evt.Content.Raw) == 0 || evt.Sender != pe.Bot.UserID {
 			continue
 		}
 		resp, err := pe.Bot.SendStateEvent(ctx, pe.ManagementRoom, event.StateMSC4391BotCommand, stateKey, struct{}{})
