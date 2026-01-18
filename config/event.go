@@ -14,14 +14,14 @@ var (
 
 type WatchedPolicyList struct {
 	RoomID       id.RoomID `json:"room_id" yaml:"room_id"`
-	Name         string    `json:"name" yaml:"name"`
-	Shortcode    string    `json:"shortcode" yaml:"shortcode"`
-	DontApply    bool      `json:"dont_apply" yaml:"dont_apply"`
-	DontApplyACL bool      `json:"dont_apply_acl" yaml:"dont_apply_acl"`
-	AutoUnban    bool      `json:"auto_unban" yaml:"auto_unban"`
-	AutoSuspend  bool      `json:"auto_suspend" yaml:"auto_suspend"`
+	Name         string    `json:"name,omitempty" yaml:"name"`
+	Shortcode    string    `json:"shortcode,omitempty" yaml:"shortcode"`
+	DontApply    bool      `json:"dont_apply,omitempty" yaml:"dont_apply"`
+	DontApplyACL bool      `json:"dont_apply_acl,omitempty" yaml:"dont_apply_acl"`
+	AutoUnban    bool      `json:"auto_unban,omitempty" yaml:"auto_unban"`
+	AutoSuspend  bool      `json:"auto_suspend,omitempty" yaml:"auto_suspend"`
 
-	DontNotifyOnChange bool `json:"dont_notify_on_change" yaml:"dont_notify_on_change"`
+	DontNotifyOnChange bool `json:"dont_notify_on_change,omitempty" yaml:"dont_notify_on_change"`
 
 	InRoom bool `json:"-" yaml:"-"`
 }
