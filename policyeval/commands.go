@@ -857,7 +857,7 @@ const roomsHelp = "Available `!rooms` subcommands:\n\n" +
 const listsHelp = "Available `!lists` subcommands:\n\n" +
 	"* `!lists create <shortcode> [alias] [name] [--public]` - Create a new policy list\n" +
 	"* `!lists subscribe <room ID or alias> [shortcode] [--dont-apply] [--dont-apply-acls] [--disable-notifications] " +
-	"[--dont-auto-unban] [--auto-suspend] - Subscribe a room to a policy list\n" +
+	"[--dont-auto-unban] [--auto-suspend]` - Subscribe a room to a policy list\n" +
 	"* `!lists unsubscribe <room ID, alias, or shortcode>` - Unsubscribe a room from a policy list\n"
 
 var cmdRooms = &CommandHandler{
