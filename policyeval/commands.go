@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/glob"
 	"go.mau.fi/util/progver"
+	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
@@ -1477,11 +1478,115 @@ var cmdListsUnsubscribe = &CommandHandler{
 	}),
 }
 
+type ListsCreateParams struct {
+	Name      string `json:"name"`
+	Shortcode string `json:"shortcode"`
+	Alias     string `json:"alias"`
+	Public    bool   `json:"public"`
+}
+
+var cmdListsCreate = &CommandHandler{
+	Name: "create",
+	Parameters: []*cmdschema.Parameter{
+		{
+			Key:    "shortcode",
+			Schema: cmdschema.PrimitiveTypeString.Schema(),
+		},
+		{
+			Key:      "alias",
+			Schema:   cmdschema.PrimitiveTypeString.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "name",
+			Schema:   cmdschema.PrimitiveTypeString.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "public",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+	},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsCreateParams) {
+		if args.Shortcode == "" {
+			ce.Reply("Usage: `!lists create <shortcode> [alias] [name]`")
+			return
+		}
+		ce.Meta.watchedListsLock.Lock()
+		defer ce.Meta.watchedListsLock.Unlock()
+		evtContent := ce.Meta.watchedListsEvent
+		if evtContent == nil {
+			evtContent = &config.WatchedListsEventContent{Lists: []config.WatchedPolicyList{}}
+		}
+		contentCopy := *evtContent
+		contentCopy.Lists = slices.Clone(contentCopy.Lists)
+
+		for _, list := range contentCopy.Lists {
+			if list.Shortcode == args.Shortcode {
+				ce.Reply("Shortcode %s is already in use", format.SafeMarkdownCode(args.Shortcode))
+				return
+			}
+		}
+
+		zerolog.Ctx(ce.Ctx).Info().
+			Str("shortcode", args.Shortcode).
+			Str("alias", args.Alias).
+			Str("name", args.Name).
+			Bool("public", args.Public).
+			Msg("Creating new policy list room")
+		createReq := mautrix.ReqCreateRoom{
+			Preset:        "private_chat",
+			RoomAliasName: args.Alias,
+			Name:          args.Name,
+			Invite:        []id.UserID{ce.Event.Sender},
+			RoomVersion:   id.RoomV12,
+			CreationContent: map[string]any{
+				"additional_creators": []id.UserID{ce.Event.Sender},
+				"type":                "support.feline.policy.lists.msc.v1",
+			},
+			InitialState: []*event.Event{
+				{
+					Type:     StateMjolnirShortcode,
+					StateKey: ptr.Ptr(""),
+					Content:  event.Content{VeryRaw: json.RawMessage(fmt.Sprintf(`{"shortcode":"%s"}`, args.Shortcode))},
+				},
+			},
+			PowerLevelOverride: &event.PowerLevelsEventContent{
+				EventsDefault: 50,
+			},
+		}
+		if args.Public {
+			createReq.Preset = "public_chat"
+		}
+		roomResp, err := ce.Meta.Bot.CreateRoom(ce.Ctx, &createReq)
+		if err != nil {
+			ce.Reply("Failed to create list room: %v", err)
+			return
+		}
+		newList := config.WatchedPolicyList{
+			RoomID:    roomResp.RoomID,
+			Shortcode: args.Shortcode,
+			Name:      args.Name,
+		}
+		contentCopy.Lists = append(contentCopy.Lists, newList)
+		zerolog.Ctx(ce.Ctx).Info().Stringer("room_id", roomResp.RoomID).Msg("Created new policy list room, updating watched lists")
+		_, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateWatchedLists, "", &contentCopy)
+		md := format.MarkdownMentionRoomID(args.Name, roomResp.RoomID, ce.Meta.Bot.ServerName)
+		if err != nil {
+			ce.Reply("Successfully created the new list %s, but could not update watched lists: %s", md, err)
+			return
+		}
+		ce.Reply("Created new list %s (%s)", md, format.SafeMarkdownCode(args.Shortcode))
+	}),
+}
+
 var cmdLists = &CommandHandler{
 	Name: "lists",
 	Subcommands: []*CommandHandler{
 		cmdListsSubscribe,
 		cmdListsUnsubscribe,
+		cmdListsCreate,
 		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
 	},
 	Func: func(ce *CommandEvent) {
