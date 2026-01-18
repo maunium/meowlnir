@@ -1607,6 +1607,7 @@ var cmdLists = &CommandHandler{
 		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
 	},
 	Aliases:     []string{"list"},
+	Parameters:  make([]*cmdschema.Parameter, 0),
 	Description: event.MakeExtensibleText("Display watched policy lists"),
 	Func: func(ce *CommandEvent) {
 		ce.Meta.watchedListsLock.RLock()
