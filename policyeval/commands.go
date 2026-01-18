@@ -1298,20 +1298,60 @@ var cmdVersion = &CommandHandler{
 	},
 }
 
-type HelpParams struct {
-	Command string `json:"command"`
+type ListsSubscribeParams struct {
+	Room                 cmdschema.RoomIDOrString `json:"room"`
+	Shortcode            string                   `json:"shortcode"`
+	DontApply            bool                     `json:"dont-apply"`
+	DontApplyAcls        bool                     `json:"dont-apply-acls"`
+	DisableNotifications bool                     `json:"disable-notifications"`
+	DontAutoUnban        bool                     `json:"dont-auto-unban"`
+	AutoSuspend          bool                     `json:"auto-suspend"`
 }
 
 var cmdListsSubscribe = &CommandHandler{
-	Name:    "subscribe",
-	Aliases: []string{"unsubscribe"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 1 {
-			if ce.Command == "subscribe" {
-				ce.Reply("Usage: `!lists subscribe <room ID or alias> [shortcode] [--dont-apply]`")
-			} else {
-				ce.Reply("Usage: `!lists unsubscribe <room ID or alias>`")
-			}
+	Name: "subscribe",
+	Parameters: []*cmdschema.Parameter{
+		{
+			Key:    "room",
+			Schema: cmdschema.ParameterSchemaJoinableRoom,
+		},
+		{
+			Key:      "shortcode",
+			Schema:   cmdschema.PrimitiveTypeString.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "dont-apply",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "dont-apply-acls",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "disable-notifications",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "dont-auto-unban",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "auto-suspend",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+	},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsSubscribeParams) {
+		if args.Room == "" {
+			ce.Reply(
+				"Usage: `!lists subscribe <room ID or alias> [shortcode] [--dont-apply] [--dont-apply-acls] " +
+					"[--disable-notifications] [--dont-auto-unban] [--auto-suspend]`",
+			)
 			return
 		}
 		ce.Meta.watchedListsLock.RLock()
@@ -1322,71 +1362,68 @@ var cmdListsSubscribe = &CommandHandler{
 		contentCopy := *evtContent
 		contentCopy.Lists = slices.Clone(contentCopy.Lists)
 		ce.Meta.watchedListsLock.RUnlock()
-		resolvedRoom := resolveRoom(ce, ce.Args[0])
+		resolvedRoom, _, via := resolveRoomFull(ce, string(args.Room))
 		if resolvedRoom == "" {
-			ce.Reply("Failed to resolve room %s", format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("Failed to resolve room %s", format.SafeMarkdownCode(args.Room))
 			return
 		}
-		changed := false
+		_, err := ce.Meta.Bot.JoinRoom(ce.Ctx, resolvedRoom.String(), &mautrix.ReqJoinRoom{Via: via})
+		if err != nil {
+			ce.Reply("Failed to join room %s: %v", format.SafeMarkdownCode(resolvedRoom), err)
+			return
+		}
+
+		resolvedName, _ := ce.Meta.resolveRoomName(ce.Ctx, resolvedRoom)
+		resolvedNameMD := format.MarkdownMentionRoomID(resolvedName, resolvedRoom, ce.Meta.Bot.ServerName)
+
+		if args.Shortcode == "" {
+			var scEvtContent MjolnirShortcodeEventContent
+			if err := ce.Meta.Bot.StateEvent(ce.Ctx, resolvedRoom, StateMjolnirShortcode, "", &scEvtContent); err != nil {
+				if !errors.Is(err, mautrix.MNotFound) {
+					ce.Reply("Failed to get shortcode for %s: %v", resolvedNameMD, err)
+					return
+				}
+			}
+			if scEvtContent.Shortcode == "" {
+				ce.Reply("No room-provided shortcode found for %s, please manually specify one.", resolvedNameMD)
+				return
+			}
+			args.Shortcode = scEvtContent.Shortcode
+		}
+
 		for _, list := range contentCopy.Lists {
 			if list.RoomID == resolvedRoom {
-				if ce.Command == "subscribe" {
-					ce.Reply("Already subscribed to %s", format.SafeMarkdownCode(resolvedRoom))
-					return
-				}
-				contentCopy.Lists = slices.DeleteFunc(contentCopy.Lists, func(item config.WatchedPolicyList) bool {
-					return item.RoomID == resolvedRoom
-				})
-				changed = true
-				break
+				ce.Reply("Already subscribed to %s", resolvedNameMD)
+				return
+			}
+			if list.Shortcode == args.Shortcode {
+				ce.Reply("Shortcode %s is already in use for %s", format.SafeMarkdownCode(args.Shortcode), resolvedNameMD)
+				return
 			}
 		}
-		if !changed && ce.Command == "subscribe" {
-			shortcode := ""
-			if len(ce.Args) > 1 {
-				shortcode = ce.Args[1]
-			}
-			dontApply := false
-			if len(ce.Args) > 2 && ce.Args[2] == "--dont-apply" {
-				dontApply = true
-			}
-			if shortcode == "" {
-				var scEvtContent MjolnirShortcodeEventContent
-				if err := ce.Meta.Bot.StateEvent(ce.Ctx, resolvedRoom, StateMjolnirShortcode, "", &scEvtContent); err != nil {
-					ce.Reply("Failed to get shortcode for %s: %v", format.SafeMarkdownCode(resolvedRoom), err)
-					return
-				}
-				if scEvtContent.Shortcode == "" {
-					ce.Reply("No room-provided shortcode found for %s, please manually specify one.", format.SafeMarkdownCode(resolvedRoom))
-					return
-				}
-				shortcode = scEvtContent.Shortcode
-			}
-			resolvedName, err := ce.Meta.resolveRoomName(ce.Ctx, resolvedRoom)
-			if err != nil {
-				zerolog.Ctx(ce.Ctx).Err(err).Stringer("room_id", resolvedRoom).Msg("Failed to resolve room name")
-			}
-			if resolvedName == "" {
-				// the shortcode is a sensible placeholder name
-				resolvedName = shortcode
-			}
-			newList := config.WatchedPolicyList{
-				RoomID:    resolvedRoom,
-				Shortcode: shortcode,
-				Name:      resolvedName,
-				DontApply: dontApply,
-				AutoUnban: true,
-			}
-			contentCopy.Lists = append(contentCopy.Lists, newList)
-			changed = true
+
+		if resolvedName == "" {
+			// the shortcode is a sensible placeholder name
+			resolvedName = args.Shortcode
 		}
-		_, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateWatchedLists, "", &contentCopy)
+		newList := config.WatchedPolicyList{
+			RoomID:             resolvedRoom,
+			Shortcode:          args.Shortcode,
+			Name:               resolvedName,
+			DontApply:          args.DontApply,
+			DontApplyACL:       args.DontApplyAcls,
+			DontNotifyOnChange: args.DisableNotifications,
+			AutoSuspend:        args.AutoSuspend,
+			AutoUnban:          !args.DontAutoUnban,
+		}
+		contentCopy.Lists = append(contentCopy.Lists, newList)
+		_, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateWatchedLists, "", &contentCopy)
 		if err != nil {
 			ce.Reply("Failed to update watched lists: %v", err)
 			return
 		}
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
 var cmdLists = &CommandHandler{
@@ -1400,12 +1437,14 @@ var cmdLists = &CommandHandler{
 		defer ce.Meta.watchedListsLock.RUnlock()
 		builder := strings.Builder{}
 		for n, list := range ce.Meta.watchedListsEvent.Lists {
+			roomName, _ := ce.Meta.resolveRoomName(ce.Ctx, list.RoomID)
+			roomName = format.MarkdownMentionRoomID(roomName, list.RoomID, ce.Meta.Bot.ServerName)
 			builder.WriteString(fmt.Sprintf(
 				"%d. [%s](%s) (%s) - %s\n",
 				n,
 				format.EscapeMarkdown(list.Name),
 				list.RoomID.URI(ce.Meta.Bot.ServerName).MatrixToURL(),
-				format.SafeMarkdownCode(list.RoomID),
+				roomName,
 				format.SafeMarkdownCode(list.Shortcode),
 			))
 		}
@@ -1415,6 +1454,10 @@ var cmdLists = &CommandHandler{
 		}
 		ce.Reply(fmt.Sprintf("Watched lists (%d):\n\n%s", len(ce.Meta.watchedListsEvent.Lists), builder.String()))
 	},
+}
+
+type HelpParams struct {
+	Command string `json:"command"`
 }
 
 var cmdHelp = &CommandHandler{
