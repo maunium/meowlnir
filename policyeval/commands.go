@@ -854,6 +854,11 @@ const roomsHelp = "Available `!rooms` subcommands:\n\n" +
 	"* `!rooms delete-status <delete ID>` - Get the status of a room deletion (if `--async` was used)\n" +
 	"* `!rooms protect <room ID or alias>...` - Start protecting a room.\n" +
 	"* `!rooms unprotect <room ID or alias>...` - Stop protecting a room.\n"
+const listsHelp = "Available `!lists` subcommands:\n\n" +
+	"* `!lists create <shortcode> [alias] [name] [--public]` - Create a new policy list\n" +
+	"* `!lists subscribe <room ID or alias> [shortcode] [--dont-apply] [--dont-apply-acls] [--disable-notifications] " +
+	"[--dont-auto-unban] [--auto-suspend] - Subscribe a room to a policy list\n" +
+	"* `!lists unsubscribe <room ID, alias, or shortcode>` - Unsubscribe a room from a policy list\n"
 
 var cmdRooms = &CommandHandler{
 	Name:        "rooms",
@@ -1347,6 +1352,7 @@ var cmdListsSubscribe = &CommandHandler{
 			Optional: true,
 		},
 	},
+	Description: event.MakeExtensibleText("Subscribe to a policy list"),
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsSubscribeParams) {
 		if args.Room == "" {
 			ce.Reply(
@@ -1437,6 +1443,7 @@ var cmdListsUnsubscribe = &CommandHandler{
 		Key:    "room_or_shortcode",
 		Schema: cmdschema.PrimitiveTypeString.Schema(),
 	}},
+	Description: event.MakeExtensibleText("Unsubscribe from a policy list without leaving the room"),
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsUnsubscribeParams) {
 		if args.Room == "" {
 			ce.Reply("Usage: `!lists unsubscribe <room ID, alias, or shortcode>`")
@@ -1508,6 +1515,7 @@ var cmdListsCreate = &CommandHandler{
 			Optional: true,
 		},
 	},
+	Description: event.MakeExtensibleText("Create a policy list and subscribe to it"),
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsCreateParams) {
 		if args.Shortcode == "" {
 			ce.Reply("Usage: `!lists create <shortcode> [alias] [name]`")
@@ -1596,6 +1604,8 @@ var cmdLists = &CommandHandler{
 		cmdListsCreate,
 		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
 	},
+	Aliases:     []string{"list"},
+	Description: event.MakeExtensibleText("Display watched policy lists"),
 	Func: func(ce *CommandEvent) {
 		ce.Meta.watchedListsLock.RLock()
 		defer ce.Meta.watchedListsLock.RUnlock()
@@ -1637,6 +1647,8 @@ var cmdHelp = &CommandHandler{
 		switch args.Command {
 		case "rooms":
 			ce.Reply(roomsHelp)
+		case "lists":
+			ce.Reply(listsHelp)
 		case "":
 			ce.Reply("Available commands:\n" +
 				"* `!join <rooms...>` - Join a room\n" +
@@ -1658,8 +1670,7 @@ var cmdHelp = &CommandHandler{
 				"* `!bot-profile <displayname/avatar> <new value>` - Update the bot profile\n" +
 				"* `!rooms <...>` - Manage rooms\n" +
 				"* `!version` - Check the running Meowlnir version\n" +
-				"* `!lists` - Show watched lists\n" +
-				"* `!lists <subscribe|unsubscribe>` - Manage subscribed lists\n" +
+				"* `!lists` - Show or managed watched lists\n" +
 				"* `!help <command>` - Show detailed help for a command\n" +
 				"* `!help` - Show this help message\n" +
 				"\n" +
