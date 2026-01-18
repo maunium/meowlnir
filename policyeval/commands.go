@@ -1569,6 +1569,13 @@ var cmdListsCreate = &CommandHandler{
 			Shortcode: args.Shortcode,
 			Name:      args.Name,
 		}
+		if newList.Name == "" {
+			if args.Alias != "" {
+				newList.Name = args.Alias
+			} else {
+				newList.Name = args.Shortcode
+			}
+		}
 		contentCopy.Lists = append(contentCopy.Lists, newList)
 		zerolog.Ctx(ce.Ctx).Info().Stringer("room_id", roomResp.RoomID).Msg("Created new policy list room, updating watched lists")
 		_, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateWatchedLists, "", &contentCopy)
