@@ -1426,10 +1426,62 @@ var cmdListsSubscribe = &CommandHandler{
 	}),
 }
 
+type ListsUnsubscribeParams struct {
+	Room string `json:"room_or_shortcode"`
+}
+
+var cmdListsUnsubscribe = &CommandHandler{
+	Name: "unsubscribe",
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "room_or_shortcode",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsUnsubscribeParams) {
+		if args.Room == "" {
+			ce.Reply("Usage: `!lists unsubscribe <room ID, alias, or shortcode>`")
+			return
+		}
+		ce.Meta.watchedListsLock.RLock()
+		evtContent := ce.Meta.watchedListsEvent
+		if evtContent == nil {
+			ce.Meta.watchedListsLock.RUnlock()
+			ce.Reply("Not subscribed to any lists")
+			return
+		}
+		contentCopy := *evtContent
+		contentCopy.Lists = slices.Clone(contentCopy.Lists)
+		ce.Meta.watchedListsLock.RUnlock()
+		resolvedRoom, _, _ := resolveRoomFull(ce, string(args.Room))
+		if resolvedRoom == "" {
+			ce.Reply("Failed to resolve room %s", format.SafeMarkdownCode(args.Room))
+			return
+		}
+		itemIdx := -1
+		for i, list := range contentCopy.Lists {
+			if list.RoomID == resolvedRoom || list.Shortcode == string(args.Room) {
+				itemIdx = i
+				break
+			}
+		}
+		if itemIdx < 0 {
+			ce.Reply("Not subscribed to %s", format.MarkdownMentionRoomID("", resolvedRoom, ce.Meta.Bot.ServerName))
+			return
+		}
+		contentCopy.Lists = slices.Delete(contentCopy.Lists, itemIdx, itemIdx+1)
+		_, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateWatchedLists, "", &contentCopy)
+		if err != nil {
+			ce.Reply("Failed to update watched lists: %v", err)
+			return
+		}
+		ce.React(SuccessReaction)
+	}),
+}
+
 var cmdLists = &CommandHandler{
 	Name: "lists",
 	Subcommands: []*CommandHandler{
 		cmdListsSubscribe,
+		cmdListsUnsubscribe,
 		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
 	},
 	Func: func(ce *CommandEvent) {
