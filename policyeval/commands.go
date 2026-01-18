@@ -1315,7 +1315,8 @@ type ListsSubscribeParams struct {
 }
 
 var cmdListsSubscribe = &CommandHandler{
-	Name: "subscribe",
+	Name:    "subscribe",
+	Aliases: []string{"watch"},
 	Parameters: []*cmdschema.Parameter{
 		{
 			Key:    "room",
@@ -1438,7 +1439,8 @@ type ListsUnsubscribeParams struct {
 }
 
 var cmdListsUnsubscribe = &CommandHandler{
-	Name: "unsubscribe",
+	Name:    "unsubscribe",
+	Aliases: []string{"unwatch"},
 	Parameters: []*cmdschema.Parameter{{
 		Key:    "room_or_shortcode",
 		Schema: cmdschema.PrimitiveTypeString.Schema(),
