@@ -43,7 +43,8 @@ type MeowlnirConfig struct {
 	HackyRuleFilter     []string  `yaml:"hacky_rule_filter"`
 	HackyRedactPatterns []string  `yaml:"hacky_redact_patterns"`
 
-	AdminTokens map[id.UserID]string `yaml:"admin_tokens"`
+	AdminTokens           map[id.UserID]string `yaml:"admin_tokens"`
+	ContinuwuityAdminUser id.UserID            `yaml:"continuwuity_admin_user"`
 }
 
 type Meowlnir4AllConfig struct {
