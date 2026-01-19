@@ -11,6 +11,7 @@ import (
 	"go.mau.fi/util/exerrors"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
+	"maunium.net/go/mautrix/continuwuityadmin"
 	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/crypto/cryptohelper"
 	"maunium.net/go/mautrix/id"
@@ -23,14 +24,15 @@ type Bot struct {
 	Meta *database.Bot
 	Log  zerolog.Logger
 	*mautrix.Client
-	Intent         *appservice.IntentAPI
-	SynapseAdmin   *synapseadmin.Client
-	ServerName     string
-	CryptoStore    *crypto.SQLCryptoStore
-	CryptoHelper   *cryptohelper.CryptoHelper
-	Mach           *crypto.OlmMachine
-	eventProcessor *appservice.EventProcessor
-	mainDB         *database.Database
+	Intent            *appservice.IntentAPI
+	SynapseAdmin      *synapseadmin.Client
+	ContinuwuityAdmin *continuwuityadmin.Client
+	ServerName        string
+	CryptoStore       *crypto.SQLCryptoStore
+	CryptoHelper      *cryptohelper.CryptoHelper
+	Mach              *crypto.OlmMachine
+	eventProcessor    *appservice.EventProcessor
+	mainDB            *database.Database
 }
 
 func NewBot(
@@ -75,16 +77,17 @@ func NewBot(
 		}
 	}
 	return &Bot{
-		Meta:           bot,
-		Client:         client,
-		Intent:         intent,
-		Log:            log,
-		SynapseAdmin:   adminClient,
-		ServerName:     client.UserID.Homeserver(),
-		CryptoStore:    cryptoStore,
-		CryptoHelper:   helper,
-		eventProcessor: ep,
-		mainDB:         db,
+		Meta:              bot,
+		Client:            client,
+		Intent:            intent,
+		Log:               log,
+		SynapseAdmin:      adminClient,
+		ContinuwuityAdmin: &continuwuityadmin.Client{Client: adminClient.Client},
+		ServerName:        client.UserID.Homeserver(),
+		CryptoStore:       cryptoStore,
+		CryptoHelper:      helper,
+		eventProcessor:    ep,
+		mainDB:            db,
 	}
 }
 

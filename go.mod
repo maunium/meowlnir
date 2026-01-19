@@ -14,7 +14,7 @@ require (
 	golang.org/x/sync v0.19.0
 	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mauflag v1.0.0
-	maunium.net/go/mautrix v0.26.2
+	maunium.net/go/mautrix v0.26.3-0.20260119025107-d8b3f64a2d0f
 )
 
 require (

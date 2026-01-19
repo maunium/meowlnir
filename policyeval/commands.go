@@ -5,6 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+
+	//"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -926,27 +929,27 @@ var cmdRoomInfo = &CommandHandler{
 	}),
 }
 
-func formatDeleteResult(resp synapseadmin.RespDeleteRoomResult) string {
+func formatDeleteResult(kicked, failed []id.UserID, aliases []id.RoomAlias) string {
 	var parts []string
-	if len(resp.KickedUsers) > 10 {
-		parts = append(parts, fmt.Sprintf("* Kicked %d users", len(resp.KickedUsers)))
+	if len(kicked) > 10 {
+		parts = append(parts, fmt.Sprintf("* Kicked %d users", len(kicked)))
 	} else {
-		kickedUsers := make([]string, len(resp.KickedUsers))
-		for i, user := range resp.KickedUsers {
+		kickedUsers := make([]string, len(kicked))
+		for i, user := range kicked {
 			kickedUsers[i] = format.MarkdownMention(user)
 		}
 		parts = append(parts, fmt.Sprintf("* Kicked users: %s", strings.Join(kickedUsers, ", ")))
 	}
-	if len(resp.FailedToKickUsers) > 0 {
-		failedUsers := make([]string, len(resp.FailedToKickUsers))
-		for i, user := range resp.FailedToKickUsers {
+	if len(failed) > 0 {
+		failedUsers := make([]string, len(failed))
+		for i, user := range failed {
 			failedUsers[i] = format.MarkdownMention(user)
 		}
 		parts = append(parts, fmt.Sprintf("* Failed to kick users: %s", strings.Join(failedUsers, ", ")))
 	}
-	if len(resp.LocalAliases) > 0 {
-		localAliases := make([]string, len(resp.LocalAliases))
-		for i, alias := range resp.LocalAliases {
+	if len(aliases) > 0 {
+		localAliases := make([]string, len(aliases))
+		for i, alias := range aliases {
 			localAliases[i] = format.SafeMarkdownCode(alias)
 		}
 		parts = append(parts, fmt.Sprintf("* Deleted local aliases: %s", strings.Join(localAliases, ", ")))
@@ -970,7 +973,9 @@ var cmdRoomDeleteStatus = &CommandHandler{
 		if err != nil {
 			ce.Reply("Failed to get delete status for %s: %v", format.SafeMarkdownCode(args.DeleteID), err)
 		} else if resp.Status == "complete" {
-			ce.Reply("Deletion is complete:\n\n%s", formatDeleteResult(resp.ShutdownRoom))
+			ce.Reply("Deletion is complete:\n\n%s", formatDeleteResult(
+				resp.ShutdownRoom.KickedUsers, resp.ShutdownRoom.FailedToKickUsers, resp.ShutdownRoom.LocalAliases,
+			))
 		} else if resp.Status == "failed" {
 			ce.Reply("Deletion failed: %s", resp.Error)
 		} else {
@@ -1060,9 +1065,26 @@ var cmdRoomDelete = &CommandHandler{
 			resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoomSync(ce.Ctx, roomID, req)
 			_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, reactionID)
 			if err != nil {
+				if errors.Is(err, mautrix.MUnrecognized) {
+					resp2, err := ce.Meta.Bot.ContinuwuityAdmin.BanRoom(ce.Ctx, roomID)
+					if err != nil {
+						ce.Reply("Failed to ban room %s: %v", format.SafeMarkdownCode(roomID), err)
+						return
+					}
+					ce.Reply(
+						"Successfully banned room %s\n\n%s",
+						format.SafeMarkdownCode(roomID),
+						formatDeleteResult(resp2.KickedUsers, resp2.FailedKickedUsers, resp2.LocalAliases),
+					)
+					return
+				}
 				ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
 			} else {
-				ce.Reply("Successfully deleted room %s\n\n%s", format.SafeMarkdownCode(roomID), formatDeleteResult(resp))
+				ce.Reply(
+					"Successfully deleted room %s\n\n%s",
+					format.SafeMarkdownCode(roomID),
+					formatDeleteResult(resp.KickedUsers, resp.FailedToKickUsers, resp.LocalAliases),
+				)
 			}
 		}
 	}),
