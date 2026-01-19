@@ -68,6 +68,10 @@ meowlnir:
     admin_tokens:
         "@abuse:example.com": admin_token
 
+    # The user ID that is in the Continuwuity admin room. Used to load room hashes and takedowns.
+    # Irrelevant unless you use Continuwuity.
+    continuwuity_admin_user: "@abuse:example.com"
+
 # Settings for provisioning new bots using the !provision command.
 # None of this is relevant unless you offer moderation bots to other users.
 meowlnir4all:

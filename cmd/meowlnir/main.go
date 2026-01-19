@@ -29,6 +29,7 @@ import (
 	flag "maunium.net/go/mauflag"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
+	"maunium.net/go/mautrix/continuwuityadmin"
 	cryptoupgrade "maunium.net/go/mautrix/crypto/sql_store_upgrade"
 	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
@@ -397,7 +398,24 @@ func (m *Meowlnir) Run(ctx context.Context) {
 
 func (m *Meowlnir) LoadAllRoomHashes(ctx context.Context) {
 	if m.SynapseDB == nil {
-		m.Log.Warn().Msg("Synapse database not configured, can't load all room hashes")
+		m.Log.Debug().Msg("No Synapse database configured, loading room IDs from Continuwuity admin API")
+		c10yClient := continuwuityadmin.Client{Client: m.AS.Intent(m.Config.Meowlnir.ContinuwuityAdminUser).Client}
+		start := time.Now()
+		resp, err := c10yClient.ListRooms(ctx)
+		if err != nil {
+			if errors.Is(err, mautrix.MUnrecognized) {
+				err = nil
+			}
+			m.Log.Warn().Err(err).Msg("Synapse database not configured, can't load all room hashes")
+			return
+		}
+		for _, room := range resp.Rooms {
+			m.RoomHashes.Put(room)
+		}
+		m.Log.Info().
+			Dur("duration", time.Since(start)).
+			Int("count", len(resp.Rooms)).
+			Msg("Read all existing room IDs from Continuwuity admin API")
 		return
 	}
 	start := time.Now()
