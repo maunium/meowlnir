@@ -68,6 +68,13 @@ meowlnir:
     admin_tokens:
         "@abuse:example.com": admin_token
 
+    # If true, Meowlnir will override the profile of banned users to make them less identifiable.
+    # This does not work for all clients who may still display the original profile information.
+    # This is ideal if you are dealing with spam where abusive user IDs are in use.
+    #
+    # This will replace the displayname with "Banned User" and the avatar with a generic placeholder.
+    obfuscate_bans: false
+
 # Settings for provisioning new bots using the !provision command.
 # None of this is relevant unless you offer moderation bots to other users.
 meowlnir4all:
