@@ -1,3 +1,22 @@
+# v26.01
+
+* Added notice if dry run is enabled (thanks to [@nexy7574] in [#46]).
+* Added support for using [MSC4323] to suspend users
+  (thanks to [@nexy7574] in [#40]).
+* Added `/banserver` command to the report interception system
+  (thanks to [@nexy7574] in [#48]).
+* Switched command system to use [MSC4391].
+* Changed `!match` and `!search` commands to also search watched lists with the
+  `dont_apply` flag.
+* Fixed changes to the `skip_acl` list in protected rooms config not being
+  applied correctly.
+
+[MSC4323]: https://github.com/matrix-org/matrix-spec-proposals/pull/4323
+[MSC4391]: https://github.com/matrix-org/matrix-spec-proposals/pull/4391
+[#40]: https://github.com/maunium/meowlnir/pull/40
+[#46]: https://github.com/maunium/meowlnir/pull/46
+[#48]: https://github.com/maunium/meowlnir/pull/48
+
 # v25.12
 
 * Updated Docker image to Alpine 3.23.

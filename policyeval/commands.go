@@ -18,6 +18,7 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/event/cmdschema"
 	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 	"maunium.net/go/mautrix/synapseadmin"
@@ -68,14 +69,19 @@ func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event,
 	}
 }
 
+type JoinArgs struct {
+	Rooms []cmdschema.RoomIDOrString `json:"rooms"`
+}
+
 var cmdJoin = &CommandHandler{
-	Name: "join",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!join <room ID>...`")
-			return
-		}
-		for _, arg := range ce.Args {
+	Name:        "join",
+	Description: event.MakeExtensibleText("Join rooms by ID or alias. Doesn't do anything else than join."),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "rooms",
+		Schema: cmdschema.Array(cmdschema.ParameterSchemaJoinableRoom),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *JoinArgs) {
+		for _, arg := range args.Rooms {
 			joinIdentifier, via := resolveRoomIDOrAlias(ce, arg)
 			if joinIdentifier == "" {
 				continue
@@ -90,17 +96,18 @@ var cmdJoin = &CommandHandler{
 			}
 		}
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
 var cmdKnock = &CommandHandler{
-	Name: "knock",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!knock <rooms...>`")
-			return
-		}
-		for _, arg := range ce.Args {
+	Name:        "knock",
+	Description: event.MakeExtensibleText("Request to join a knockable room by ID or alias"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "rooms",
+		Schema: cmdschema.Array(cmdschema.ParameterSchemaJoinableRoom),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *JoinArgs) {
+		for _, arg := range args.Rooms {
 			joinIdentifier, via := resolveRoomIDOrAlias(ce, arg)
 			if joinIdentifier == "" {
 				continue
@@ -115,17 +122,22 @@ var cmdKnock = &CommandHandler{
 			}
 		}
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
 var cmdLeave = &CommandHandler{
-	Name: "leave",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
+	Name:        "leave",
+	Description: event.MakeExtensibleText("Leave a room by ID or alias"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "rooms",
+		Schema: cmdschema.Array(cmdschema.ParameterSchemaJoinableRoom),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *JoinArgs) {
+		if len(args.Rooms) == 0 {
 			ce.Reply("Usage: `!leave <room ID>...`")
 			return
 		}
-		for _, arg := range ce.Args {
+		for _, arg := range args.Rooms {
 			target := resolveRoom(ce, arg)
 			if target == "" {
 				continue
@@ -137,45 +149,66 @@ var cmdLeave = &CommandHandler{
 				ce.Reply("Left room %s", format.SafeMarkdownCode(arg))
 			}
 		}
-	},
+	}),
+}
+
+type PowerLevelArgs struct {
+	Room  cmdschema.RoomIDOrString `json:"room"`
+	Key   string                   `json:"key"`
+	Level int                      `json:"level"`
 }
 
 var cmdPowerLevel = &CommandHandler{
-	Name:    "powerlevel",
-	Aliases: []string{"pl"},
-	Func: func(ce *CommandEvent) {
-
-		if len(ce.Args) < 1 {
-			ce.Reply("Usage: `!powerlevel <room|all> <key> <level>`")
-			return
-		}
+	Name:        "powerlevel",
+	Aliases:     []string{"pl"},
+	Description: event.MakeExtensibleText("Adjust power levels in protected rooms"),
+	Parameters: []*cmdschema.Parameter{{
+		Key: "room",
+		Schema: cmdschema.Union(
+			cmdschema.Literal("all"),
+			cmdschema.PrimitiveTypeRoomID.Schema(),
+		),
+	}, {
+		Key: "key",
+		Schema: cmdschema.Union(
+			cmdschema.Literal("invite"),
+			cmdschema.Literal("kick"),
+			cmdschema.Literal("ban"),
+			cmdschema.Literal("redact"),
+			cmdschema.Literal("users_default"),
+			cmdschema.Literal("state_default"),
+			cmdschema.Literal("events_default"),
+			cmdschema.Literal("notifications.room"),
+			cmdschema.PrimitiveTypeUserID.Schema(),
+			cmdschema.PrimitiveTypeString.Schema(),
+		),
+	}, {
+		Key:    "level",
+		Schema: cmdschema.PrimitiveTypeInteger.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *PowerLevelArgs) {
 		var rooms []id.RoomID
-		if ce.Args[0] == "all" {
+		if args.Room == "all" {
 			rooms = ce.Meta.GetProtectedRooms()
 		} else {
-			room := resolveRoom(ce, ce.Args[0])
+			room := resolveRoom(ce, args.Room)
 			if room == "" {
 				return
 			}
 			rooms = []id.RoomID{room}
 		}
-		key := ce.Args[1]
-		level, err := strconv.Atoi(ce.Args[2])
-		if err != nil {
-			ce.Reply("Invalid power level %s: %v", format.SafeMarkdownCode(ce.Args[2]), err)
-			return
-		}
+		level := args.Level
 		for _, room := range rooms {
 			var pls event.PowerLevelsEventContent
 			// No need to fetch the create event here, this is a manual update that is allowed to fail if the user holds it wrong
-			err = ce.Meta.Bot.Client.StateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
+			err := ce.Meta.Bot.Client.StateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
 				ce.Reply("Failed to get power levels in %s: %v", format.SafeMarkdownCode(room), err)
 				return
 			}
 			const MagicUnsetValue = -1644163703
 			var oldLevel int
-			switch strings.ToLower(key) {
+			switch strings.ToLower(args.Key) {
 			case "invite":
 				oldLevel = pls.Invite()
 				pls.InvitePtr = &level
@@ -201,28 +234,28 @@ var cmdPowerLevel = &CommandHandler{
 				oldLevel = pls.Notifications.Room()
 				pls.Notifications.RoomPtr = &level
 			default:
-				if strings.HasPrefix(key, "@") {
-					oldLevel = pls.GetUserLevel(id.UserID(key))
-					pls.SetUserLevel(id.UserID(key), level)
-				} else if strings.ContainsRune(key, '.') {
+				if strings.HasPrefix(args.Key, "@") {
+					oldLevel = pls.GetUserLevel(id.UserID(args.Key))
+					pls.SetUserLevel(id.UserID(args.Key), level)
+				} else if strings.ContainsRune(args.Key, '.') {
 					if pls.Events == nil {
 						pls.Events = make(map[string]int)
 					}
 					var ok bool
-					oldLevel, ok = pls.Events[key]
+					oldLevel, ok = pls.Events[args.Key]
 					if !ok {
 						oldLevel = MagicUnsetValue
 					}
-					pls.Events[key] = level
+					pls.Events[args.Key] = level
 				} else {
-					ce.Reply("Invalid power level key %s", format.SafeMarkdownCode(key))
+					ce.Reply("Invalid power level key %s", format.SafeMarkdownCode(args.Key))
 					return
 				}
 			}
 			if oldLevel == level && oldLevel != MagicUnsetValue {
 				ce.Reply(
 					"Power level for %s in %s is already set to %s",
-					format.SafeMarkdownCode(key),
+					format.SafeMarkdownCode(args.Key),
 					format.SafeMarkdownCode(room),
 					format.SafeMarkdownCode(strconv.Itoa(level)),
 				)
@@ -235,99 +268,144 @@ var cmdPowerLevel = &CommandHandler{
 			}
 		}
 		ce.React(SuccessReaction)
-	},
+	}),
+}
+
+type RedactArgs struct {
+	Target cmdschema.RoomIDOrString `json:"target"`
+	Reason string                   `json:"reason"`
 }
 
 var cmdRedact = &CommandHandler{
-	Name: "redact",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 1 {
-			ce.Reply("Usage: `!redact <event link or user ID> [reason]`")
-			return
-		}
+	Name:        "redact",
+	Description: event.MakeExtensibleText("Redact all events of a user or a specific event"),
+	Parameters: []*cmdschema.Parameter{{
+		Key: "target",
+		Schema: cmdschema.Union(
+			cmdschema.PrimitiveTypeUserID.Schema(),
+			cmdschema.PrimitiveTypeEventID.Schema(),
+		),
+	}, {
+		Key:      "reason",
+		Schema:   cmdschema.PrimitiveTypeString.Schema(),
+		Optional: true,
+	}},
+	TailParam: "reason",
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *RedactArgs) {
 		var target *id.MatrixURI
 		var err error
-		if ce.Args[0][0] == '@' {
+		if args.Target[0] == '@' {
 			target = &id.MatrixURI{
 				Sigil1: '@',
-				MXID1:  ce.Args[0][1:],
+				MXID1:  string(args.Target[1:]),
 			}
 		} else {
-			target, err = id.ParseMatrixURIOrMatrixToURL(ce.Args[0])
+			target, err = id.ParseMatrixURIOrMatrixToURL(string(args.Target))
 			if err != nil {
-				ce.Reply("Failed to parse %s: %v", format.SafeMarkdownCode(ce.Args[0]), err)
+				ce.Reply("Failed to parse %s: %v", format.SafeMarkdownCode(args.Target), err)
 				return
 			}
 		}
-		reason := strings.Join(ce.Args[1:], " ")
 		if target.Sigil1 == '@' {
-			ce.Meta.RedactUser(ce.Ctx, target.UserID(), reason, false)
+			ce.Meta.RedactUser(ce.Ctx, target.UserID(), args.Reason, false)
 		} else if target.Sigil1 == '!' && target.Sigil2 == '$' {
-			_, err = ce.Meta.Bot.RedactEvent(ce.Ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: reason})
+			_, err = ce.Meta.Bot.RedactEvent(ce.Ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: args.Reason})
 			if err != nil {
 				ce.Reply("Failed to redact event %s: %v", format.SafeMarkdownCode(target.EventID()), err)
 				return
 			}
 		} else {
-			ce.Reply("Invalid target %s (must be a user ID or event link)", format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("Invalid target %s (must be a user ID or event link)", format.SafeMarkdownCode(args.Target))
 			return
 		}
 		ce.React(SuccessReaction)
-	},
+	}),
+}
+
+type RedactRecentParams struct {
+	Target cmdschema.RoomIDOrString `json:"target"`
+	Since  string                   `json:"since"`
+	Reason string                   `json:"reason"`
 }
 
 var cmdRedactRecent = &CommandHandler{
-	Name: "redact-recent",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `!redact-recent <room ID> <since duration> [reason]`")
-			return
-		}
-		room := resolveRoom(ce, ce.Args[0])
+	Name:        "redact-recent",
+	Description: event.MakeExtensibleText("Redact recent events in a room"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "target",
+		Schema: cmdschema.ParameterSchemaJoinableRoom,
+	}, {
+		Key:    "since",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}, {
+		Key:      "reason",
+		Schema:   cmdschema.PrimitiveTypeString.Schema(),
+		Optional: true,
+	}},
+	TailParam: "reason",
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *RedactRecentParams) {
+		room := resolveRoom(ce, args.Target)
 		if room == "" {
 			return
 		}
-		since, err := time.ParseDuration(ce.Args[1])
+		since, err := time.ParseDuration(args.Since)
 		if err != nil {
-			ce.Reply("Invalid duration %s: %v", format.SafeMarkdownCode(ce.Args[1]), err)
+			ce.Reply("Invalid duration %s: %v", format.SafeMarkdownCode(args.Since), err)
 			return
 		}
-		reason := strings.Join(ce.Args[2:], " ")
-		redactedCount, err := ce.Meta.redactRecentMessages(ce.Ctx, room, "", since, false, reason)
+		redactedCount, err := ce.Meta.redactRecentMessages(ce.Ctx, room, "", since, false, args.Reason)
 		if err != nil {
 			ce.Reply("Failed to redact recent messages: %v", err)
 			return
 		}
 		ce.Reply("Redacted %d messages", redactedCount)
 		ce.React(SuccessReaction)
-	},
+	}),
+}
+
+type KickParams struct {
+	Target string                   `json:"target"`
+	Reason string                   `json:"reason"`
+	Force  bool                     `json:"force"`
+	Room   cmdschema.RoomIDOrString `json:"room"`
 }
 
 var cmdKick = &CommandHandler{
-	Name: "kick",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 1 {
-			ce.Reply("Usage: `!kick [--force] [--room <room ID>] <user ID> [reason]`")
-			return
-		}
-		ignoreUserLimit := ce.Args[0] == "--force"
-		if ignoreUserLimit {
-			ce.Args = ce.Args[1:]
-		}
+	Name:        "kick",
+	Description: event.MakeExtensibleText("Kick users from rooms"),
+	Parameters: []*cmdschema.Parameter{{
+		Key: "target",
+		Schema: cmdschema.Union(
+			cmdschema.PrimitiveTypeUserID.Schema(),
+			cmdschema.PrimitiveTypeString.Schema(),
+		),
+	}, {
+		Key:      "reason",
+		Schema:   cmdschema.PrimitiveTypeString.Schema(),
+		Optional: true,
+	}, {
+		Key:      "force",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}, {
+		Key:      "room",
+		Schema:   cmdschema.ParameterSchemaJoinableRoom,
+		Optional: true,
+	}},
+	TailParam: "reason",
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *KickParams) {
 		var targetRoom id.RoomID
-		if ce.Args[0] == "--room" && len(ce.Args) >= 2 {
-			targetRoom = resolveRoom(ce, ce.Args[1])
+		if args.Room != "" {
+			targetRoom = resolveRoom(ce, args.Room)
 			if targetRoom == "" {
 				return
 			}
-			ce.Args = ce.Args[2:]
 		}
-		pattern := glob.Compile(ce.Args[0])
-		reason := strings.Join(ce.Args[1:], " ")
+		pattern := glob.Compile(args.Target)
 		users := slices.Collect(ce.Meta.findMatchingUsers(pattern, nil, true))
-		if len(users) > 10 && !ignoreUserLimit {
+		if len(users) > 10 && !args.Force {
 			// TODO replace the force flag with a reaction confirmation
-			ce.Reply("%d users matching %s found, use `--force` to kick all of them.", len(users), format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("%d users matching %s found, use `--force` to kick all of them.", len(users), format.SafeMarkdownCode(args.Target))
 			return
 		}
 		for _, userID := range users {
@@ -347,7 +425,7 @@ var cmdKick = &CommandHandler{
 				var err error
 				if !ce.Meta.DryRun {
 					_, err = ce.Meta.Bot.KickUser(ce.Ctx, room, &mautrix.ReqKickUser{
-						Reason: reason,
+						Reason: args.Reason,
 						UserID: userID,
 					})
 				}
@@ -360,11 +438,11 @@ var cmdKick = &CommandHandler{
 			ce.Reply("Kicked %s from %d rooms: %s", format.SafeMarkdownCode(userID), successCount, strings.Join(roomStrings, ", "))
 		}
 		if len(users) == 0 {
-			ce.Reply("No users matching %s found in any rooms", format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("No users matching %s found in any rooms", format.SafeMarkdownCode(args.Target))
 			return
 		}
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
 func (pe *PolicyEvaluator) deduplicatePolicy(
@@ -408,39 +486,62 @@ func (pe *PolicyEvaluator) deduplicatePolicy(
 	}
 }
 
+type BanParams struct {
+	List   string `json:"list"`
+	Entity string `json:"entity"`
+	Reason string `json:"reason"`
+	Hash   bool   `json:"hash"`
+}
+
+var cmdTakedown = &CommandHandler{
+	Name:        "takedown",
+	Description: event.MakeExtensibleText("Send a takedown policy to a policy list"),
+}
 var cmdBan = &CommandHandler{
-	Name:    "ban",
-	Aliases: []string{"takedown"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `%s [--hash] <list shortcode> <entity> [reason]`", ce.Command)
-			return
-		}
-		hash := ce.Args[0] == "--hash"
-		if hash {
-			ce.Args = ce.Args[1:]
-		}
-		list := ce.Meta.FindListByShortcode(ce.Args[0])
+	Name:        "ban",
+	Description: event.MakeExtensibleText("Send a ban policy to a policy list"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "list",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}, {
+		Key: "entity",
+		Schema: cmdschema.Union(
+			cmdschema.PrimitiveTypeUserID.Schema(),
+			cmdschema.PrimitiveTypeServerName.Schema(),
+			cmdschema.PrimitiveTypeString.Schema(),
+		),
+	}, {
+		Key:      "reason",
+		Schema:   cmdschema.PrimitiveTypeString.Schema(),
+		Optional: true,
+	}, {
+		Key:      "hash",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}},
+	TailParam: "reason",
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *BanParams) {
+		list := ce.Meta.FindListByShortcode(args.List)
 		if list == nil {
-			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("List %s not found", format.SafeMarkdownCode(args.List))
 			return
 		}
-		entity, entityType, ok := resolveEntity(ce, ce.Args[1])
+		entity, entityType, ok := resolveEntity(ce, args.Entity)
 		if !ok {
 			return
 		}
 		policy := &event.ModPolicyContent{
 			Entity:         entity,
-			Reason:         strings.Join(ce.Args[2:], " "),
+			Reason:         args.Reason,
 			Recommendation: event.PolicyRecommendationBan,
 		}
-		if hash {
+		if args.Hash {
 			targetHash := util.SHA256String(policy.Entity)
 			policy.UnstableHashes = &event.PolicyHashes{
 				SHA256: base64.StdEncoding.EncodeToString(targetHash[:]),
 			}
 		}
-		if ce.Command == "takedown" {
+		if ce.Handler == cmdTakedown {
 			policy.Recommendation = event.PolicyRecommendationUnstableTakedown
 		}
 		existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy, entityType)
@@ -448,7 +549,7 @@ var cmdBan = &CommandHandler{
 			return
 		}
 		target := policy.Entity
-		if hash {
+		if args.Hash {
 			policy.Entity = ""
 		}
 		resp, err := ce.Meta.SendPolicy(ce.Ctx, list.RoomID, entityType, existingStateKey, target, policy)
@@ -462,23 +563,28 @@ var cmdBan = &CommandHandler{
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent ban policy from command")
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
+var cmdRemoveBan = &CommandHandler{
+	Name:        "remove-ban",
+	Description: event.MakeExtensibleText("Remove a ban policy from a policy list"),
+}
+var cmdRemoveUnban = &CommandHandler{
+	Name:        "remove-unban",
+	Description: event.MakeExtensibleText("Remove an unban policy from a policy list"),
+}
 var cmdRemovePolicy = &CommandHandler{
-	Name:    "remove-policy",
-	Aliases: []string{"remove-ban", "remove-unban"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `!remove-policy <list> <entity>`")
-			return
-		}
-		list := ce.Meta.FindListByShortcode(ce.Args[0])
+	Name:        "remove-policy",
+	Description: event.MakeExtensibleText("Remove a policy from a policy list"),
+	Parameters:  cmdBan.Parameters[:2],
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *BanParams) {
+		list := ce.Meta.FindListByShortcode(args.List)
 		if list == nil {
-			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("List %s not found", format.SafeMarkdownCode(args.List))
 			return
 		}
-		target, entityType, ok := resolveEntity(ce, ce.Args[1])
+		target, entityType, ok := resolveEntity(ce, args.Entity)
 		if !ok {
 			return
 		}
@@ -496,10 +602,10 @@ var cmdRemovePolicy = &CommandHandler{
 		if rec := match.Recommendations().BanOrUnban; rec != nil {
 			existingStateKey = rec.StateKey
 			// TODO: handle wildcards and multiple matches, etc
-			if ce.Command == "remove-unban" && rec.Recommendation != event.PolicyRecommendationUnban {
+			if ce.Handler == cmdRemoveUnban && rec.Recommendation != event.PolicyRecommendationUnban {
 				ce.Reply("%s does not have an unban recommendation", format.SafeMarkdownCode(target))
 				return
-			} else if ce.Command == "remove-ban" && rec.Recommendation != event.PolicyRecommendationBan {
+			} else if ce.Handler == cmdRemoveBan && rec.Recommendation != event.PolicyRecommendationBan {
 				ce.Reply("%s does not have a ban recommendation", format.SafeMarkdownCode(target))
 				return
 			}
@@ -514,28 +620,26 @@ var cmdRemovePolicy = &CommandHandler{
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Removed policy from command")
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
 var cmdAddUnban = &CommandHandler{
-	Name: "add-unban",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `!add-unban <list shortcode> <entity> <reason>`")
-			return
-		}
-		list := ce.Meta.FindListByShortcode(ce.Args[0])
+	Name:        "add-unban",
+	Description: event.MakeExtensibleText("Add an unban policy to a policy list"),
+	Parameters:  cmdBan.Parameters[:3],
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *BanParams) {
+		list := ce.Meta.FindListByShortcode(args.List)
 		if list == nil {
-			ce.Reply("List %s not found", format.SafeMarkdownCode(ce.Args[0]))
+			ce.Reply("List %s not found", format.SafeMarkdownCode(args.List))
 			return
 		}
-		entity, entityType, ok := resolveEntity(ce, ce.Args[1])
+		entity, entityType, ok := resolveEntity(ce, args.Entity)
 		if !ok {
 			return
 		}
 		policy := &event.ModPolicyContent{
 			Entity:         entity,
-			Reason:         strings.Join(ce.Args[2:], " "),
+			Reason:         args.Reason,
 			Recommendation: event.PolicyRecommendationUnban,
 		}
 		existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy, entityType)
@@ -553,7 +657,7 @@ var cmdAddUnban = &CommandHandler{
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent unban policy from command")
 		ce.React(SuccessReaction)
-	},
+	}),
 }
 
 func doMatch(ce *CommandEvent, target string) {
@@ -632,27 +736,41 @@ func doMatch(ce *CommandEvent, target string) {
 	}
 }
 
+type MatchParams struct {
+	Entities []string `json:"entity"`
+}
+
 var cmdMatch = &CommandHandler{
-	Name: "match",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!match <entity>...`")
-			return
+	Name:        "match",
+	Description: event.MakeExtensibleText("Search for policies which the given entity would match"),
+	Parameters: []*cmdschema.Parameter{{
+		Key: "entity",
+		Schema: cmdschema.Array(cmdschema.Union(
+			cmdschema.PrimitiveTypeUserID.Schema(),
+			cmdschema.PrimitiveTypeServerName.Schema(),
+			cmdschema.PrimitiveTypeString.Schema(),
+		)),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *MatchParams) {
+		for _, arg := range args.Entities {
+			doMatch(ce, arg)
 		}
-		if ce.Args[0] == "--whitespace" {
-			doMatch(ce, strings.TrimPrefix(ce.RawArgs, "--whitespace "))
-		} else {
-			for _, arg := range ce.Args {
-				doMatch(ce, arg)
-			}
-		}
-	},
+	}),
+}
+
+type SearchParams struct {
+	Pattern string `json:"pattern"`
 }
 
 var cmdSearch = &CommandHandler{
-	Name: "search",
-	Func: func(ce *CommandEvent) {
-		target := ce.Args[0]
+	Name:        "search",
+	Description: event.MakeExtensibleText("Search for policies whose target entity matches a given glob pattern"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "pattern",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *SearchParams) {
+		target := args.Pattern
 		start := time.Now()
 		match := ce.Meta.Store.Search(ce.Meta.GetWatchedListsForMatch(), target)
 		dur := time.Since(start)
@@ -699,30 +817,39 @@ var cmdSearch = &CommandHandler{
 				ce.Reply("No users matching %s found in protected rooms", format.SafeMarkdownCode(target))
 			}
 		}
-	},
+	}),
+}
+
+type SendAsBotParams struct {
+	Room    cmdschema.RoomIDOrString `json:"room"`
+	Message string                   `json:"message"`
 }
 
 var cmdSendAsBot = &CommandHandler{
-	Name: "send-as-bot",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `!send-as-bot <room ID> <message>`")
-			return
-		}
-		target := resolveRoom(ce, ce.Args[0])
+	Name:        "send-as-bot",
+	Description: event.MakeExtensibleText("Send a message to a room as the bot user"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "room",
+		Schema: cmdschema.ParameterSchemaJoinableRoom,
+	}, {
+		Key:    "message",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *SendAsBotParams) {
+		target := resolveRoom(ce, args.Room)
 		if target == "" {
 			return
 		}
 		resp, err := ce.Meta.Bot.SendMessageEvent(ce.Ctx, target, event.EventMessage, &event.MessageEventContent{
 			MsgType: event.MsgText,
-			Body:    strings.Join(ce.Args[1:], " "),
+			Body:    args.Message,
 		})
 		if err != nil {
 			ce.Reply("Failed to send message to %s: %v", format.MarkdownMentionRoomID("", target), err)
 		} else {
 			ce.Reply("Sent message to %s: [%s](%s)", format.MarkdownMentionRoomID("", target), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
 		}
-	},
+	}),
 }
 
 const roomsHelp = "Available `!rooms` subcommands:\n\n" +
@@ -735,13 +862,17 @@ const roomsHelp = "Available `!rooms` subcommands:\n\n" +
 	"* `!rooms unprotect <room ID or alias>...` - Stop protecting a room.\n"
 
 var cmdRooms = &CommandHandler{
-	Name:    "rooms",
-	Aliases: []string{"room"},
+	Name:        "rooms",
+	Aliases:     []string{"room"},
+	Description: event.MakeExtensibleText("Manage various things related to rooms"),
+	Parameters:  []*cmdschema.Parameter{},
 	Subcommands: []*CommandHandler{
 		cmdListProtectedRooms,
 		cmdProtectRoom,
+		cmdUnprotectRoom,
 		cmdRoomInfo,
 		cmdRoomDelete,
+		cmdRoomBlock,
 		cmdRoomDeleteStatus,
 		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
 	},
@@ -751,7 +882,9 @@ var cmdRooms = &CommandHandler{
 }
 
 var cmdListProtectedRooms = &CommandHandler{
-	Name: "list",
+	Name:        "list",
+	Description: event.MakeExtensibleText("View the list of rooms protected by this bot"),
+	Parameters:  []*cmdschema.Parameter{},
 	Func: func(ce *CommandEvent) {
 		var buf strings.Builder
 		buf.WriteString("Protected rooms:\n\n")
@@ -782,14 +915,19 @@ func formatRoomInfo(info *synapseadmin.RoomInfo) string {
 	)
 }
 
+type RoomInfoParams struct {
+	Room cmdschema.RoomIDOrString `json:"room"`
+}
+
 var cmdRoomInfo = &CommandHandler{
-	Name: "info",
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
-		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!rooms info <room ID or alias>`")
-			return
-		}
-		roomID := resolveRoom(ce, ce.RawArgs)
+	Name:        "info",
+	Description: event.MakeExtensibleText("View the info of a room using the Synapse admin API"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "room",
+		Schema: cmdschema.ParameterSchemaJoinableRoom,
+	}},
+	Func: commands.WithParsedArgs(func(ce *commands.Event[*PolicyEvaluator], args *RoomInfoParams) {
+		roomID := resolveRoom(ce, args.Room)
 		if roomID == "" {
 			return
 		}
@@ -799,7 +937,7 @@ var cmdRoomInfo = &CommandHandler{
 			return
 		}
 		ce.Reply(formatRoomInfo(roomInfo))
-	},
+	}),
 }
 
 func formatDeleteResult(resp synapseadmin.RespDeleteRoomResult) string {
@@ -830,16 +968,21 @@ func formatDeleteResult(resp synapseadmin.RespDeleteRoomResult) string {
 	return strings.Join(parts, "\n")
 }
 
+type RoomDeleteStatusParams struct {
+	DeleteID string `json:"delete_id"`
+}
+
 var cmdRoomDeleteStatus = &CommandHandler{
-	Name: "delete-status",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!rooms delete-status <delete ID>`")
-			return
-		}
-		resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoomStatus(ce.Ctx, ce.Args[0])
+	Name:        "delete-status",
+	Description: event.MakeExtensibleText("Check the status of an async room deletion"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "delete_id",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *RoomDeleteStatusParams) {
+		resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoomStatus(ce.Ctx, args.DeleteID)
 		if err != nil {
-			ce.Reply("Failed to get delete status for %s: %v", format.SafeMarkdownCode(ce.Args[0]), err)
+			ce.Reply("Failed to get delete status for %s: %v", format.SafeMarkdownCode(args.DeleteID), err)
 		} else if resp.Status == "complete" {
 			ce.Reply("Deletion is complete:\n\n%s", formatDeleteResult(resp.ShutdownRoom))
 		} else if resp.Status == "failed" {
@@ -847,60 +990,79 @@ var cmdRoomDeleteStatus = &CommandHandler{
 		} else {
 			ce.Reply("Deletion is still in progress (%s)", resp.Status)
 		}
-	},
+	}),
+}
+
+type RoomDeleteParams struct {
+	RoomID  cmdschema.RoomIDValue `json:"room_id"`
+	Force   bool                  `json:"force"`
+	Async   bool                  `json:"async"`
+	Confirm bool                  `json:"confirm"`
+}
+
+var cmdRoomBlock = &CommandHandler{
+	Name:        "block",
+	Description: event.MakeExtensibleText("Delete and block a room using the Synapse admin API"),
 }
 
 var cmdRoomDelete = &CommandHandler{
-	Name:    "delete",
-	Aliases: []string{"purge", "block"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
-			ce.Reply("Usage: `!rooms %s [--force] [--async] <room ID>`", ce.Command)
-			return
-		}
-		if ce.Args[0] == "--confirm" {
+	Name:        "delete",
+	Aliases:     []string{"purge"},
+	Description: event.MakeExtensibleText("Delete a room using the Synapse admin API"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "room_id",
+		Schema: cmdschema.PrimitiveTypeRoomID.Schema(),
+	}, {
+		Key:      "async",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}, {
+		Key:      "confirm",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}, {
+		Key:      "force",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *RoomDeleteParams) {
+		roomID := args.RoomID.RoomID
+		if args.Confirm {
 			andBlock := ""
-			if ce.Command == "block" {
+			if ce.Handler == cmdRoomBlock {
 				andBlock = " and block"
 			}
-			roomID := strings.TrimPrefix(ce.RawArgs, "--confirm ")
 			evtID := ce.Respond(fmt.Sprintf("Really purge%s %s?", andBlock, format.SafeMarkdownCode(roomID)), commands.ReplyOpts{
 				Reply:         true,
 				AllowMarkdown: true,
 				Extra: map[string]any{
 					commands.ReactionCommandsKey: map[string]any{
-						"/confirm": fmt.Sprintf("!rooms %s %s", ce.Command, roomID),
-						"/cancel":  "",
+						"/confirm": event.MSC4391BotCommandInputCustom[*RoomDeleteParams]{
+							Command: fmt.Sprintf("rooms %s", ce.Command),
+							Arguments: &RoomDeleteParams{
+								RoomID:  args.RoomID,
+								Force:   args.Force,
+								Async:   args.Async,
+								Confirm: false,
+							},
+						},
+						"/cancel": "",
 					},
 				},
 			})
 			ce.Meta.sendReactions(ce.Ctx, evtID, "/cancel", "/confirm")
 			return
 		}
-		rawRoomID := ce.RawArgs
 		req := synapseadmin.ReqDeleteRoom{
-			Purge: true,
-			Block: ce.Command == "block",
+			Purge:      true,
+			ForcePurge: args.Force,
+			Block:      ce.Handler == cmdRoomBlock,
 		}
-		var async bool
-	Loop:
-		for _, arg := range ce.Args {
-			switch strings.ToLower(arg) {
-			case "--force":
-				req.ForcePurge = true
-			case "--async":
-				async = true
-			default:
-				break Loop
-			}
-			rawRoomID = strings.TrimPrefix(rawRoomID, arg+" ")
-		}
-		roomID := id.RoomID(rawRoomID)
 		if ce.Meta.DryRun {
 			ce.Reply("Would have deleted room %s if dry run wasn't enabled", format.SafeMarkdownCode(roomID))
 			return
 		}
-		if async {
+		if args.Async {
 			resp, err := ce.Meta.Bot.SynapseAdmin.DeleteRoom(ce.Ctx, roomID, req)
 			if err != nil {
 				ce.Reply("Failed to delete room %s: %v", format.SafeMarkdownCode(roomID), err)
@@ -917,62 +1079,92 @@ var cmdRoomDelete = &CommandHandler{
 				ce.Reply("Successfully deleted room %s\n\n%s", format.SafeMarkdownCode(roomID), formatDeleteResult(resp))
 			}
 		}
-	},
+	}),
 }
 
+type SuspendParams struct {
+	UserID id.UserID `json:"user"`
+}
+
+var cmdUnsuspend = &CommandHandler{
+	Name:        "unsuspend",
+	Description: event.MakeExtensibleText("Unsuspend a local account"),
+}
 var cmdSuspend = &CommandHandler{
-	Name:    "suspend",
-	Aliases: []string{"unsuspend"},
-	Func: func(ce *CommandEvent) {
-		err := ce.Meta.setSuspendedStatus(ce.Ctx, id.UserID(ce.Args[0]), ce.Command != "unsuspend")
+	Name:        "suspend",
+	Description: event.MakeExtensibleText("Suspend a local account"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "user",
+		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *SuspendParams) {
+		err := ce.Meta.setSuspendedStatus(ce.Ctx, args.UserID, ce.Handler != cmdUnsuspend)
 		if err != nil {
 			ce.Reply("Failed to %s: %v", ce.Command, err)
 		} else {
 			ce.React(SuccessReaction)
 		}
-	},
+	}),
+}
+
+type DeactivateParams struct {
+	UserID id.UserID `json:"user"`
+	Erase  bool      `json:"erase"`
 }
 
 var cmdDeactivate = &CommandHandler{
-	Name: "deactivate",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) > 1 && ce.Args[1] != "--erase" {
-			ce.Reply("Usage: `!deactivate <user ID> [--erase]`")
-			return
-		}
-		err := ce.Meta.Bot.SynapseAdmin.DeactivateAccount(ce.Ctx, id.UserID(ce.Args[0]), synapseadmin.ReqDeleteUser{
-			Erase: len(ce.Args) > 1 && ce.Args[1] == "--erase",
+	Name:        "deactivate",
+	Description: event.MakeExtensibleText("Permanently deactivate a local account"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "user",
+		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
+	}, {
+		Key:      "erase",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *DeactivateParams) {
+		err := ce.Meta.Bot.SynapseAdmin.DeactivateAccount(ce.Ctx, args.UserID, synapseadmin.ReqDeleteUser{
+			Erase: args.Erase,
 		})
 		if err != nil {
 			ce.Reply("Failed to deactivate: %v", err)
 		} else {
 			ce.React(SuccessReaction)
 		}
-	},
+	}),
+}
+
+type BotProfileParams struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
 }
 
 var cmdBotProfile = &CommandHandler{
-	Name:    "bot-profile",
-	Aliases: []string{"profile"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 2 {
-			ce.Reply("Usage: `!bot-profile <displayname|avatar> <new value>`")
-			return
-		}
-		val := strings.Join(ce.Args[1:], " ")
-		switch strings.ToLower(ce.Args[0]) {
+	Name:        "bot-profile",
+	Aliases:     []string{"profile"},
+	Description: event.MakeExtensibleText("Change the profile of the bot"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "field",
+		Schema: cmdschema.Enum("displayname", "name", "avatar", "avatar_url"),
+	}, {
+		Key:    "value",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *BotProfileParams) {
+		switch strings.ToLower(args.Field) {
 		case "displayname", "name":
-			err := ce.Meta.Bot.Intent.SetDisplayName(ce.Ctx, val)
+			err := ce.Meta.Bot.Intent.SetDisplayName(ce.Ctx, args.Value)
 			if err != nil {
 				ce.Log.Err(err).Msg("Failed to update bot displayname")
 				ce.Reply("Failed to update displayname")
 				return
 			}
-			ce.Meta.Bot.Meta.Displayname = val
+			ce.Meta.Bot.Meta.Displayname = args.Value
 		case "avatar", "avatar_url", "avatar-url":
-			parsed, err := id.ParseContentURI(val)
+			parsed, err := id.ParseContentURI(args.Value)
 			if err != nil {
-				ce.Reply("Malformed avatar URL %s: %v", format.SafeMarkdownCode(val), err)
+				ce.Reply("Malformed avatar URL %s: %v", format.SafeMarkdownCode(args.Value), err)
 				return
 			}
 			err = ce.Meta.Bot.Intent.SetAvatarURL(ce.Ctx, parsed)
@@ -990,29 +1182,35 @@ var cmdBotProfile = &CommandHandler{
 		if err != nil {
 			ce.Log.Err(err).Msg("Failed to save bot profile to database")
 		}
-	},
+	}),
+}
+
+type ProvisionParams struct {
+	UserID id.UserID `json:"user"`
+	Force  bool      `json:"force"`
 }
 
 var cmdProvision = &CommandHandler{
-	Name: "provision",
-	Func: func(ce *CommandEvent) {
+	Name:        "provision",
+	Description: event.MakeExtensibleText("Provision a new Meowlnir4All bot for the given user"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "user",
+		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
+	}, {
+		Key:      "force",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ProvisionParams) {
 		if ce.Meta.provisionM4A == nil {
 			ce.Reply("This is not the Meowlnir4All admin room")
 			return
-		} else if len(ce.Args) < 1 {
-			ce.Reply("Usage: `!provision [--force] <user ID>`")
-			return
-		}
-		force := strings.ToLower(ce.Args[0]) == "--force" && len(ce.Args) > 1
-		if force {
-			ce.Args = ce.Args[1:]
 		}
 		var ownerName string
-		owner := id.UserID(ce.Args[0])
-		if !force {
-			profile, err := ce.Meta.Bot.GetProfile(ce.Ctx, owner)
+		if !args.Force {
+			profile, err := ce.Meta.Bot.GetProfile(ce.Ctx, args.UserID)
 			if err != nil || profile == nil || profile.DisplayName == "" {
-				ce.Reply("Profile not found for %s, are you sure the user ID is correct?", format.SafeMarkdownCode(owner))
+				ce.Reply("Profile not found for %s, are you sure the user ID is correct?", format.SafeMarkdownCode(args.UserID))
 				return
 			}
 			if profile != nil {
@@ -1020,9 +1218,9 @@ var cmdProvision = &CommandHandler{
 			}
 		}
 		if ownerName == "" {
-			ownerName = owner.String()
+			ownerName = args.UserID.String()
 		}
-		userID, roomID, err := ce.Meta.provisionM4A(ce.Ctx, owner)
+		userID, roomID, err := ce.Meta.provisionM4A(ce.Ctx, args.UserID)
 		if err != nil {
 			ce.Log.Err(err).Msg("Failed to provision new M4A bot")
 			ce.Reply("Failed to provision bot: %v", err)
@@ -1031,20 +1229,29 @@ var cmdProvision = &CommandHandler{
 		ce.Reply(
 			"Successfully provisioned %s for %s with management room %s",
 			format.MarkdownMention(userID),
-			format.MarkdownMentionWithName(ownerName, owner),
+			format.MarkdownMentionWithName(ownerName, args.UserID),
 			format.MarkdownMentionRoomID("", roomID, ce.Meta.Bot.ServerName),
 		)
-	},
+	}),
+}
+
+type ProtectRoomParams struct {
+	Rooms []cmdschema.RoomIDOrString `json:"room"`
+}
+
+var cmdUnprotectRoom = &CommandHandler{
+	Name:        "unprotect",
+	Description: event.MakeExtensibleText("Remove a room from the protected rooms list"),
 }
 
 var cmdProtectRoom = &CommandHandler{
-	Name:    "protect",
-	Aliases: []string{"unprotect"},
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) < 1 {
-			ce.Reply("Usage: `!rooms <protect/unprotect> <room ID or alias>...`")
-			return
-		}
+	Name:        "protect",
+	Description: event.MakeExtensibleText("Add rooms to the protected rooms list"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "room",
+		Schema: cmdschema.Array(cmdschema.ParameterSchemaJoinableRoom),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ProtectRoomParams) {
 		ce.Meta.protectedRoomsLock.RLock()
 		evtContent := ce.Meta.protectedRoomsEvent
 		if evtContent == nil {
@@ -1054,13 +1261,13 @@ var cmdProtectRoom = &CommandHandler{
 		contentCopy.Rooms = slices.Clone(contentCopy.Rooms)
 		ce.Meta.protectedRoomsLock.RUnlock()
 		changed := false
-		for _, room := range ce.Args {
+		for _, room := range args.Rooms {
 			roomID := resolveRoom(ce, room)
 			if roomID == "" {
 				continue
 			}
 			itemIdx := slices.Index(contentCopy.Rooms, roomID)
-			if ce.Command == "protect" {
+			if ce.Handler != cmdUnprotectRoom {
 				if itemIdx >= 0 {
 					ce.Reply("%s is already protected", format.SafeMarkdownCode(roomID))
 					continue
@@ -1084,22 +1291,38 @@ var cmdProtectRoom = &CommandHandler{
 			}
 			ce.React(SuccessReaction)
 		}
-	},
+	}),
 }
 
 var VersionInfo progver.ProgramVersion
 
 var cmdVersion = &CommandHandler{
-	Name: "version",
+	Name:        "version",
+	Description: event.MakeExtensibleText("View the running Meowlnir version"),
+	Parameters:  []*cmdschema.Parameter{},
 	Func: func(ce *CommandEvent) {
 		ce.Reply(VersionInfo.MarkdownDescription())
 	},
 }
 
+type HelpParams struct {
+	Command string `json:"command"`
+}
+
 var cmdHelp = &CommandHandler{
-	Name: "help",
-	Func: func(ce *CommandEvent) {
-		if len(ce.Args) == 0 {
+	Name:        "help",
+	Description: event.MakeExtensibleText("Show help for commands"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:      "command",
+		Schema:   cmdschema.Enum("rooms"),
+		Optional: true,
+	}},
+	TailParam: "command",
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *HelpParams) {
+		switch args.Command {
+		case "rooms":
+			ce.Reply(roomsHelp)
+		case "":
 			ce.Reply("Available commands:\n" +
 				"* `!join <rooms...>` - Join a room\n" +
 				"* `!knock <rooms...>` - Ask to join a room\n" +
@@ -1125,15 +1348,10 @@ var cmdHelp = &CommandHandler{
 				"\n" +
 				"All fields that want a room will accept both room IDs and aliases.\n",
 			)
-		} else {
-			switch strings.ToLower(strings.TrimLeft(ce.Args[0], "!")) {
-			case "rooms":
-				ce.Reply(roomsHelp)
-			default:
-				ce.Reply("No help page for %s", format.SafeMarkdownCode(ce.Args[0]))
-			}
+		default:
+			ce.Reply("No help page for %s", format.SafeMarkdownCode(args.Command))
 		}
-	},
+	}),
 }
 
 func resolveRoomFull(ce *CommandEvent, room string) (roomID id.RoomID, roomAlias id.RoomAlias, via []string) {
@@ -1173,16 +1391,16 @@ func resolveRoomFull(ce *CommandEvent, room string) (roomID id.RoomID, roomAlias
 	return
 }
 
-func resolveRoomIDOrAlias(ce *CommandEvent, room string) (string, []string) {
-	roomID, roomAlias, via := resolveRoomFull(ce, room)
+func resolveRoomIDOrAlias[T ~string](ce *CommandEvent, room T) (string, []string) {
+	roomID, roomAlias, via := resolveRoomFull(ce, string(room))
 	if roomAlias != "" {
 		return roomAlias.String(), nil
 	}
 	return roomID.String(), via
 }
 
-func resolveRoom(ce *CommandEvent, room string) id.RoomID {
-	roomID, _, _ := resolveRoomFull(ce, room)
+func resolveRoom[T ~string](ce *CommandEvent, room T) id.RoomID {
+	roomID, _, _ := resolveRoomFull(ce, string(room))
 	return roomID
 }
 
@@ -1226,4 +1444,13 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 		stateKey = base64.StdEncoding.EncodeToString(stateKeyHash[:])
 	}
 	return pe.Bot.SendStateEvent(ctx, policyList, entityType.EventType(), stateKey, content)
+}
+
+func init() {
+	cmdRemoveBan.CopyFrom(cmdRemovePolicy)
+	cmdRemoveUnban.CopyFrom(cmdRemovePolicy)
+	cmdTakedown.CopyFrom(cmdBan)
+	cmdRoomBlock.CopyFrom(cmdRoomDelete)
+	cmdUnprotectRoom.CopyFrom(cmdProtectRoom)
+	cmdUnsuspend.CopyFrom(cmdSuspend)
 }
