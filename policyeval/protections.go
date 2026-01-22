@@ -62,7 +62,7 @@ func (pe *PolicyEvaluator) ShouldExecuteProtections(ctx context.Context, evt *ev
 	}
 	// If this user can issue kicks we assume they're a room moderator and thus exempt.
 	// TODO: custom exemption levels per protection
-	return powerLevels.GetUserLevel(evt.Sender) >= powerLevels.Kick()
+	return powerLevels.GetUserLevel(evt.Sender) < powerLevels.Kick()
 }
 
 // Protection is an interface that defines the minimum exposed functionality required to define a protection.
