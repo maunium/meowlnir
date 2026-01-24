@@ -76,6 +76,14 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 		if checkRules {
 			pe.EvaluateUser(ctx, userID, false)
 		}
+		if pe.ShouldExecuteProtections(ctx, evt) {
+			for _, prot := range pe.protections {
+				_, err := prot.Execute(ctx, pe, evt, pe.DryRun)
+				if err != nil {
+					zerolog.Ctx(ctx).Err(err).Msg("Error executing protection")
+				}
+			}
+		}
 	}
 }
 

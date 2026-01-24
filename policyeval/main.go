@@ -32,11 +32,12 @@ type protectedRoomMeta struct {
 }
 
 type PolicyEvaluator struct {
-	Bot       *bot.Bot
-	Store     *policylist.Store
-	SynapseDB *synapsedb.SynapseDB
-	DB        *database.Database
-	DryRun    bool
+	Bot           *bot.Bot
+	Store         *policylist.Store
+	SynapseDB     *synapsedb.SynapseDB
+	DB            *database.Database
+	DryRun        bool
+	ObfuscateBans bool
 
 	ManagementRoom    id.RoomID
 	RequireEncryption bool
@@ -53,6 +54,7 @@ type PolicyEvaluator struct {
 	watchedListsNA      []id.RoomID
 	watchedListsForACLs []id.RoomID
 	watchedListsLock    sync.RWMutex
+	protections         map[string]Protection
 
 	configLock sync.Mutex
 	aclLock    sync.Mutex
@@ -83,8 +85,7 @@ func NewPolicyEvaluator(
 	bot *bot.Bot,
 	store *policylist.Store,
 	managementRoom id.RoomID,
-	requireEncryption bool,
-	untrusted bool,
+	requireEncryption, untrusted, obfuscateBans bool,
 	provisionM4A func(context.Context, id.UserID) (id.UserID, id.RoomID, error),
 	db *database.Database,
 	synapseDB *synapsedb.SynapseDB,
@@ -103,12 +104,14 @@ func NewPolicyEvaluator(
 		ManagementRoom:       managementRoom,
 		RequireEncryption:    requireEncryption,
 		Untrusted:            untrusted,
+		ObfuscateBans:        obfuscateBans,
 		provisionM4A:         provisionM4A,
 		Admins:               exsync.NewSet[id.UserID](),
 		commandProcessor:     commands.NewProcessor[*PolicyEvaluator](bot.Client),
 		protectedRoomMembers: make(map[id.UserID][]id.RoomID),
 		memberHashes:         make(map[[32]byte]id.UserID),
 		watchedListsMap:      make(map[id.RoomID]*config.WatchedPolicyList),
+		protections:          make(map[string]Protection),
 		protectedRooms:       make(map[id.RoomID]*protectedRoomMeta),
 		wantToProtect:        make(map[id.RoomID]struct{}),
 		isJoining:            make(map[id.RoomID]struct{}),
@@ -331,4 +334,15 @@ func (pe *PolicyEvaluator) handlePowerLevels(ctx context.Context, evt *event.Eve
 	}
 	pe.Admins.ReplaceAll(admins)
 	return content, ""
+}
+
+func (pe *PolicyEvaluator) getPowerLevels(ctx context.Context, roomID id.RoomID) (*event.PowerLevelsEventContent, error) {
+	pl, err := pe.Bot.StateStore.GetPowerLevels(ctx, roomID)
+	if err != nil || pl == nil {
+		// Fallback to fetching from server
+		if err = pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &pl); err != nil {
+			return nil, err
+		}
+	}
+	return pl, err
 }

@@ -2,14 +2,17 @@ package policyeval
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/dbutil"
+	"go.mau.fi/util/exerrors"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/format"
@@ -226,6 +229,30 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 	for roomID := range pe.wantToProtect {
 		if !slices.Contains(content.Rooms, roomID) {
 			delete(pe.wantToProtect, roomID)
+		}
+	}
+	for protectionName, protectionConfig := range content.Protections {
+		protType, ok := protectionsRegistry[protectionName]
+		if !ok {
+			errors = append(errors, fmt.Sprintf("* Unknown protection %q", protectionName))
+			continue
+		}
+		protValue := reflect.New(protType).Interface()
+		err := json.Unmarshal(exerrors.Must(json.Marshal(protectionConfig)), protValue)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("* Failed to parse protection %s: %v", protectionName, err))
+			continue
+		}
+		_, existed := pe.protections[protectionName]
+		pe.protections[protectionName] = protValue.(Protection)
+		if !existed {
+			output = append(output, fmt.Sprintf("* Enabled protection %q", protectionName))
+		}
+	}
+	for protectionName := range pe.protections {
+		if _, ok := content.Protections[protectionName]; !ok {
+			delete(pe.protections, protectionName)
+			output = append(output, fmt.Sprintf("* Disabled protection %q", protectionName))
 		}
 	}
 	pe.protectedRoomsLock.Unlock()

@@ -51,8 +51,22 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 	pe.commandProcessor.Process(ctx, evt)
 }
 
-func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event) {
+func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event, execProtections bool) {
 	pe.commandProcessor.Process(ctx, evt)
+	if execProtections && pe.ShouldExecuteProtections(ctx, evt) {
+		for _, prot := range pe.protections {
+			hit, err := prot.Execute(ctx, pe, evt, pe.DryRun)
+			if err != nil {
+				pe.Bot.Log.Err(err).
+					Stringer("room_id", evt.RoomID).
+					Stringer("event_id", evt.ID).
+					Msg("Failed to execute protection")
+			}
+			if hit {
+				break
+			}
+		}
+	}
 }
 
 type JoinArgs struct {
