@@ -243,8 +243,17 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 			errors = append(errors, fmt.Sprintf("* Failed to parse protection %s: %v", protectionName, err))
 			continue
 		}
+		_, existed := pe.protections[protectionName]
 		pe.protections[protectionName] = protValue.(Protection)
-		output = append(output, fmt.Sprintf("* Enabled protection %q", protectionName))
+		if !existed {
+			output = append(output, fmt.Sprintf("* Enabled protection %q", protectionName))
+		}
+	}
+	for protectionName := range pe.protections {
+		if _, ok := content.Protections[protectionName]; !ok {
+			delete(pe.protections, protectionName)
+			output = append(output, fmt.Sprintf("* Disabled protection %q", protectionName))
+		}
 	}
 	pe.protectedRoomsLock.Unlock()
 	joinedRooms, err := pe.Bot.JoinedRooms(ctx)
