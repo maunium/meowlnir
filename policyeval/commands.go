@@ -834,6 +834,10 @@ var cmdSendAsBot = &CommandHandler{
 		if target == "" {
 			return
 		}
+		if ce.Meta.Untrusted && !ce.Meta.IsProtectedRoom(target) {
+			ce.Reply("Can't send messages to unprotected rooms")
+			return
+		}
 		resp, err := ce.Meta.Bot.SendMessageEvent(ce.Ctx, target, event.EventMessage, &event.MessageEventContent{
 			MsgType: event.MsgText,
 			Body:    args.Message,
