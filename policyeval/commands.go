@@ -37,7 +37,7 @@ type MjolnirShortcodeEventContent struct {
 	Shortcode string `json:"shortcode"`
 }
 
-var StateMjolnirShortcode = event.NewEventType("org.matrix.mjolnir.shortcode")
+var StateMjolnirShortcode = event.Type{Type: "org.matrix.mjolnir.shortcode", Class: event.StateEventType}
 
 const SuccessReaction = "✅"
 
@@ -855,7 +855,7 @@ const roomsHelp = "Available `!rooms` subcommands:\n\n" +
 	"* `!rooms protect <room ID or alias>...` - Start protecting a room.\n" +
 	"* `!rooms unprotect <room ID or alias>...` - Stop protecting a room.\n"
 const listsHelp = "Available `!lists` subcommands:\n\n" +
-	"* `!lists create <shortcode> [alias] [name] [--public]` - Create a new policy list\n" +
+	"* `!lists create <shortcode> [--alias=localpart] [--name=room name] [--public]` - Create a new policy list\n" +
 	"* `!lists subscribe <room ID or alias> [shortcode] [--dont-apply] [--dont-apply-acls] [--disable-notifications] " +
 	"[--dont-auto-unban] [--auto-suspend]` - Subscribe a room to a policy list\n" +
 	"* `!lists unsubscribe <room ID, alias, or shortcode>` - Unsubscribe a room from a policy list\n"
@@ -1353,6 +1353,7 @@ var cmdListsSubscribe = &CommandHandler{
 			Optional: true,
 		},
 	},
+	TailParam:   "shortcode",
 	Description: event.MakeExtensibleText("Subscribe to a policy list"),
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsSubscribeParams) {
 		if args.Room == "" {
@@ -1413,6 +1414,10 @@ var cmdListsSubscribe = &CommandHandler{
 		if resolvedName == "" {
 			// the shortcode is a sensible placeholder name
 			resolvedName = args.Shortcode
+		}
+		if strings.Contains(args.Shortcode, " ") {
+			ce.Reply("Shortcode cannot contain spaces")
+			return
 		}
 		newList := config.WatchedPolicyList{
 			RoomID:             resolvedRoom,
@@ -1520,7 +1525,7 @@ var cmdListsCreate = &CommandHandler{
 	Description: event.MakeExtensibleText("Create a policy list and subscribe to it"),
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsCreateParams) {
 		if args.Shortcode == "" {
-			ce.Reply("Usage: `!lists create <shortcode> [alias] [name]`")
+			ce.Reply("Usage: `!lists create <shortcode> [--alias=localpart] [--name=room name] [--public]`")
 			return
 		}
 		ce.Meta.watchedListsLock.Lock()
@@ -1612,17 +1617,14 @@ var cmdLists = &CommandHandler{
 	Func: func(ce *CommandEvent) {
 		ce.Meta.watchedListsLock.RLock()
 		defer ce.Meta.watchedListsLock.RUnlock()
-		builder := strings.Builder{}
-		for n, list := range ce.Meta.watchedListsEvent.Lists {
-			roomName, _ := ce.Meta.resolveRoomName(ce.Ctx, list.RoomID)
-			roomName = format.MarkdownMentionRoomID(roomName, list.RoomID, ce.Meta.Bot.ServerName)
+		var builder strings.Builder
+		for i, list := range ce.Meta.watchedListsEvent.Lists {
 			builder.WriteString(fmt.Sprintf(
-				"%d. [%s](%s) (%s) - %s\n",
-				n,
-				format.EscapeMarkdown(list.Name),
-				list.RoomID.URI(ce.Meta.Bot.ServerName).MatrixToURL(),
-				roomName,
+				"%d. %s - %s (%s)\n",
+				i+1,
 				format.SafeMarkdownCode(list.Shortcode),
+				format.MarkdownMentionRoomID(list.Name, list.RoomID, ce.Meta.Bot.ServerName),
+				format.SafeMarkdownCode(list.RoomID),
 			))
 		}
 		if builder.Len() == 0 {
