@@ -157,6 +157,9 @@ func NewPolicyEvaluator(
 		cmdProvision,
 		cmdProtectRoom,
 		cmdUnprotectRoom,
+		cmdLists,
+		cmdListsSubscribe,
+		cmdListsUnsubscribe,
 		cmdVersion,
 		cmdHelp,
 	)
