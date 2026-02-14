@@ -25,6 +25,7 @@ var protectionsRegistry map[string]reflect.Type
 func init() {
 	protectionsRegistry = make(map[string]reflect.Type)
 	protectionsRegistry["bad_words"] = reflect.TypeOf(BadWords{})
+	protectionsRegistry["bad_displaynames"] = reflect.TypeOf(BadDisplayNames{})
 	protectionsRegistry["max_mentions"] = reflect.TypeOf(MaxMentions{})
 	protectionsRegistry["join_rate"] = reflect.TypeOf(MaxJoinRate{})
 	protectionsRegistry["no_media"] = reflect.TypeOf(NoMedia{})
@@ -160,6 +161,83 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 		}()
 	}
 	return hit, nil
+}
+
+// BadDisplayNames is like BadWords, but kicks users who set display names that match instead.
+type BadDisplayNames struct {
+	Patterns []string `json:"patterns,omitempty"`
+	compiled []regexp.Regexp
+}
+
+func (b *BadDisplayNames) UnmarshalJSON(data []byte) error {
+	type badNamesAlias BadDisplayNames
+	var alias badNamesAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*b = BadDisplayNames(alias)
+
+	b.compiled = make([]regexp.Regexp, 0, len(b.Patterns))
+	for _, pattern := range b.Patterns {
+		if !strings.HasPrefix(pattern, "(?i)") {
+			pattern = "(?i)" + pattern
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return fmt.Errorf("failed to compile bad word pattern %q: %w", pattern, err)
+		}
+		b.compiled = append(b.compiled, *re)
+	}
+	return nil
+}
+
+func (b *BadDisplayNames) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (bool, error) {
+	if evt.Type != event.StateMember || evt.GetStateKey() != evt.Sender.String() {
+		return false, nil
+	}
+	content := evt.Content.AsMember()
+	if content.Displayname == "" || !content.Membership.IsInviteOrJoin() {
+		return false, nil
+	}
+	var flagged string
+	for _, pattern := range b.compiled {
+		if pattern.MatchString(content.Displayname) {
+			flagged = pattern.String()
+			break
+		}
+	}
+	pe.Bot.Log.Trace().
+		Str("protection", "bad_displaynames").
+		Bool("disallowed", flagged != "").
+		Stringer("sender", evt.Sender).
+		Stringer("room_id", evt.RoomID).
+		Stringer("event_id", evt.ID).
+		Str("string", flagged).
+		Str("flagged_pattern", flagged).
+		Msg("bad_words protection checked")
+	if flagged != "" {
+		go func() {
+			var execErr error
+			if !dry {
+				_, execErr = pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{Reason: "bad words in display name"})
+			}
+			if execErr == nil {
+				pe.sendNotice(
+					ctx,
+					fmt.Sprintf(
+						"Kicked %s from %s for matching the bad displayname pattern `%s`: ||%s||.",
+						format.MarkdownMention(evt.Sender),
+						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.UserID.Homeserver()),
+						flagged,
+						format.SafeMarkdownCode(content.Displayname),
+					),
+				)
+			} else {
+				pe.Bot.Log.Err(execErr).Msg("failed to redact message for bad_displaynames")
+			}
+		}()
+	}
+	return false, nil
 }
 
 // MaxMentions is a protection that redacts and bans users who mention too many unique users in a given time period.
