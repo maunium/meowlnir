@@ -24,13 +24,13 @@ var protectionsRegistry map[string]reflect.Type
 
 func init() {
 	protectionsRegistry = make(map[string]reflect.Type)
-	protectionsRegistry["bad_words"] = reflect.TypeOf(BadWords{})
-	protectionsRegistry["bad_displaynames"] = reflect.TypeOf(BadDisplayNames{})
-	protectionsRegistry["max_mentions"] = reflect.TypeOf(MaxMentions{})
-	protectionsRegistry["join_rate"] = reflect.TypeOf(MaxJoinRate{})
-	protectionsRegistry["no_media"] = reflect.TypeOf(NoMedia{})
-	protectionsRegistry["insecure_registration"] = reflect.TypeOf(InsecureRegistration{})
-	protectionsRegistry["anti_flood"] = reflect.TypeOf(AntiFlood{})
+	protectionsRegistry["bad_words"] = reflect.TypeFor[BadWords]()
+	protectionsRegistry["bad_displaynames"] = reflect.TypeFor[BadDisplayNames]()
+	protectionsRegistry["max_mentions"] = reflect.TypeFor[MaxMentions]()
+	protectionsRegistry["join_rate"] = reflect.TypeFor[MaxJoinRate]()
+	protectionsRegistry["no_media"] = reflect.TypeFor[NoMedia]()
+	protectionsRegistry["insecure_registration"] = reflect.TypeFor[InsecureRegistration]()
+	protectionsRegistry["anti_flood"] = reflect.TypeFor[AntiFlood]()
 }
 
 // useOrigin determines whether to use the event origin time or local time based on the trustServer flag and the
