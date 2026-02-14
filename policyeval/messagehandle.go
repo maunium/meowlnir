@@ -31,7 +31,7 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 				`@room %s [pinged](%s) the bot in %s`,
 				format.MarkdownMention(evt.Sender),
 				evt.RoomID.EventURI(evt.ID).MatrixToURL(),
-				pe.markdownMentionRoom(ctx, evt.RoomID, pe.Bot.ServerName, evt.Sender.Homeserver()),
+				pe.formatRoomLink(ctx, evt.RoomID, pe.Bot.ServerName, evt.Sender.Homeserver()),
 			),
 			&bot.SendNoticeOpts{Mentions: &event.Mentions{Room: true}, SendAsText: true},
 		)

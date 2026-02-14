@@ -200,16 +200,16 @@ func (pe *PolicyEvaluator) ApplyBan(
 			err = respErr
 		}
 		zerolog.Ctx(ctx).Err(err).Any("attempted_action", ta).Msg("Failed to ban user")
-		pe.sendNotice(ctx, "Failed to ban ||%s|| in %s for %s: %v", format.MarkdownMention(userID), pe.markdownMentionRoom(ctx, roomID), policy.Reason, err)
+		pe.sendNotice(ctx, "Failed to ban ||%s|| in %s for %s: %v", format.MarkdownMention(userID), pe.formatRoomLink(ctx, roomID), policy.Reason, err)
 		return
 	}
 	err = pe.DB.TakenAction.Put(ctx, ta)
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Any("taken_action", ta).Msg("Failed to save taken action")
-		pe.sendNotice(ctx, "Banned ||%s|| in %s for %s, but failed to save to database: %v", format.MarkdownMention(userID), pe.markdownMentionRoom(ctx, roomID), policy.Reason, err)
+		pe.sendNotice(ctx, "Banned ||%s|| in %s for %s, but failed to save to database: %v", format.MarkdownMention(userID), pe.formatRoomLink(ctx, roomID), policy.Reason, err)
 	} else {
 		zerolog.Ctx(ctx).Info().Any("taken_action", ta).Msg("Took action")
-		pe.sendNotice(ctx, "Banned ||%s|| in %s for %s", format.MarkdownMention(userID), pe.markdownMentionRoom(ctx, roomID), policy.Reason)
+		pe.sendNotice(ctx, "Banned ||%s|| in %s for %s", format.MarkdownMention(userID), pe.formatRoomLink(ctx, roomID), policy.Reason)
 	}
 }
 
@@ -231,11 +231,11 @@ func (pe *PolicyEvaluator) UndoBan(ctx context.Context, userID id.UserID, roomID
 			err = respErr
 		}
 		zerolog.Ctx(ctx).Err(err).Msg("Failed to unban user")
-		pe.sendNotice(ctx, "Failed to unban %s in %s: %v", format.MarkdownMention(userID), pe.markdownMentionRoom(ctx, roomID), err)
+		pe.sendNotice(ctx, "Failed to unban %s in %s: %v", format.MarkdownMention(userID), pe.formatRoomLink(ctx, roomID), err)
 		return false
 	}
 	zerolog.Ctx(ctx).Debug().Msg("Unbanned user")
-	pe.sendNotice(ctx, "Unbanned %s in %s", format.MarkdownMention(userID), pe.markdownMentionRoom(ctx, roomID))
+	pe.sendNotice(ctx, "Unbanned %s in %s", format.MarkdownMention(userID), pe.formatRoomLink(ctx, roomID))
 	return true
 }
 
@@ -260,7 +260,7 @@ Outer:
 				zerolog.Ctx(ctx).Err(err).Stringer("room_id", roomID).Msg("Failed to redact messages")
 				errorMessages = append(errorMessages, fmt.Sprintf(
 					"* Failed to redact events from %s in %s: %v",
-					format.MarkdownMention(userID), pe.markdownMentionRoom(ctx, roomID), err))
+					format.MarkdownMention(userID), pe.formatRoomLink(ctx, roomID), err))
 				continue Outer
 			}
 			hasMore = resp.IsMoreEvents
@@ -315,7 +315,7 @@ func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.User
 		if failedCount > 0 {
 			errorMessages = append(errorMessages, fmt.Sprintf(
 				"* Failed to redact %d/%d events from %s in %s",
-				failedCount, failedCount+successCount, format.MarkdownMention(userID), pe.markdownMentionRoom(ctx, roomID)))
+				failedCount, failedCount+successCount, format.MarkdownMention(userID), pe.formatRoomLink(ctx, roomID)))
 		}
 		redactedCount += successCount
 	}
@@ -367,7 +367,7 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 					"Redacted %d events from %s in %s",
 					redactedCount,
 					format.MarkdownMention(userID),
-					pe.markdownMentionRoom(ctx, roomID, reason),
+					pe.formatRoomLink(ctx, roomID, reason),
 				)
 			}
 		}

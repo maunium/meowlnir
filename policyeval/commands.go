@@ -429,7 +429,7 @@ var cmdKick = &CommandHandler{
 			}
 			roomStrings := make([]string, len(rooms))
 			for i, room := range rooms {
-				roomStrings[i] = ce.Meta.markdownMentionRoom(ce.Ctx, room)
+				roomStrings[i] = ce.Meta.formatRoomLink(ce.Ctx, room)
 				var err error
 				if !ce.Meta.DryRun {
 					_, err = ce.Meta.Bot.KickUser(ce.Ctx, room, &mautrix.ReqKickUser{
@@ -857,9 +857,9 @@ var cmdSendAsBot = &CommandHandler{
 			Body:    args.Message,
 		})
 		if err != nil {
-			ce.Reply("Failed to send message to %s: %v", ce.Meta.markdownMentionRoom(ce.Ctx, target), err)
+			ce.Reply("Failed to send message to %s: %v", ce.Meta.formatRoomLink(ce.Ctx, target), err)
 		} else {
-			ce.Reply("Sent message to %s: [%s](%s)", ce.Meta.markdownMentionRoom(ce.Ctx, target), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
+			ce.Reply("Sent message to %s: [%s](%s)", ce.Meta.formatRoomLink(ce.Ctx, target), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
 		}
 	}),
 }
@@ -1247,7 +1247,7 @@ var cmdProvision = &CommandHandler{
 			"Successfully provisioned %s for %s with management room %s",
 			format.MarkdownMention(userID),
 			format.MarkdownMentionWithName(ownerName, args.UserID),
-			ce.Meta.markdownMentionRoom(ce.Ctx, roomID),
+			ce.Meta.formatRoomLink(ce.Ctx, roomID),
 		)
 	}),
 }
@@ -1497,7 +1497,7 @@ var cmdListsUnsubscribe = &CommandHandler{
 			}
 		}
 		if itemIdx < 0 {
-			ce.Reply("Not subscribed to %s", ce.Meta.markdownMentionRoom(ce.Ctx, resolvedRoom))
+			ce.Reply("Not subscribed to %s", ce.Meta.formatRoomLink(ce.Ctx, resolvedRoom))
 			return
 		}
 		contentCopy.Lists = slices.Delete(contentCopy.Lists, itemIdx, itemIdx+1)
@@ -1808,16 +1808,12 @@ func (pe *PolicyEvaluator) resolveRoomName(ctx context.Context, roomID id.RoomID
 	return canonicalAlias.Alias.String(), nil
 }
 
-func (pe *PolicyEvaluator) tryResolveRoomName(ctx context.Context, roomID id.RoomID) (name string) {
-	name, _ = pe.resolveRoomName(ctx, roomID)
-	return name
-}
-
-func (pe *PolicyEvaluator) markdownMentionRoom(ctx context.Context, roomID id.RoomID, via ...string) string {
+func (pe *PolicyEvaluator) formatRoomLink(ctx context.Context, roomID id.RoomID, via ...string) string {
 	if len(via) == 0 {
 		via = []string{pe.Bot.ServerName}
 	}
-	return format.MarkdownMentionRoomID(pe.tryResolveRoomName(ctx, roomID), roomID, via...)
+	name, _ := pe.resolveRoomName(ctx, roomID)
+	return format.MarkdownMentionRoomID(name, roomID, via...)
 }
 
 func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, stateKey, rawEntity string, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {
