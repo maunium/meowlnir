@@ -164,11 +164,11 @@ func (pe *PolicyEvaluator) handleWatchedLists(ctx context.Context, evt *event.Ev
 			}
 		}
 		for _, roomID := range unsubscribed {
-			output = append(output, fmt.Sprintf("* Unsubscribed from %s", format.MarkdownMentionRoomID("", roomID)))
+			output = append(output, fmt.Sprintf("* Unsubscribed from %s", pe.markdownMentionRoom(ctx, roomID)))
 		}
 		for _, roomID := range noApplyUnsubscribed {
 			if !slices.Contains(unsubscribed, roomID) {
-				output = append(output, fmt.Sprintf("* Unsubscribed from %s (policies weren't being applied)", format.MarkdownMentionRoomID("", roomID)))
+				output = append(output, fmt.Sprintf("* Unsubscribed from %s (policies weren't being applied)", pe.markdownMentionRoom(ctx, roomID)))
 			}
 		}
 		aclUnsubscribed, aclSubscribed := exslices.Diff(oldACLWatchedList, aclWatchedList)

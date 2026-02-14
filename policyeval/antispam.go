@@ -73,7 +73,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 					"Blocked ||%s|| from inviting %s to %s due to policy banning ||`%s`|| for `%s`",
 					format.MarkdownMention(inviter),
 					format.MarkdownMention(invitee),
-					format.MarkdownMentionRoomID("", roomID),
+					pe.markdownMentionRoom(ctx, roomID, inviterServer),
 					rec.EntityOrHash(), rec.Reason,
 				),
 				// Don't mention users
@@ -162,7 +162,7 @@ func (pe *PolicyEvaluator) HandleAcceptMakeJoin(ctx context.Context, roomID id.R
 			context.WithoutCancel(ctx),
 			"Blocked ||%s|| from joining %s due to policy banning ||`%s`|| for `%s`",
 			format.MarkdownMention(userID),
-			format.MarkdownMentionRoomID("", roomID),
+			pe.markdownMentionRoom(ctx, roomID),
 			rec.EntityOrHash(), rec.Reason,
 		)
 		return ptr.Ptr(mautrix.MForbidden.WithMessage("You're banned from this room"))

@@ -429,7 +429,7 @@ var cmdKick = &CommandHandler{
 			}
 			roomStrings := make([]string, len(rooms))
 			for i, room := range rooms {
-				roomStrings[i] = format.MarkdownMentionRoomID("", room)
+				roomStrings[i] = ce.Meta.markdownMentionRoom(ce.Ctx, room)
 				var err error
 				if !ce.Meta.DryRun {
 					_, err = ce.Meta.Bot.KickUser(ce.Ctx, room, &mautrix.ReqKickUser{
@@ -857,9 +857,9 @@ var cmdSendAsBot = &CommandHandler{
 			Body:    args.Message,
 		})
 		if err != nil {
-			ce.Reply("Failed to send message to %s: %v", format.MarkdownMentionRoomID("", target), err)
+			ce.Reply("Failed to send message to %s: %v", ce.Meta.markdownMentionRoom(ce.Ctx, target), err)
 		} else {
-			ce.Reply("Sent message to %s: [%s](%s)", format.MarkdownMentionRoomID("", target), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
+			ce.Reply("Sent message to %s: [%s](%s)", ce.Meta.markdownMentionRoom(ce.Ctx, target), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
 		}
 	}),
 }
@@ -1247,7 +1247,7 @@ var cmdProvision = &CommandHandler{
 			"Successfully provisioned %s for %s with management room %s",
 			format.MarkdownMention(userID),
 			format.MarkdownMentionWithName(ownerName, args.UserID),
-			format.MarkdownMentionRoomID("", roomID, ce.Meta.Bot.ServerName),
+			ce.Meta.markdownMentionRoom(ce.Ctx, roomID),
 		)
 	}),
 }
@@ -1497,7 +1497,7 @@ var cmdListsUnsubscribe = &CommandHandler{
 			}
 		}
 		if itemIdx < 0 {
-			ce.Reply("Not subscribed to %s", format.MarkdownMentionRoomID("", resolvedRoom, ce.Meta.Bot.ServerName))
+			ce.Reply("Not subscribed to %s", ce.Meta.markdownMentionRoom(ce.Ctx, resolvedRoom))
 			return
 		}
 		contentCopy.Lists = slices.Delete(contentCopy.Lists, itemIdx, itemIdx+1)
