@@ -1808,6 +1808,18 @@ func (pe *PolicyEvaluator) resolveRoomName(ctx context.Context, roomID id.RoomID
 	return canonicalAlias.Alias.String(), nil
 }
 
+func (pe *PolicyEvaluator) tryResolveRoomName(ctx context.Context, roomID id.RoomID) (name string) {
+	name, _ = pe.resolveRoomName(ctx, roomID)
+	return name
+}
+
+func (pe *PolicyEvaluator) markdownMentionRoom(ctx context.Context, roomID id.RoomID, via ...string) string {
+	if len(via) == 0 {
+		via = []string{pe.Bot.ServerName}
+	}
+	return format.MarkdownMentionRoomID(pe.tryResolveRoomName(ctx, roomID), roomID, via...)
+}
+
 func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, stateKey, rawEntity string, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {
 	if stateKey == "" {
 		stateKeyHash := sha256.Sum256(append([]byte(rawEntity), []byte(content.Recommendation)...))

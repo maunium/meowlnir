@@ -150,7 +150,7 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 							"pattern `%s`: ||%s||.",
 						evt.RoomID.EventURI(evt.ID),
 						format.MarkdownMention(evt.Sender),
-						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
+						pe.markdownMentionRoom(ctx, evt.RoomID),
 						flagged,
 						// note: this might result in an inaccurate render if the
 						// original match is against the plaintext itself.
@@ -231,7 +231,7 @@ func (b *BadDisplayNames) Execute(ctx context.Context, pe *PolicyEvaluator, evt 
 					fmt.Sprintf(
 						"Kicked %s from %s for matching the bad displayname pattern `%s`: ||%s||.",
 						format.MarkdownMention(evt.Sender),
-						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
+						pe.markdownMentionRoom(ctx, evt.RoomID),
 						flagged,
 						format.SafeMarkdownCode(content.Displayname),
 					),
@@ -328,7 +328,7 @@ func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 							"of %d mentions per %s, with %d mentions (%d considered infractions).",
 						evt.RoomID.EventURI(evt.ID),
 						format.MarkdownMention(evt.Sender),
-						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
+						pe.markdownMentionRoom(ctx, evt.RoomID),
 						mm.Limit,
 						mm.Per,
 						mm.counts[evt.Sender],
@@ -361,7 +361,7 @@ func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 							"Banned %s from %s for exceeding the mention infraction limit of "+
 								"%d infractions.",
 							format.MarkdownMention(evt.Sender),
-							format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
+							pe.markdownMentionRoom(ctx, evt.RoomID),
 							mm.MaxInfractions,
 						),
 					)
@@ -461,7 +461,7 @@ func (mj *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 					fmt.Sprintf(
 						"Kicked %s from %s for exceeding the join limit of %d joins per %s, with %d joins.",
 						format.MarkdownMention(target),
-						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
+						pe.markdownMentionRoom(ctx, evt.RoomID),
 						mj.Limit,
 						mj.Per,
 						mj.counts[evt.RoomID],
@@ -543,7 +543,7 @@ func (nm *NoMedia) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 						format.SafeMarkdownCode(displayType),
 						evt.RoomID.EventURI(evt.ID, pe.Bot.ServerName),
 						format.MarkdownMention(evt.Sender),
-						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
+						pe.markdownMentionRoom(ctx, evt.RoomID),
 					),
 				)
 			} else {
@@ -585,7 +585,7 @@ func (ir *InsecureRegistration) Kick(ctx context.Context, pe *PolicyEvaluator, e
 			fmt.Sprintf(
 				"Kicked %s from %s for joining from a homeserver (%s) that allows insecure registration.",
 				format.MarkdownMention(evt.Sender),
-				format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
+				pe.markdownMentionRoom(ctx, evt.RoomID),
 				target.Homeserver(),
 			),
 		)
@@ -756,7 +756,7 @@ func (af *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *even
 							"limit of %d events per %s with %d events (%d considered infractions).",
 						evt.RoomID.EventURI(evt.ID),
 						format.MarkdownMention(evt.Sender),
-						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
+						pe.markdownMentionRoom(ctx, evt.RoomID),
 						af.Limit,
 						af.Per,
 						af.counts[evt.Sender],
@@ -788,7 +788,7 @@ func (af *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *even
 						fmt.Sprintf(
 							"Banned %s from %s for exceeding the flood infraction limit of %d infractions.",
 							format.MarkdownMention(evt.Sender),
-							format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
+							pe.markdownMentionRoom(ctx, evt.RoomID),
 							af.MaxInfractions,
 						),
 					)
