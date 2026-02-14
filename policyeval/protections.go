@@ -223,7 +223,10 @@ func (b *BadDisplayNames) Execute(ctx context.Context, pe *PolicyEvaluator, evt 
 		go func() {
 			var execErr error
 			if !dry {
-				_, execErr = pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{Reason: "bad words in display name"})
+				_, execErr = pe.Bot.KickUser(ctx, evt.RoomID, &mautrix.ReqKickUser{
+					UserID: evt.Sender,
+					Reason: "bad words in display name",
+				})
 			}
 			if execErr == nil {
 				pe.sendNotice(
