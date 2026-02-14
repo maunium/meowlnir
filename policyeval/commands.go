@@ -374,6 +374,13 @@ var cmdRedactRecent = &CommandHandler{
 			ce.Reply("Invalid duration %s: %v", format.SafeMarkdownCode(args.Since), err)
 			return
 		}
+		workingEvtID := ce.React(ActionPendingReaction)
+		defer func() {
+			if workingEvtID != "" {
+				_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, workingEvtID)
+			}
+			ce.React(SuccessReaction)
+		}()
 		redactedCount, err := ce.Meta.redactRecentMessages(ce.Ctx, room, "", since, false, args.Reason)
 		if err != nil {
 			ce.Reply("Failed to redact recent messages: %v", err)
