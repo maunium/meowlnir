@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -353,27 +355,34 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 		zerolog.Ctx(ctx).Warn().
 			Stringer("user_id", userID).
 			Msg("Falling back to history iteration based event discovery for redaction. This is slow.")
+		var (
+			wg                  sync.WaitGroup
+			totalRedactedAtomic atomic.Int64
+		)
 		for _, roomID := range pe.GetProtectedRooms() {
-			redactedCount, err := pe.redactRecentMessages(ctx, roomID, userID, 24*time.Hour, true, reason)
-			if err != nil {
-				zerolog.Ctx(ctx).Err(err).
-					Stringer("user_id", userID).
-					Stringer("room_id", roomID).
-					Msg("Failed to redact recent messages")
-				continue
-			}
-			totalRedacted += redactedCount
-			if redactedCount > 0 {
-				pe.sendNotice(
-					ctx,
-					"Redacted %d events from %s in %s",
-					redactedCount,
-					format.MarkdownMention(userID),
-					pe.formatRoomLink(ctx, roomID, reason),
-				)
-			}
+			wg.Go(func() {
+				redactedCount, err := pe.redactRecentMessages(ctx, roomID, userID, 24*time.Hour, true, reason)
+				if err != nil {
+					zerolog.Ctx(ctx).Err(err).
+						Stringer("user_id", userID).
+						Stringer("room_id", roomID).
+						Msg("Failed to redact recent messages")
+					return
+				}
+				totalRedactedAtomic.Add(int64(redactedCount))
+				if redactedCount > 0 {
+					pe.sendNotice(
+						ctx,
+						"Redacted %d events from %s in %s",
+						redactedCount,
+						format.MarkdownMention(userID),
+						pe.formatRoomLink(ctx, roomID, reason),
+					)
+				}
+			})
 		}
-		return totalRedacted
+		wg.Wait()
+		return int(totalRedactedAtomic.Load())
 	}
 }
 
