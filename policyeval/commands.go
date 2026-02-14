@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/glob"
 	"go.mau.fi/util/progver"
+	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
@@ -30,6 +32,12 @@ import (
 
 type CommandEvent = commands.Event[*PolicyEvaluator]
 type CommandHandler = commands.Handler[*PolicyEvaluator]
+
+type MjolnirShortcodeEventContent struct {
+	Shortcode string `json:"shortcode"`
+}
+
+var StateMjolnirShortcode = event.Type{Type: "org.matrix.mjolnir.shortcode", Class: event.StateEventType}
 
 const SuccessReaction = "✅"
 
@@ -860,6 +868,11 @@ const roomsHelp = "Available `!rooms` subcommands:\n\n" +
 	"* `!rooms delete-status <delete ID>` - Get the status of a room deletion (if `--async` was used)\n" +
 	"* `!rooms protect <room ID or alias>...` - Start protecting a room.\n" +
 	"* `!rooms unprotect <room ID or alias>...` - Stop protecting a room.\n"
+const listsHelp = "Available `!lists` subcommands:\n\n" +
+	"* `!lists create <shortcode> [--alias=localpart] [--name=room name] [--public]` - Create a new policy list\n" +
+	"* `!lists subscribe <room ID or alias> [shortcode] [--dont-apply] [--dont-apply-acls] [--disable-notifications] " +
+	"[--dont-auto-unban] [--auto-suspend]` - Subscribe a room to a policy list\n" +
+	"* `!lists unsubscribe <room ID, alias, or shortcode>` - Unsubscribe a room from a policy list\n"
 
 var cmdRooms = &CommandHandler{
 	Name:        "rooms",
@@ -1305,6 +1318,337 @@ var cmdVersion = &CommandHandler{
 	},
 }
 
+type ListsSubscribeParams struct {
+	Room                 cmdschema.RoomIDOrString `json:"room"`
+	Shortcode            string                   `json:"shortcode"`
+	DontApply            bool                     `json:"dont-apply"`
+	DontApplyAcls        bool                     `json:"dont-apply-acls"`
+	DisableNotifications bool                     `json:"disable-notifications"`
+	DontAutoUnban        bool                     `json:"dont-auto-unban"`
+	AutoSuspend          bool                     `json:"auto-suspend"`
+}
+
+var cmdListsSubscribe = &CommandHandler{
+	Name:    "subscribe",
+	Aliases: []string{"watch"},
+	Parameters: []*cmdschema.Parameter{
+		{
+			Key:    "room",
+			Schema: cmdschema.ParameterSchemaJoinableRoom,
+		},
+		{
+			Key:      "shortcode",
+			Schema:   cmdschema.PrimitiveTypeString.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "dont-apply",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "dont-apply-acls",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "disable-notifications",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "dont-auto-unban",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "auto-suspend",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+	},
+	TailParam:   "shortcode",
+	Description: event.MakeExtensibleText("Subscribe to a policy list"),
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsSubscribeParams) {
+		if args.Room == "" {
+			ce.Reply(
+				"Usage: `!lists subscribe <room ID or alias> [shortcode] [--dont-apply] [--dont-apply-acls] " +
+					"[--disable-notifications] [--dont-auto-unban] [--auto-suspend]`",
+			)
+			return
+		}
+		ce.Meta.watchedListsLock.RLock()
+		evtContent := ce.Meta.watchedListsEvent
+		if evtContent == nil {
+			evtContent = &config.WatchedListsEventContent{Lists: []config.WatchedPolicyList{}}
+		}
+		contentCopy := *evtContent
+		contentCopy.Lists = slices.Clone(contentCopy.Lists)
+		ce.Meta.watchedListsLock.RUnlock()
+		resolvedRoom, _, via := resolveRoomFull(ce, string(args.Room))
+		if resolvedRoom == "" {
+			ce.Reply("Failed to resolve room %s", format.SafeMarkdownCode(args.Room))
+			return
+		}
+		_, err := ce.Meta.Bot.JoinRoom(ce.Ctx, resolvedRoom.String(), &mautrix.ReqJoinRoom{Via: via})
+		if err != nil {
+			ce.Reply("Failed to join room %s: %v", format.SafeMarkdownCode(resolvedRoom), err)
+			return
+		}
+
+		resolvedName, _ := ce.Meta.resolveRoomName(ce.Ctx, resolvedRoom)
+		resolvedNameMD := format.MarkdownMentionRoomID(resolvedName, resolvedRoom, ce.Meta.Bot.ServerName)
+
+		if args.Shortcode == "" {
+			var scEvtContent MjolnirShortcodeEventContent
+			if err := ce.Meta.Bot.StateEvent(ce.Ctx, resolvedRoom, StateMjolnirShortcode, "", &scEvtContent); err != nil {
+				if !errors.Is(err, mautrix.MNotFound) {
+					ce.Reply("Failed to get shortcode for %s: %v", resolvedNameMD, err)
+					return
+				}
+			}
+			if scEvtContent.Shortcode == "" {
+				ce.Reply("No room-provided shortcode found for %s, please manually specify one.", resolvedNameMD)
+				return
+			}
+			args.Shortcode = scEvtContent.Shortcode
+		}
+
+		for _, list := range contentCopy.Lists {
+			if list.RoomID == resolvedRoom {
+				ce.Reply("Already subscribed to %s", resolvedNameMD)
+				return
+			}
+			if list.Shortcode == args.Shortcode {
+				ce.Reply("Shortcode %s is already in use for %s", format.SafeMarkdownCode(args.Shortcode), resolvedNameMD)
+				return
+			}
+		}
+
+		if resolvedName == "" {
+			// the shortcode is a sensible placeholder name
+			resolvedName = args.Shortcode
+		}
+		if strings.Contains(args.Shortcode, " ") {
+			ce.Reply("Shortcode cannot contain spaces")
+			return
+		}
+		newList := config.WatchedPolicyList{
+			RoomID:             resolvedRoom,
+			Shortcode:          args.Shortcode,
+			Name:               resolvedName,
+			DontApply:          args.DontApply,
+			DontApplyACL:       args.DontApplyAcls,
+			DontNotifyOnChange: args.DisableNotifications,
+			AutoSuspend:        args.AutoSuspend,
+			AutoUnban:          !args.DontAutoUnban,
+		}
+		contentCopy.Lists = append(contentCopy.Lists, newList)
+		_, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateWatchedLists, "", &contentCopy)
+		if err != nil {
+			ce.Reply("Failed to update watched lists: %v", err)
+			return
+		}
+		ce.React(SuccessReaction)
+	}),
+}
+
+type ListsUnsubscribeParams struct {
+	Room string `json:"room_or_shortcode"`
+}
+
+var cmdListsUnsubscribe = &CommandHandler{
+	Name:    "unsubscribe",
+	Aliases: []string{"unwatch"},
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "room_or_shortcode",
+		Schema: cmdschema.PrimitiveTypeString.Schema(),
+	}},
+	Description: event.MakeExtensibleText("Unsubscribe from a policy list without leaving the room"),
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsUnsubscribeParams) {
+		if args.Room == "" {
+			ce.Reply("Usage: `!lists unsubscribe <room ID, alias, or shortcode>`")
+			return
+		}
+		ce.Meta.watchedListsLock.RLock()
+		evtContent := ce.Meta.watchedListsEvent
+		if evtContent == nil {
+			ce.Meta.watchedListsLock.RUnlock()
+			ce.Reply("Not subscribed to any lists")
+			return
+		}
+		contentCopy := *evtContent
+		contentCopy.Lists = slices.Clone(contentCopy.Lists)
+		ce.Meta.watchedListsLock.RUnlock()
+		resolvedRoom, _, _ := resolveRoomFull(ce, string(args.Room))
+		if resolvedRoom == "" {
+			ce.Reply("Failed to resolve room %s", format.SafeMarkdownCode(args.Room))
+			return
+		}
+		itemIdx := -1
+		for i, list := range contentCopy.Lists {
+			if list.RoomID == resolvedRoom || list.Shortcode == string(args.Room) {
+				itemIdx = i
+				break
+			}
+		}
+		if itemIdx < 0 {
+			ce.Reply("Not subscribed to %s", format.MarkdownMentionRoomID("", resolvedRoom, ce.Meta.Bot.ServerName))
+			return
+		}
+		contentCopy.Lists = slices.Delete(contentCopy.Lists, itemIdx, itemIdx+1)
+		_, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateWatchedLists, "", &contentCopy)
+		if err != nil {
+			ce.Reply("Failed to update watched lists: %v", err)
+			return
+		}
+		ce.React(SuccessReaction)
+	}),
+}
+
+type ListsCreateParams struct {
+	Name      string `json:"name"`
+	Shortcode string `json:"shortcode"`
+	Alias     string `json:"alias"`
+	Public    bool   `json:"public"`
+}
+
+var cmdListsCreate = &CommandHandler{
+	Name: "create",
+	Parameters: []*cmdschema.Parameter{
+		{
+			Key:    "shortcode",
+			Schema: cmdschema.PrimitiveTypeString.Schema(),
+		},
+		{
+			Key:      "alias",
+			Schema:   cmdschema.PrimitiveTypeString.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "name",
+			Schema:   cmdschema.PrimitiveTypeString.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "public",
+			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+	},
+	Description: event.MakeExtensibleText("Create a policy list and subscribe to it"),
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ListsCreateParams) {
+		if args.Shortcode == "" {
+			ce.Reply("Usage: `!lists create <shortcode> [--alias=localpart] [--name=room name] [--public]`")
+			return
+		}
+		ce.Meta.watchedListsLock.Lock()
+		defer ce.Meta.watchedListsLock.Unlock()
+		evtContent := ce.Meta.watchedListsEvent
+		if evtContent == nil {
+			evtContent = &config.WatchedListsEventContent{Lists: []config.WatchedPolicyList{}}
+		}
+		contentCopy := *evtContent
+		contentCopy.Lists = slices.Clone(contentCopy.Lists)
+
+		for _, list := range contentCopy.Lists {
+			if list.Shortcode == args.Shortcode {
+				ce.Reply("Shortcode %s is already in use", format.SafeMarkdownCode(args.Shortcode))
+				return
+			}
+		}
+
+		zerolog.Ctx(ce.Ctx).Info().
+			Str("shortcode", args.Shortcode).
+			Str("alias", args.Alias).
+			Str("name", args.Name).
+			Bool("public", args.Public).
+			Msg("Creating new policy list room")
+		createReq := mautrix.ReqCreateRoom{
+			Preset:        "private_chat",
+			RoomAliasName: args.Alias,
+			Name:          args.Name,
+			Invite:        []id.UserID{ce.Event.Sender},
+			RoomVersion:   id.RoomV12,
+			CreationContent: map[string]any{
+				"additional_creators": []id.UserID{ce.Event.Sender},
+				"type":                "support.feline.policy.lists.msc.v1",
+			},
+			InitialState: []*event.Event{
+				{
+					Type:     StateMjolnirShortcode,
+					StateKey: ptr.Ptr(""),
+					Content:  event.Content{VeryRaw: json.RawMessage(fmt.Sprintf(`{"shortcode":"%s"}`, args.Shortcode))},
+				},
+			},
+			PowerLevelOverride: &event.PowerLevelsEventContent{
+				EventsDefault: 50,
+			},
+		}
+		if args.Public {
+			createReq.Preset = "public_chat"
+		}
+		roomResp, err := ce.Meta.Bot.CreateRoom(ce.Ctx, &createReq)
+		if err != nil {
+			ce.Reply("Failed to create list room: %v", err)
+			return
+		}
+		newList := config.WatchedPolicyList{
+			RoomID:    roomResp.RoomID,
+			Shortcode: args.Shortcode,
+			Name:      args.Name,
+		}
+		if newList.Name == "" {
+			if args.Alias != "" {
+				newList.Name = args.Alias
+			} else {
+				newList.Name = args.Shortcode
+			}
+		}
+		contentCopy.Lists = append(contentCopy.Lists, newList)
+		zerolog.Ctx(ce.Ctx).Info().Stringer("room_id", roomResp.RoomID).Msg("Created new policy list room, updating watched lists")
+		_, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateWatchedLists, "", &contentCopy)
+		md := format.MarkdownMentionRoomID(args.Name, roomResp.RoomID, ce.Meta.Bot.ServerName)
+		if err != nil {
+			ce.Reply("Successfully created the new list %s, but could not update watched lists: %s", md, err)
+			return
+		}
+		ce.Reply("Created new list %s (%s)", md, format.SafeMarkdownCode(args.Shortcode))
+	}),
+}
+
+var cmdLists = &CommandHandler{
+	Name: "lists",
+	Subcommands: []*CommandHandler{
+		cmdListsSubscribe,
+		cmdListsUnsubscribe,
+		cmdListsCreate,
+		commands.MakeUnknownCommandHandler[*PolicyEvaluator]("!"),
+	},
+	Aliases:     []string{"list"},
+	Parameters:  make([]*cmdschema.Parameter, 0),
+	Description: event.MakeExtensibleText("Display watched policy lists"),
+	Func: func(ce *CommandEvent) {
+		ce.Meta.watchedListsLock.RLock()
+		defer ce.Meta.watchedListsLock.RUnlock()
+		var builder strings.Builder
+		for i, list := range ce.Meta.watchedListsEvent.Lists {
+			builder.WriteString(fmt.Sprintf(
+				"%d. %s - %s (%s)\n",
+				i+1,
+				format.SafeMarkdownCode(list.Shortcode),
+				format.MarkdownMentionRoomID(list.Name, list.RoomID, ce.Meta.Bot.ServerName),
+				format.SafeMarkdownCode(list.RoomID),
+			))
+		}
+		if builder.Len() == 0 {
+			ce.Reply("No lists found. Use `!lists subscribe` to add a new list.")
+			return
+		}
+		ce.Reply(fmt.Sprintf("Watched lists (%d):\n\n%s", len(ce.Meta.watchedListsEvent.Lists), builder.String()))
+	},
+}
+
 type HelpParams struct {
 	Command string `json:"command"`
 }
@@ -1322,6 +1666,8 @@ var cmdHelp = &CommandHandler{
 		switch args.Command {
 		case "rooms":
 			ce.Reply(roomsHelp)
+		case "lists":
+			ce.Reply(listsHelp)
 		case "":
 			ce.Reply("Available commands:\n" +
 				"* `!join <rooms...>` - Join a room\n" +
@@ -1343,6 +1689,7 @@ var cmdHelp = &CommandHandler{
 				"* `!bot-profile <displayname/avatar> <new value>` - Update the bot profile\n" +
 				"* `!rooms <...>` - Manage rooms\n" +
 				"* `!version` - Check the running Meowlnir version\n" +
+				"* `!lists` - Show or managed watched lists\n" +
 				"* `!help <command>` - Show detailed help for a command\n" +
 				"* `!help` - Show this help message\n" +
 				"\n" +
@@ -1436,6 +1783,25 @@ func resolveEntity(ce *CommandEvent, entity string) (string, policylist.EntityTy
 	}
 	ce.Reply("Invalid entity %s", format.SafeMarkdownCode(entity))
 	return "", "", false
+}
+
+func (pe *PolicyEvaluator) resolveRoomName(ctx context.Context, roomID id.RoomID) (string, error) {
+	var roomName event.RoomNameEventContent
+	if err := pe.Bot.StateEvent(ctx, roomID, event.StateRoomName, "", &roomName); err != nil {
+		if !errors.Is(err, mautrix.MNotFound) {
+			return "", fmt.Errorf("failed to get room name for %s: %w", roomID, err)
+		}
+	}
+	if roomName.Name != "" {
+		return roomName.Name, nil
+	}
+	var canonicalAlias event.CanonicalAliasEventContent
+	if err := pe.Bot.StateEvent(ctx, roomID, event.StateCanonicalAlias, "", &canonicalAlias); err != nil {
+		if !errors.Is(err, mautrix.MNotFound) {
+			return "", fmt.Errorf("failed to get canonical alias for %s: %w", roomID, err)
+		}
+	}
+	return canonicalAlias.Alias.String(), nil
 }
 
 func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, stateKey, rawEntity string, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {
