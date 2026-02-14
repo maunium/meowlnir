@@ -115,10 +115,11 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 	combined := content.Body + format.HTMLToText(content.FormattedBody)
 
 	// Check for substring hits
-	flagged := ""
+	var (
+		flagged string
+	)
 	for _, pattern := range b.compiled {
 		if matched := pattern.MatchString(combined); matched {
-			hit = true
 			flagged = pattern.String()
 			break
 		}
@@ -134,7 +135,7 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 		Str("flagged_pattern", flagged).
 		Msg("bad_words protection checked")
 
-	if hit {
+	if flagged != "" {
 		// At least one of the patterns matched, redact and notify in the background
 		go func() {
 			var execErr error
@@ -145,14 +146,17 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 				pe.sendNotice(
 					ctx,
 					fmt.Sprintf(
-						"Redacted [this message](%s) from [%s](%s) in [%s](%s) for matching the bad word "+
-							"pattern `%s`.",
+						"Redacted [this message](%s) from %s in %s for matching the bad word "+
+							"pattern `%s`: ||%s||.",
 						evt.RoomID.EventURI(evt.ID),
-						evt.Sender,
-						evt.Sender.URI(),
-						evt.RoomID,
-						evt.RoomID.URI(),
+						format.MarkdownMention(evt.Sender),
+						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
 						flagged,
+						// note: this might result in an inaccurate render if the
+						// original match is against the plaintext itself.
+						// This isn't the end of the world, moderators should un-redact events they
+						// care to investigate.
+						format.SafeMarkdownCode(format.HTMLToText(flagged)),
 					),
 				)
 			} else {
@@ -160,7 +164,7 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 			}
 		}()
 	}
-	return hit, nil
+	return flagged != "", nil
 }
 
 // BadDisplayNames is like BadWords, but kicks users who set display names that match instead.
@@ -214,7 +218,7 @@ func (b *BadDisplayNames) Execute(ctx context.Context, pe *PolicyEvaluator, evt 
 		Stringer("event_id", evt.ID).
 		Str("string", flagged).
 		Str("flagged_pattern", flagged).
-		Msg("bad_words protection checked")
+		Msg("bad_displaynames protection checked")
 	if flagged != "" {
 		go func() {
 			var execErr error
@@ -237,7 +241,7 @@ func (b *BadDisplayNames) Execute(ctx context.Context, pe *PolicyEvaluator, evt 
 			}
 		}()
 	}
-	return false, nil
+	return flagged != "", nil
 }
 
 // MaxMentions is a protection that redacts and bans users who mention too many unique users in a given time period.
