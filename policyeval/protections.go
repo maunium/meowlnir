@@ -231,7 +231,7 @@ func (b *BadDisplayNames) Execute(ctx context.Context, pe *PolicyEvaluator, evt 
 					fmt.Sprintf(
 						"Kicked %s from %s for matching the bad displayname pattern `%s`: ||%s||.",
 						format.MarkdownMention(evt.Sender),
-						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.UserID.Homeserver()),
+						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
 						flagged,
 						format.SafeMarkdownCode(content.Displayname),
 					),
@@ -324,15 +324,13 @@ func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 				pe.sendNotice(
 					ctx,
 					fmt.Sprintf(
-						"Redacted [this message](%s) from [%s](%s) in [%s](%s) for exceeding the mention limit "+
-							"of %d mentions per %s with %d mentions (%d considered infractions).",
+						"Redacted [this message](%s) from %s in %s for exceeding the mention limit "+
+							"of %d mentions per %s, with %d mentions (%d considered infractions).",
 						evt.RoomID.EventURI(evt.ID),
-						evt.Sender,
-						evt.Sender.URI(),
-						evt.RoomID,
-						evt.RoomID.URI(),
+						format.MarkdownMention(evt.Sender),
+						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
 						mm.Limit,
-						mm.Per.String(),
+						mm.Per,
 						mm.counts[evt.Sender],
 						infractions,
 					),
@@ -360,12 +358,10 @@ func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 					pe.sendNotice(
 						ctx,
 						fmt.Sprintf(
-							"Banned [%s](%s) from [%s](%s) for exceeding the mention infraction limit of "+
+							"Banned %s from %s for exceeding the mention infraction limit of "+
 								"%d infractions.",
-							evt.Sender,
-							evt.Sender.URI(),
-							evt.RoomID,
-							evt.RoomID.URI(),
+							format.MarkdownMention(evt.Sender),
+							format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
 							mm.MaxInfractions,
 						),
 					)
@@ -463,13 +459,11 @@ func (mj *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 				pe.sendNotice(
 					ctx,
 					fmt.Sprintf(
-						"Kicked [%s](%s) from [%s](%s) for exceeding the join limit of %d joins per %s, with %d joins.",
-						target,
-						target.URI(),
-						evt.RoomID,
-						evt.RoomID.URI(),
+						"Kicked %s from %s for exceeding the join limit of %d joins per %s, with %d joins.",
+						format.MarkdownMention(target),
+						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
 						mj.Limit,
-						mj.Per.String(),
+						mj.Per,
 						mj.counts[evt.RoomID],
 					),
 				)
@@ -545,13 +539,11 @@ func (nm *NoMedia) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 				pe.sendNotice(
 					ctx,
 					fmt.Sprintf(
-						"Redacted [this event (`%s`)](%s) from [%s](%s) in [%s](%s) for containing disallowed media.",
-						displayType,
-						evt.RoomID.EventURI(evt.ID),
-						evt.Sender,
-						evt.Sender.URI(),
-						evt.RoomID,
-						evt.RoomID.URI(),
+						"Redacted [this event (%s)](%s) from %s in %s for containing disallowed media.",
+						format.SafeMarkdownCode(displayType),
+						evt.RoomID.EventURI(evt.ID, pe.Bot.ServerName),
+						format.MarkdownMention(evt.Sender),
+						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
 					),
 				)
 			} else {
@@ -591,11 +583,9 @@ func (ir *InsecureRegistration) Kick(ctx context.Context, pe *PolicyEvaluator, e
 		pe.sendNotice(
 			ctx,
 			fmt.Sprintf(
-				"Kicked [%s](%s) from [%s](%s) for joining from a homeserver (%s) that allows insecure registration.",
-				target,
-				target.URI(),
-				evt.RoomID,
-				evt.RoomID.URI(),
+				"Kicked %s from %s for joining from a homeserver (%s) that allows insecure registration.",
+				format.MarkdownMention(evt.Sender),
+				format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
 				target.Homeserver(),
 			),
 		)
@@ -762,15 +752,13 @@ func (af *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *even
 				pe.sendNotice(
 					ctx,
 					fmt.Sprintf(
-						"Redacted [this message](%s) from [%s](%s) in [%s](%s) for exceeding the flood "+
+						"Redacted [this message](%s) from %s in %s for exceeding the flood "+
 							"limit of %d events per %s with %d events (%d considered infractions).",
 						evt.RoomID.EventURI(evt.ID),
-						evt.Sender,
-						evt.Sender.URI(),
-						evt.RoomID,
-						evt.RoomID.URI(),
+						format.MarkdownMention(evt.Sender),
+						format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
 						af.Limit,
-						af.Per.String(),
+						af.Per,
 						af.counts[evt.Sender],
 						infractions,
 					),
@@ -798,11 +786,9 @@ func (af *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *even
 					pe.sendNotice(
 						ctx,
 						fmt.Sprintf(
-							"Banned [%s](%s) from [%s](%s) for exceeding the flood infraction limit of %d infractions.",
-							evt.Sender,
-							evt.Sender.URI(),
-							evt.RoomID,
-							evt.RoomID.URI(),
+							"Banned %s from %s for exceeding the flood infraction limit of %d infractions.",
+							format.MarkdownMention(evt.Sender),
+							format.MarkdownMentionRoomID("", evt.RoomID, pe.Bot.ServerName),
 							af.MaxInfractions,
 						),
 					)
