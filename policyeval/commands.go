@@ -39,7 +39,10 @@ type MjolnirShortcodeEventContent struct {
 
 var StateMjolnirShortcode = event.Type{Type: "org.matrix.mjolnir.shortcode", Class: event.StateEventType}
 
-const SuccessReaction = "✅"
+const (
+	ActionPendingReaction = "⏳"
+	SuccessReaction       = "✅"
+)
 
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
 	if !evt.Mautrix.WasEncrypted && pe.Bot.CryptoHelper != nil && pe.RequireEncryption {
@@ -314,8 +317,21 @@ var cmdRedact = &CommandHandler{
 				return
 			}
 		}
+		var workingEvtID id.EventID
+		defer func() {
+			if workingEvtID != "" {
+				_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, workingEvtID)
+			}
+			ce.React(SuccessReaction)
+		}()
 		if target.Sigil1 == '@' {
-			ce.Meta.RedactUser(ce.Ctx, target.UserID(), args.Reason, false)
+			workingEvtID = ce.React(ActionPendingReaction)
+			redactedCount := ce.Meta.RedactUser(ce.Ctx, target.UserID(), args.Reason, false)
+			if redactedCount == 0 {
+				ce.Reply("No events from %s were redacted.", format.MarkdownMention(target.UserID()))
+			} else {
+				ce.Reply("Redacted %d events by %s", redactedCount, format.MarkdownMention(target.UserID()))
+			}
 		} else if target.Sigil1 == '!' && target.Sigil2 == '$' {
 			_, err = ce.Meta.Bot.RedactEvent(ce.Ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: args.Reason})
 			if err != nil {
@@ -326,7 +342,6 @@ var cmdRedact = &CommandHandler{
 			ce.Reply("Invalid target %s (must be a user ID or event link)", format.SafeMarkdownCode(args.Target))
 			return
 		}
-		ce.React(SuccessReaction)
 	}),
 }
 
