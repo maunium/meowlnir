@@ -53,6 +53,13 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		log.Warn().Msg("Ignoring non-local invite")
 		return nil
 	}
+	parsedServerName := id.ParseServerName(inviterServer)
+	if parsedServerName == nil {
+		log.Warn().Str("server_name", inviterServer).Msg("Failed to parse inviter server name")
+	} else if parsedServerName.Type == id.ServerNameIPv4 || parsedServerName.Type == id.ServerNameIPv6 {
+		log.Debug().Msg("Blocking invite from IP server name")
+		return ptr.Ptr(mautrix.MForbidden.WithMessage("IP server names are not allowed to send invites"))
+	}
 	lists := pe.GetWatchedLists()
 
 	var rec *policylist.Policy
