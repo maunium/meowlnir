@@ -371,8 +371,31 @@ var cmdRedactRecent = &CommandHandler{
 		}
 		since, err := time.ParseDuration(args.Since)
 		if err != nil {
-			ce.Reply("Invalid duration %s: %v", format.SafeMarkdownCode(args.Since), err)
-			return
+			uri, uriErr := id.ParseMatrixURIOrMatrixToURL(string(args.Since))
+			if uri != nil && uri.EventID() != "" {
+				afterEvt, err := ce.Meta.Bot.GetEvent(ce.Ctx, room, uri.EventID())
+				if err != nil {
+					ce.Reply("Failed to fetch %s: %v", format.SafeMarkdownCode(uri.EventID()), err)
+					return
+				}
+				since = time.Since(time.UnixMilli(afterEvt.Timestamp))
+			} else if strings.HasPrefix(args.Since, "$") {
+				eventID := id.EventID(args.Since)
+				afterEvt, err := ce.Meta.Bot.GetEvent(ce.Ctx, room, eventID)
+				if err != nil {
+					ce.Reply("Failed to fetch %s: %v", format.SafeMarkdownCode(eventID), err)
+					return
+				}
+				since = time.Since(time.UnixMilli(afterEvt.Timestamp))
+			} else {
+				ce.Reply(
+					"Invalid duration or event link %s: %s & %s",
+					format.SafeMarkdownCode(args.Since),
+					format.SafeMarkdownCode(err.Error()),
+					format.SafeMarkdownCode(uriErr.Error()),
+				)
+				return
+			}
 		}
 		workingEvtID := ce.React(ActionPendingReaction)
 		defer func() {
@@ -387,7 +410,6 @@ var cmdRedactRecent = &CommandHandler{
 			return
 		}
 		ce.Reply("Redacted %d messages", redactedCount)
-		ce.React(SuccessReaction)
 	}),
 }
 
@@ -1699,7 +1721,7 @@ var cmdHelp = &CommandHandler{
 				"* `!leave <rooms...>` - Leave a room\n" +
 				"* `!powerlevel <room|all> <key> <level>` - Set a power level\n" +
 				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n" +
-				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n" +
+				"* `!redact-recent <room> <since duration or event link> [reason]` - Redact all recent messages in a room\n" +
 				"* `!kick [--force] [--room <room ID>] <user ID> [reason]` - Kick a user from all rooms\n" +
 				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n" +
 				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n" +
