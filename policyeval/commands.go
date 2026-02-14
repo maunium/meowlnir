@@ -329,8 +329,6 @@ var cmdRedact = &CommandHandler{
 			redactedCount := ce.Meta.RedactUser(ce.Ctx, target.UserID(), args.Reason, false)
 			if redactedCount == 0 {
 				ce.Reply("No events from %s were redacted.", format.MarkdownMention(target.UserID()))
-			} else {
-				ce.Reply("Redacted %d events by %s", redactedCount, format.MarkdownMention(target.UserID()))
 			}
 		} else if target.Sigil1 == '!' && target.Sigil2 == '$' {
 			_, err = ce.Meta.Bot.RedactEvent(ce.Ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: args.Reason})
