@@ -115,19 +115,19 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 
 	// Check for substring hits
 	var (
-		flagged string
+		flagged, converted string
 	)
+	if content.FormattedBody != "" && content.Format == event.FormatHTML {
+		converted = format.HTMLToText(content.FormattedBody)
+	}
 	for _, pattern := range b.compiled {
 		if matched := pattern.MatchString(content.Body); matched {
 			flagged = pattern.String()
 			break
 		}
-		if content.FormattedBody != "" && content.Format == event.FormatHTML {
-			plainText := format.HTMLToText(content.FormattedBody)
-			if matched := pattern.MatchString(plainText); matched {
-				flagged = pattern.String()
-				break
-			}
+		if matched := pattern.MatchString(converted); matched {
+			flagged = pattern.String()
+			break
 		}
 	}
 
