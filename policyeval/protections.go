@@ -112,16 +112,22 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 		return false, nil // no-op
 	}
 	content := evt.Content.AsMessage()
-	combined := content.Body + format.HTMLToText(content.FormattedBody)
 
 	// Check for substring hits
 	var (
 		flagged string
 	)
 	for _, pattern := range b.compiled {
-		if matched := pattern.MatchString(combined); matched {
+		if matched := pattern.MatchString(content.Body); matched {
 			flagged = pattern.String()
 			break
+		}
+		if content.FormattedBody != "" && content.Format == event.FormatHTML {
+			plainText := format.HTMLToText(content.FormattedBody)
+			if matched := pattern.MatchString(plainText); matched {
+				flagged = pattern.String()
+				break
+			}
 		}
 	}
 
@@ -131,7 +137,7 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 		Stringer("sender", evt.Sender).
 		Stringer("room_id", evt.RoomID).
 		Stringer("event_id", evt.ID).
-		Str("string", combined).
+		Str("plaintext", content.Body).
 		Str("flagged_pattern", flagged).
 		Msg("bad_words protection checked")
 
@@ -147,16 +153,11 @@ func (b *BadWords) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.
 					ctx,
 					fmt.Sprintf(
 						"Redacted [this message](%s) from %s in %s for matching the bad word "+
-							"pattern `%s`: ||%s||.",
+							"pattern `%s`",
 						evt.RoomID.EventURI(evt.ID),
 						format.MarkdownMention(evt.Sender),
 						pe.formatRoomLink(ctx, evt.RoomID),
 						flagged,
-						// note: this might result in an inaccurate render if the
-						// original match is against the plaintext itself.
-						// This isn't the end of the world, moderators should un-redact events they
-						// care to investigate.
-						format.SafeMarkdownCode(format.HTMLToText(flagged)),
 					),
 				)
 			} else {
