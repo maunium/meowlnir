@@ -33,11 +33,11 @@ func init() {
 	protectionsRegistry["anti_flood"] = reflect.TypeFor[AntiFlood]()
 }
 
-// useOrigin determines whether to use the event origin time or local time based on the trustServer flag and the
-// claimedOrigin time. If trustServer is false or the claimed origin time is more than 1 hour in the future or past,
+// useOrigin determines whether to use the event origin time or local time based on the dontTrustServer flag and the
+// claimedOrigin time. If dontTrustServer is false or the claimed origin time is more than 1 hour in the future or past,
 // it returns false, indicating local time should be used. Otherwise, it returns true.
-func useOrigin(trustServer bool, claimedOrigin time.Time) bool {
-	if !trustServer {
+func useOrigin(dontTrustServer bool, claimedOrigin time.Time) bool {
+	if !dontTrustServer {
 		return false
 	}
 	now := time.Now()
@@ -250,13 +250,13 @@ func (b *BadDisplayNames) Execute(ctx context.Context, pe *PolicyEvaluator, evt 
 
 // MaxMentions is a protection that redacts and bans users who mention too many unique users in a given time period.
 type MaxMentions struct {
-	Limit          int              `json:"limit"`                     // how many mentions to allow before actioning
-	Per            jsontime.Seconds `json:"per"`                       // the timespan in which to count mentions
-	MaxInfractions int              `json:"max_infractions,omitempty"` // how many warnings can be given before a ban is issued
-	TrustServer    bool             `json:"trust_server,omitempty"`    // if false, use local time, instead of evt origin
-	counts         map[id.UserID]int
-	expire         map[id.UserID]time.Time
-	countLock      sync.Mutex
+	Limit           int              `json:"limit"`                       // how many mentions to allow before actioning
+	Per             jsontime.Seconds `json:"per"`                         // the timespan in which to count mentions
+	MaxInfractions  int              `json:"max_infractions,omitempty"`   // how many warnings can be given before a ban is issued
+	DontTrustServer bool             `json:"dont_trust_server,omitempty"` // if true, always use local time, instead of evt origin
+	counts          map[id.UserID]int
+	expire          map[id.UserID]time.Time
+	countLock       sync.Mutex
 }
 
 func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
@@ -280,8 +280,8 @@ func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 	// Expire old counts
 	now := time.Now()
 	origin := time.UnixMilli(evt.Timestamp)
-	if !useOrigin(mm.TrustServer, origin) {
-		if mm.TrustServer {
+	if !useOrigin(mm.DontTrustServer, origin) {
+		if !mm.DontTrustServer {
 			pe.Bot.Log.Warn().
 				Str("protection", "max_mentions").
 				Stringer("sender", evt.Sender).
@@ -381,12 +381,12 @@ func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 // MaxJoinRate is a protection that kicks users that join past a certain threshold, to prevent join floods.
 // This can be used to set a limit of, for example, 10 joins a minute, after which users will be kicked.
 type MaxJoinRate struct {
-	Limit       int              `json:"limit"`                  // how many joins to allow before actioning
-	Per         jsontime.Seconds `json:"per"`                    // the timespan in which to count joins
-	TrustServer bool             `json:"trust_server,omitempty"` // if false, use local time, instead of evt origin
-	counts      map[id.RoomID]int
-	expire      map[id.RoomID]time.Time
-	countLock   sync.Mutex
+	Limit           int              `json:"limit"`                       // how many joins to allow before actioning
+	Per             jsontime.Seconds `json:"per"`                         // the timespan in which to count joins
+	DontTrustServer bool             `json:"dont_trust_server,omitempty"` // if true, always use local time, instead of evt origin
+	counts          map[id.RoomID]int
+	expire          map[id.RoomID]time.Time
+	countLock       sync.Mutex
 }
 
 func (mj *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
@@ -411,8 +411,8 @@ func (mj *MaxJoinRate) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 	// Expire old counts
 	now := time.Now()
 	origin := time.UnixMilli(evt.Timestamp)
-	if !useOrigin(mj.TrustServer, origin) {
-		if mj.TrustServer {
+	if !useOrigin(mj.DontTrustServer, origin) {
+		if !mj.DontTrustServer {
 			pe.Bot.Log.Warn().
 				Str("protection", "max_join_rate").
 				Stringer("sender", evt.Sender).
@@ -680,13 +680,13 @@ func (ir *InsecureRegistration) Execute(ctx context.Context, pe *PolicyEvaluator
 
 // AntiFlood is a protection that redacts and bans users who send too many events in a given time period.
 type AntiFlood struct {
-	Limit          int              `json:"limit"` // how many events to allow before actioning
-	Per            jsontime.Seconds `json:"per"`   // the timespan in which to count events
-	MaxInfractions int              `json:"max_infractions,omitempty"`
-	TrustServer    bool             `json:"trust_server,omitempty"` // if false, use local time, instead of evt origin
-	counts         map[id.UserID]int
-	expire         map[id.UserID]time.Time
-	countLock      sync.Mutex
+	Limit           int              `json:"limit"` // how many events to allow before actioning
+	Per             jsontime.Seconds `json:"per"`   // the timespan in which to count events
+	MaxInfractions  int              `json:"max_infractions,omitempty"`
+	DontTrustServer bool             `json:"dont_trust_server,omitempty"` // if true, always use local time, instead of evt origin
+	counts          map[id.UserID]int
+	expire          map[id.UserID]time.Time
+	countLock       sync.Mutex
 }
 
 func (af *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
@@ -705,8 +705,8 @@ func (af *AntiFlood) Execute(ctx context.Context, pe *PolicyEvaluator, evt *even
 	// Expire old counts
 	now := time.Now()
 	origin := time.UnixMilli(evt.Timestamp)
-	if !useOrigin(af.TrustServer, origin) {
-		if af.TrustServer {
+	if !useOrigin(af.DontTrustServer, origin) {
+		if !af.DontTrustServer {
 			pe.Bot.Log.Warn().
 				Str("protection", "anti_flood").
 				Stringer("sender", evt.Sender).
