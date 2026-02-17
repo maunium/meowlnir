@@ -31,9 +31,23 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 				`@room %s [pinged](%s) the bot in %s`,
 				format.MarkdownMention(evt.Sender),
 				evt.RoomID.EventURI(evt.ID).MatrixToURL(),
-				format.MarkdownMentionRoomID("", evt.RoomID),
+				pe.formatRoomLink(ctx, evt.RoomID, pe.Bot.ServerName, evt.Sender.Homeserver()),
 			),
 			&bot.SendNoticeOpts{Mentions: &event.Mentions{Room: true}, SendAsText: true},
 		)
+	}
+	if pe.ShouldExecuteProtections(ctx, evt) {
+		for _, prot := range pe.protections {
+			hit, err := prot.Execute(ctx, pe, evt, pe.DryRun)
+			if err != nil {
+				pe.Bot.Log.Err(err).
+					Stringer("room_id", evt.RoomID).
+					Stringer("event_id", evt.ID).
+					Msg("Failed to execute protection")
+			}
+			if hit {
+				break
+			}
+		}
 	}
 }

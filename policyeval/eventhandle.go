@@ -60,21 +60,43 @@ func (pe *PolicyEvaluator) HandleMember(ctx context.Context, evt *event.Event) {
 			return
 		}
 		if isProtecting && (content.Membership == event.MembershipLeave || content.Membership == event.MembershipBan) {
-			pe.sendNotice(ctx, "⚠️ Bot was removed from %s", format.MarkdownMentionRoomID("", evt.RoomID))
+			pe.sendNotice(ctx, "⚠️ Bot was removed from %s", pe.formatRoomLink(ctx, evt.RoomID, evt.Sender.Homeserver()))
 		} else if wantToProtect && (content.Membership == event.MembershipJoin || content.Membership == event.MembershipInvite) {
 			_, err := pe.Bot.JoinRoomByID(ctx, evt.RoomID)
 			if err != nil {
-				pe.sendNotice(ctx, "Failed to join room %s: %v", format.MarkdownMentionRoomID("", evt.RoomID), err)
+				pe.sendNotice(
+					ctx,
+					"Failed to join room %s: %v",
+					pe.formatRoomLink(ctx, evt.RoomID, evt.Sender.Homeserver()),
+					err,
+				)
 			} else if _, errMsg := pe.tryProtectingRoom(ctx, nil, evt.RoomID, true); errMsg != "" {
-				pe.sendNotice(ctx, "Retried protecting room after joining room, but failed: %s", strings.TrimPrefix(errMsg, "* "))
+				pe.sendNotice(
+					ctx,
+					"Retried protecting %s after joining, but failed: %s",
+					pe.formatRoomLink(ctx, evt.RoomID),
+					strings.TrimPrefix(errMsg, "* "),
+				)
 			} else {
-				pe.sendNotice(ctx, "Bot was invited to room, now protecting %s", format.MarkdownMentionRoomID("", evt.RoomID))
+				pe.sendNotice(
+					ctx,
+					"Bot was invited to room, now protecting %s",
+					pe.formatRoomLink(ctx, evt.RoomID),
+				)
 			}
 		}
 	} else {
 		checkRules := pe.updateUser(userID, evt.RoomID, content.Membership)
 		if checkRules {
 			pe.EvaluateUser(ctx, userID, false)
+		}
+		if pe.ShouldExecuteProtections(ctx, evt) {
+			for _, prot := range pe.protections {
+				_, err := prot.Execute(ctx, pe, evt, pe.DryRun)
+				if err != nil {
+					zerolog.Ctx(ctx).Err(err).Msg("Error executing protection")
+				}
+			}
 		}
 	}
 }

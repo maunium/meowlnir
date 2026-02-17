@@ -39,7 +39,10 @@ type MjolnirShortcodeEventContent struct {
 
 var StateMjolnirShortcode = event.Type{Type: "org.matrix.mjolnir.shortcode", Class: event.StateEventType}
 
-const SuccessReaction = "✅"
+const (
+	ActionPendingReaction = "⏳"
+	SuccessReaction       = "✅"
+)
 
 func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) {
 	if !evt.Mautrix.WasEncrypted && pe.Bot.CryptoHelper != nil && pe.RequireEncryption {
@@ -59,8 +62,22 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 	pe.commandProcessor.Process(ctx, evt)
 }
 
-func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event) {
+func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event, execProtections bool) {
 	pe.commandProcessor.Process(ctx, evt)
+	if execProtections && pe.ShouldExecuteProtections(ctx, evt) {
+		for _, prot := range pe.protections {
+			hit, err := prot.Execute(ctx, pe, evt, pe.DryRun)
+			if err != nil {
+				pe.Bot.Log.Err(err).
+					Stringer("room_id", evt.RoomID).
+					Stringer("event_id", evt.ID).
+					Msg("Failed to execute protection")
+			}
+			if hit {
+				break
+			}
+		}
+	}
 }
 
 type JoinArgs struct {
@@ -300,8 +317,19 @@ var cmdRedact = &CommandHandler{
 				return
 			}
 		}
+		var workingEvtID id.EventID
+		defer func() {
+			if workingEvtID != "" {
+				_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, workingEvtID)
+			}
+			ce.React(SuccessReaction)
+		}()
 		if target.Sigil1 == '@' {
-			ce.Meta.RedactUser(ce.Ctx, target.UserID(), args.Reason, false)
+			workingEvtID = ce.React(ActionPendingReaction)
+			redactedCount := ce.Meta.RedactUser(ce.Ctx, target.UserID(), args.Reason, false)
+			if redactedCount == 0 {
+				ce.Reply("No events from %s were redacted.", format.MarkdownMention(target.UserID()))
+			}
 		} else if target.Sigil1 == '!' && target.Sigil2 == '$' {
 			_, err = ce.Meta.Bot.RedactEvent(ce.Ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: args.Reason})
 			if err != nil {
@@ -312,7 +340,6 @@ var cmdRedact = &CommandHandler{
 			ce.Reply("Invalid target %s (must be a user ID or event link)", format.SafeMarkdownCode(args.Target))
 			return
 		}
-		ce.React(SuccessReaction)
 	}),
 }
 
@@ -344,16 +371,45 @@ var cmdRedactRecent = &CommandHandler{
 		}
 		since, err := time.ParseDuration(args.Since)
 		if err != nil {
-			ce.Reply("Invalid duration %s: %v", format.SafeMarkdownCode(args.Since), err)
-			return
+			uri, uriErr := id.ParseMatrixURIOrMatrixToURL(string(args.Since))
+			if uri != nil && uri.EventID() != "" {
+				afterEvt, err := ce.Meta.Bot.GetEvent(ce.Ctx, room, uri.EventID())
+				if err != nil {
+					ce.Reply("Failed to fetch %s: %v", format.SafeMarkdownCode(uri.EventID()), err)
+					return
+				}
+				since = time.Since(time.UnixMilli(afterEvt.Timestamp))
+			} else if strings.HasPrefix(args.Since, "$") {
+				eventID := id.EventID(args.Since)
+				afterEvt, err := ce.Meta.Bot.GetEvent(ce.Ctx, room, eventID)
+				if err != nil {
+					ce.Reply("Failed to fetch %s: %v", format.SafeMarkdownCode(eventID), err)
+					return
+				}
+				since = time.Since(time.UnixMilli(afterEvt.Timestamp))
+			} else {
+				ce.Reply(
+					"Invalid duration or event link %s: %s & %s",
+					format.SafeMarkdownCode(args.Since),
+					format.SafeMarkdownCode(err.Error()),
+					format.SafeMarkdownCode(uriErr.Error()),
+				)
+				return
+			}
 		}
+		workingEvtID := ce.React(ActionPendingReaction)
+		defer func() {
+			if workingEvtID != "" {
+				_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, workingEvtID)
+			}
+			ce.React(SuccessReaction)
+		}()
 		redactedCount, err := ce.Meta.redactRecentMessages(ce.Ctx, room, "", since, false, args.Reason)
 		if err != nil {
 			ce.Reply("Failed to redact recent messages: %v", err)
 			return
 		}
 		ce.Reply("Redacted %d messages", redactedCount)
-		ce.React(SuccessReaction)
 	}),
 }
 
@@ -415,7 +471,7 @@ var cmdKick = &CommandHandler{
 			}
 			roomStrings := make([]string, len(rooms))
 			for i, room := range rooms {
-				roomStrings[i] = format.MarkdownMentionRoomID("", room)
+				roomStrings[i] = ce.Meta.formatRoomLink(ce.Ctx, room)
 				var err error
 				if !ce.Meta.DryRun {
 					_, err = ce.Meta.Bot.KickUser(ce.Ctx, room, &mautrix.ReqKickUser{
@@ -843,9 +899,9 @@ var cmdSendAsBot = &CommandHandler{
 			Body:    args.Message,
 		})
 		if err != nil {
-			ce.Reply("Failed to send message to %s: %v", format.MarkdownMentionRoomID("", target), err)
+			ce.Reply("Failed to send message to %s: %v", ce.Meta.formatRoomLink(ce.Ctx, target), err)
 		} else {
-			ce.Reply("Sent message to %s: [%s](%s)", format.MarkdownMentionRoomID("", target), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
+			ce.Reply("Sent message to %s: [%s](%s)", ce.Meta.formatRoomLink(ce.Ctx, target), resp.EventID, target.EventURI(resp.EventID).MatrixToURL())
 		}
 	}),
 }
@@ -1233,7 +1289,7 @@ var cmdProvision = &CommandHandler{
 			"Successfully provisioned %s for %s with management room %s",
 			format.MarkdownMention(userID),
 			format.MarkdownMentionWithName(ownerName, args.UserID),
-			format.MarkdownMentionRoomID("", roomID, ce.Meta.Bot.ServerName),
+			ce.Meta.formatRoomLink(ce.Ctx, roomID),
 		)
 	}),
 }
@@ -1483,7 +1539,7 @@ var cmdListsUnsubscribe = &CommandHandler{
 			}
 		}
 		if itemIdx < 0 {
-			ce.Reply("Not subscribed to %s", format.MarkdownMentionRoomID("", resolvedRoom, ce.Meta.Bot.ServerName))
+			ce.Reply("Not subscribed to %s", ce.Meta.formatRoomLink(ce.Ctx, resolvedRoom))
 			return
 		}
 		contentCopy.Lists = slices.Delete(contentCopy.Lists, itemIdx, itemIdx+1)
@@ -1665,7 +1721,7 @@ var cmdHelp = &CommandHandler{
 				"* `!leave <rooms...>` - Leave a room\n" +
 				"* `!powerlevel <room|all> <key> <level>` - Set a power level\n" +
 				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n" +
-				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n" +
+				"* `!redact-recent <room> <since duration or event link> [reason]` - Redact all recent messages in a room\n" +
 				"* `!kick [--force] [--room <room ID>] <user ID> [reason]` - Kick a user from all rooms\n" +
 				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n" +
 				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n" +
@@ -1792,6 +1848,14 @@ func (pe *PolicyEvaluator) resolveRoomName(ctx context.Context, roomID id.RoomID
 		}
 	}
 	return canonicalAlias.Alias.String(), nil
+}
+
+func (pe *PolicyEvaluator) formatRoomLink(ctx context.Context, roomID id.RoomID, via ...string) string {
+	if len(via) == 0 {
+		via = []string{pe.Bot.ServerName}
+	}
+	name, _ := pe.resolveRoomName(ctx, roomID)
+	return format.MarkdownMentionRoomID(name, roomID, via...)
 }
 
 func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID, entityType policylist.EntityType, stateKey, rawEntity string, content *event.ModPolicyContent) (*mautrix.RespSendEvent, error) {
