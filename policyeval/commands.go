@@ -218,7 +218,7 @@ var cmdPowerLevel = &CommandHandler{
 			evtLevel := pls.GetEventLevel(event.StatePowerLevels)
 			if evtLevel > myLevel {
 				results = append(results, fmt.Sprintf(
-					"I do not have sufficient power level to update %s: need %d, have %d",
+					"I do not have sufficient power level to update the power level event in %s: need %d, have %d",
 					format.SafeMarkdownCode(room),
 					evtLevel,
 					myLevel,
@@ -227,9 +227,9 @@ var cmdPowerLevel = &CommandHandler{
 			}
 			if level > myLevel {
 				results = append(results, fmt.Sprintf(
-					"I do not have sufficient power level to update %s: need %d, have %d",
+					"I cannot set anything to level %d in %s because I only have %d",
+					level,
 					format.SafeMarkdownCode(room),
-					level+1,
 					myLevel,
 				))
 				continue
