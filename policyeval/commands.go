@@ -152,6 +152,19 @@ type PowerLevelArgs struct {
 	Level int                      `json:"level"`
 }
 
+func getCreators(ctx context.Context, pe *PolicyEvaluator, roomID id.RoomID) []id.UserID {
+	createEvent, err := pe.Bot.Client.FullStateEvent(ctx, roomID, event.StateCreate, "")
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).Stringer("room_id", roomID).Msg("failed to fetch room createEvent event")
+		return nil
+	}
+	createContent := createEvent.Content.AsCreate()
+	if createContent.RoomVersion.PrivilegedRoomCreators() {
+		return append(createContent.AdditionalCreators, createEvent.Sender)
+	}
+	return nil
+}
+
 var cmdPowerLevel = &CommandHandler{
 	Name:        "powerlevel",
 	Aliases:     []string{"pl"},
@@ -194,11 +207,11 @@ var cmdPowerLevel = &CommandHandler{
 		level := args.Level
 		for _, room := range rooms {
 			var pls event.PowerLevelsEventContent
-			// No need to fetch the create event here, this is a manual update that is allowed to fail if the user holds it wrong
+			creators := getCreators(ce.Ctx, ce.Meta, room)
 			err := ce.Meta.Bot.Client.StateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
 				ce.Reply("Failed to get power levels in %s: %v", format.SafeMarkdownCode(room), err)
-				return
+				continue
 			}
 			const MagicUnsetValue = -1644163703
 			var oldLevel int
@@ -229,8 +242,12 @@ var cmdPowerLevel = &CommandHandler{
 				pls.Notifications.RoomPtr = &level
 			default:
 				if strings.HasPrefix(args.Key, "@") {
-					oldLevel = pls.GetUserLevel(id.UserID(args.Key))
-					pls.SetUserLevel(id.UserID(args.Key), level)
+					userID := id.UserID(args.Key)
+					if slices.Contains(creators, userID) {
+						continue // Nothing to do, this user has infinite power level
+					}
+					oldLevel = pls.GetUserLevel(userID)
+					pls.SetUserLevel(userID, level)
 				} else if strings.ContainsRune(args.Key, '.') {
 					if pls.Events == nil {
 						pls.Events = make(map[string]int)
