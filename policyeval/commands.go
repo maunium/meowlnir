@@ -205,12 +205,33 @@ var cmdPowerLevel = &CommandHandler{
 			rooms = []id.RoomID{room}
 		}
 		level := args.Level
+		var results []string
 		for _, room := range rooms {
 			var pls event.PowerLevelsEventContent
 			creators := getCreators(ce.Ctx, ce.Meta, room)
 			err := ce.Meta.Bot.Client.StateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
-				ce.Reply("Failed to get power levels in %s: %v", format.SafeMarkdownCode(room), err)
+				results = append(results, fmt.Sprintf("Failed to get power levels in %s: %v", format.SafeMarkdownCode(room), err))
+				continue
+			}
+			myLevel := pls.GetUserLevel(ce.Meta.Bot.UserID)
+			evtLevel := pls.GetEventLevel(event.StatePowerLevels)
+			if evtLevel > myLevel {
+				results = append(results, fmt.Sprintf(
+					"I do not have sufficient power level to update %s: need %d, have %d",
+					format.SafeMarkdownCode(room),
+					evtLevel,
+					myLevel,
+				))
+				continue
+			}
+			if level > myLevel {
+				results = append(results, fmt.Sprintf(
+					"I do not have sufficient power level to update %s: need %d, have %d",
+					format.SafeMarkdownCode(room),
+					level+1,
+					myLevel,
+				))
 				continue
 			}
 			const MagicUnsetValue = -1644163703
@@ -263,21 +284,32 @@ var cmdPowerLevel = &CommandHandler{
 					return
 				}
 			}
+			if oldLevel >= myLevel {
+				results = append(results, fmt.Sprintf(
+					"I do not have sufficient power level to change %s in %s: need %d, have %d",
+					format.SafeMarkdownCode(args.Key),
+					format.SafeMarkdownCode(room),
+					oldLevel+1,
+					myLevel,
+				))
+				continue
+			}
 			if oldLevel == level && oldLevel != MagicUnsetValue {
-				ce.Reply(
+				results = append(results, fmt.Sprintf(
 					"Power level for %s in %s is already set to %s",
 					format.SafeMarkdownCode(args.Key),
 					format.SafeMarkdownCode(room),
 					format.SafeMarkdownCode(strconv.Itoa(level)),
-				)
+				))
 				continue
 			}
 			_, err = ce.Meta.Bot.Client.SendStateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
-				ce.Reply("Failed to set power levels in %s: %v", format.SafeMarkdownCode(room), err)
+				results = append(results, fmt.Sprintf("Failed to set power levels in %s: %v", format.SafeMarkdownCode(room), err))
 				continue
 			}
 		}
+		ce.Reply(strings.Join(results, "\n"))
 		ce.React(SuccessReaction)
 	}),
 }
