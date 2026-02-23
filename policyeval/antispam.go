@@ -122,6 +122,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 			return ptr.Ptr(mautrix.MForbidden.WithMessage("Inviting users to this room is not allowed"))
 		}
 	}
+	rec = nil
 	if slices.Contains(pe.BlockInvitesTo, invitee) {
 		msg := "Blocked %s from inviting %s to %s due to recipient block list (use `!allow-invite` to allow)"
 		block := true
@@ -145,7 +146,6 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		}
 	}
 
-	rec = nil
 	log.Debug().Msg("Allowing invite")
 
 	if pe.AutoRejectInvites {
