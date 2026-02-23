@@ -288,6 +288,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID, encrypted 
 		m.Config.Antispam.FilterLocalInvites,
 		m.Config.Antispam.NotifyManagementRoom,
 		m.Config.Meowlnir.DryRun,
+		m.Config.Antispam.BlockInvitesTo,
 		m.HackyAutoRedactPatterns,
 		m.PolicyServer,
 		roomHashes,

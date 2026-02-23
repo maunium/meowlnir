@@ -109,6 +109,10 @@ antispam:
     auto_reject_invites_token:
     # Should the management room receive a notice about blocked invites?
     notify_management_room: false
+    # Inviting any of the users listed here will be blocked by default,
+    # unless separately allowed with the !allow-invite command
+    block_invites_to:
+    - "@user:example.com"
 
 # Configuration for the policy server.
 policy_server:

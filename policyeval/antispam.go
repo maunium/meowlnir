@@ -122,6 +122,28 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 			return ptr.Ptr(mautrix.MForbidden.WithMessage("Inviting users to this room is not allowed"))
 		}
 	}
+	if slices.Contains(pe.BlockInvitesTo, invitee) {
+		msg := "Blocked %s from inviting %s to %s due to recipient block list (use `!allow-invite` to allow)"
+		block := true
+		if pe.BlockInvitesOverride.Pop(inviter) {
+			msg = "Allowed %s to invite %s to %s due to override"
+			block = false
+		}
+		go pe.Bot.SendNoticeOpts(
+			context.WithoutCancel(ctx),
+			pe.ManagementRoom,
+			fmt.Sprintf(
+				msg,
+				format.MarkdownMention(inviter),
+				format.MarkdownMention(invitee),
+				format.MarkdownMentionRoomID("", roomID),
+			),
+			&bot.SendNoticeOpts{Mentions: &event.Mentions{}},
+		)
+		if block {
+			return ptr.Ptr(mautrix.MForbidden.WithMessage("You're not allowed to invite that user"))
+		}
+	}
 
 	rec = nil
 	log.Debug().Msg("Allowing invite")

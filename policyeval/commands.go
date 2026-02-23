@@ -654,6 +654,23 @@ var cmdAddUnban = &CommandHandler{
 	}),
 }
 
+type AllowInviteParams struct {
+	User id.UserID `json:"user"`
+}
+
+var cmdAllowInvite = &CommandHandler{
+	Name:        "allow-invite",
+	Description: event.MakeExtensibleText("Allow a user to bypass the block_invites_to list once"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "user",
+		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *AllowInviteParams) {
+		ce.Meta.BlockInvitesOverride.Add(args.User)
+		ce.React(SuccessReaction)
+	}),
+}
+
 func doMatch(ce *CommandEvent, target string) {
 	userIDHash, ok := util.DecodeBase64Hash(target)
 	if ok {

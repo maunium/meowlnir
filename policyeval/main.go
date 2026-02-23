@@ -69,14 +69,16 @@ type PolicyEvaluator struct {
 	skipACLForRooms      []id.RoomID
 	protectedRoomsLock   sync.RWMutex
 
-	pendingInvites     map[pendingInvite]struct{}
-	pendingInvitesLock sync.Mutex
-	AutoRejectInvites  bool
-	FilterLocalInvites bool
-	AntispamNotifyRoom bool
-	createPuppetClient func(userID id.UserID) *mautrix.Client
-	autoRedactPatterns []glob.Glob
-	policyServer       *PolicyServer
+	pendingInvites       map[pendingInvite]struct{}
+	pendingInvitesLock   sync.Mutex
+	AutoRejectInvites    bool
+	FilterLocalInvites   bool
+	BlockInvitesTo       []id.UserID
+	BlockInvitesOverride *exsync.Set[id.UserID]
+	AntispamNotifyRoom   bool
+	createPuppetClient   func(userID id.UserID) *mautrix.Client
+	autoRedactPatterns   []glob.Glob
+	policyServer         *PolicyServer
 }
 
 func NewPolicyEvaluator(
@@ -91,6 +93,7 @@ func NewPolicyEvaluator(
 	claimProtected func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator,
 	createPuppetClient func(userID id.UserID) *mautrix.Client,
 	autoRejectInvites, filterLocalInvites, antispamNotify, dryRun bool,
+	blockInvitesTo []id.UserID,
 	hackyAutoRedactPatterns []glob.Glob,
 	policyServer *PolicyServer,
 	roomHashes *roomhash.Map,
@@ -118,6 +121,8 @@ func NewPolicyEvaluator(
 		createPuppetClient:   createPuppetClient,
 		AutoRejectInvites:    autoRejectInvites,
 		FilterLocalInvites:   filterLocalInvites,
+		BlockInvitesTo:       blockInvitesTo,
+		BlockInvitesOverride: exsync.NewSet[id.UserID](),
 		AntispamNotifyRoom:   antispamNotify,
 		DryRun:               dryRun,
 		autoRedactPatterns:   hackyAutoRedactPatterns,
@@ -146,6 +151,7 @@ func NewPolicyEvaluator(
 		cmdRemoveBan,
 		cmdRemoveUnban,
 		cmdAddUnban,
+		cmdAllowInvite,
 		cmdMatch,
 		cmdSearch,
 		cmdSendAsBot,
