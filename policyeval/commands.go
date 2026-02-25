@@ -152,6 +152,19 @@ type PowerLevelArgs struct {
 	Level int                      `json:"level"`
 }
 
+func getCreators(ctx context.Context, pe *PolicyEvaluator, roomID id.RoomID) []id.UserID {
+	createEvent, err := pe.Bot.Client.FullStateEvent(ctx, roomID, event.StateCreate, "")
+	if err != nil {
+		zerolog.Ctx(ctx).Err(err).Stringer("room_id", roomID).Msg("failed to fetch room createEvent event")
+		return nil
+	}
+	createContent := createEvent.Content.AsCreate()
+	if createContent.RoomVersion.PrivilegedRoomCreators() {
+		return append(createContent.AdditionalCreators, createEvent.Sender)
+	}
+	return nil
+}
+
 var cmdPowerLevel = &CommandHandler{
 	Name:        "powerlevel",
 	Aliases:     []string{"pl"},
@@ -192,13 +205,34 @@ var cmdPowerLevel = &CommandHandler{
 			rooms = []id.RoomID{room}
 		}
 		level := args.Level
+		var results []string
 		for _, room := range rooms {
 			var pls event.PowerLevelsEventContent
-			// No need to fetch the create event here, this is a manual update that is allowed to fail if the user holds it wrong
+			creators := getCreators(ce.Ctx, ce.Meta, room)
 			err := ce.Meta.Bot.Client.StateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
-				ce.Reply("Failed to get power levels in %s: %v", format.SafeMarkdownCode(room), err)
-				return
+				results = append(results, fmt.Sprintf("Failed to get power levels in %s: %v", format.SafeMarkdownCode(room), err))
+				continue
+			}
+			myLevel := pls.GetUserLevel(ce.Meta.Bot.UserID)
+			evtLevel := pls.GetEventLevel(event.StatePowerLevels)
+			if evtLevel > myLevel {
+				results = append(results, fmt.Sprintf(
+					"I do not have sufficient power level to update the power level event in %s: need %d, have %d",
+					format.SafeMarkdownCode(room),
+					evtLevel,
+					myLevel,
+				))
+				continue
+			}
+			if level > myLevel {
+				results = append(results, fmt.Sprintf(
+					"I cannot set anything to level %d in %s because I only have %d",
+					level,
+					format.SafeMarkdownCode(room),
+					myLevel,
+				))
+				continue
 			}
 			const MagicUnsetValue = -1644163703
 			var oldLevel int
@@ -229,8 +263,12 @@ var cmdPowerLevel = &CommandHandler{
 				pls.Notifications.RoomPtr = &level
 			default:
 				if strings.HasPrefix(args.Key, "@") {
-					oldLevel = pls.GetUserLevel(id.UserID(args.Key))
-					pls.SetUserLevel(id.UserID(args.Key), level)
+					userID := id.UserID(args.Key)
+					if slices.Contains(creators, userID) {
+						continue // Nothing to do, this user has infinite power level
+					}
+					oldLevel = pls.GetUserLevel(userID)
+					pls.SetUserLevel(userID, level)
 				} else if strings.ContainsRune(args.Key, '.') {
 					if pls.Events == nil {
 						pls.Events = make(map[string]int)
@@ -246,21 +284,32 @@ var cmdPowerLevel = &CommandHandler{
 					return
 				}
 			}
+			if oldLevel >= myLevel {
+				results = append(results, fmt.Sprintf(
+					"I do not have sufficient power level to change %s in %s: need %d, have %d",
+					format.SafeMarkdownCode(args.Key),
+					format.SafeMarkdownCode(room),
+					oldLevel+1,
+					myLevel,
+				))
+				continue
+			}
 			if oldLevel == level && oldLevel != MagicUnsetValue {
-				ce.Reply(
+				results = append(results, fmt.Sprintf(
 					"Power level for %s in %s is already set to %s",
 					format.SafeMarkdownCode(args.Key),
 					format.SafeMarkdownCode(room),
 					format.SafeMarkdownCode(strconv.Itoa(level)),
-				)
+				))
 				continue
 			}
 			_, err = ce.Meta.Bot.Client.SendStateEvent(ce.Ctx, room, event.StatePowerLevels, "", &pls)
 			if err != nil {
-				ce.Reply("Failed to set power levels in %s: %v", format.SafeMarkdownCode(room), err)
+				results = append(results, fmt.Sprintf("Failed to set power levels in %s: %v", format.SafeMarkdownCode(room), err))
 				continue
 			}
 		}
+		ce.Reply(strings.Join(results, "\n"))
 		ce.React(SuccessReaction)
 	}),
 }
