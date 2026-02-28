@@ -1164,11 +1164,11 @@ var cmdDeactivate = &CommandHandler{
 					return
 				}
 				switch progress.Status {
-				case "completed":
+				case "complete":
 					if len(progress.FailedRedactions) > 0 {
 						ce.Reply("User redaction task finished successfully but failed to redact %d events", len(progress.FailedRedactions))
 					}
-				case "failed":
+				case "failed", "cancelled":
 					ce.Reply("User redaction task failed.")
 				default:
 					time.Sleep(time.Second)
