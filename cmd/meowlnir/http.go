@@ -25,6 +25,7 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 	policyServerRouter := http.NewServeMux()
 	policyServerRouter.HandleFunc("POST /unstable/org.matrix.msc4284/event/{event_id}/check", m.PostMSC4284LegacyEventCheck)
 	policyServerRouter.HandleFunc("POST /unstable/org.matrix.msc4284/sign", m.PostMSC4284Sign)
+	policyServerRouter.HandleFunc("POST /v1/sign", m.PostMSC4284Sign)
 	m.AS.Router.Handle("/_matrix/policy/", exhttp.ApplyMiddleware(
 		http.StripPrefix("/_matrix/policy", policyServerRouter),
 		hlog.NewHandler(m.Log.With().Str("component", "policy server").Logger()),

@@ -184,7 +184,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	serverAuth := federation.NewServerAuth(m.Federation, inMemCache, func(auth federation.XMatrixAuth) string {
 		return auth.Destination
 	})
-	m.PolicyServer = policyeval.NewPolicyServer(m.Federation, serverAuth, pskey)
+	m.PolicyServer = policyeval.NewPolicyServer(m.Federation, serverAuth, pskey, m.DB)
 	m.AS.Log = m.Log.With().Str("component", "matrix").Logger()
 	m.AS.StateStore = m.StateStore
 	m.EventProcessor = appservice.NewEventProcessor(m.AS)

@@ -34,9 +34,11 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if r.ContentLength >= 0 && r.ContentLength <= 2 {
-		resp := m.PolicyServer.HandleLegacyCachedCheck(eventID)
-		if resp == nil {
-			mautrix.MNotFound.WithMessage("Event not found in cache, please provide it in the request").Write(w)
+		resp, err := m.PolicyServer.HandleCachedLegacyCheck(r.Context(), eventID)
+		if err != nil {
+			hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
+			mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
+			return
 		} else if resp.Recommendation == "spam" && m.Config.Meowlnir.DryRun {
 			exhttp.WriteJSONResponse(w, http.StatusOK, &policyeval.LegacyPolicyServerResponse{Recommendation: "ok"})
 		} else {
@@ -72,22 +74,13 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 		mautrix.MInvalidParam.WithMessage("Event ID does not match hash of request body").Write(w)
 		return
 	}
-	clientEvent, err := parsedPDU.ToClientEvent(createEvt.RoomVersion)
-	if err != nil {
-		hlog.FromRequest(r).Err(err).Msg("Failed to convert PDU to client event")
-		mautrix.MUnknown.WithMessage("Failed to convert PDU to client event").Write(w)
-		return
-	}
 
 	resp, err := m.PolicyServer.HandleLegacyCheck(
 		r.Context(),
 		createEvt.RoomVersion,
 		eventID,
 		parsedPDU,
-		clientEvent,
 		eval,
-		m.Config.PolicyServer.AlwaysRedact && !m.Config.Meowlnir.DryRun,
-		federation.OriginServerNameFromRequest(r),
 	)
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
@@ -126,7 +119,7 @@ func (m *Meowlnir) PostMSC4284Sign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = m.PolicyServer.HandleSign(r.Context(), createEvt.RoomVersion, parsedPDU, eval)
+	err = m.PolicyServer.HandleSign(r.Context(), createEvt.RoomVersion, parsedPDU, eval, federation.OriginServerNameFromRequest(r))
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
 		mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)

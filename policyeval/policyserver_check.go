@@ -9,14 +9,22 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/jsontime"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/federation/pdu"
 	"maunium.net/go/mautrix/id"
 
+	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
 )
 
-func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *pdu.PDU, roomVersion id.RoomVersion, evaluator *PolicyEvaluator) (PSRecommendation, policylist.Match) {
+func (ps *PolicyServer) getRecommendation(
+	ctx context.Context,
+	pdu *pdu.PDU,
+	roomVersion id.RoomVersion,
+	evaluator *PolicyEvaluator,
+	isOrigin bool,
+) (PSRecommendation, policylist.Match) {
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {
@@ -33,44 +41,24 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *pdu.PDU, roo
 		}
 	}
 	if evaluator.protections != nil {
-		evtID, err := pdu.GetEventID(roomVersion)
-		if err != nil {
-			evaluator.Bot.Log.Err(err).
-				Stringer("room_id", pdu.RoomID).
-				Msg("Failed to calculate event ID")
-			return PSRecommendationOk, nil
-		}
-		pl, err := evaluator.getPowerLevels(ctx, pdu.RoomID)
-		if err != nil || pl == nil {
-			evaluator.Bot.Log.Err(err).
-				Stringer("room_id", pdu.RoomID).
-				Stringer("event_id", evtID).
-				Msg("Failed to fetch power levels")
-		}
-		if pl != nil {
-			// Don't act if the user is a room mod
-			if pl.GetUserLevel(pdu.Sender) >= pl.Kick() {
-				return PSRecommendationOk, nil
-			}
-		}
 		clientEvt, err := pdu.ToClientEvent(roomVersion)
 		if err != nil {
-			evaluator.Bot.Log.Err(err).
+			zerolog.Ctx(ctx).Err(err).
 				Stringer("room_id", pdu.RoomID).
-				Stringer("event_id", evtID).
 				Msg("Failed to convert PDU to client event")
-			return PSRecommendationOk, nil
+			return PSRecommendationSpam, nil
 		}
 		if parseErr := clientEvt.Content.ParseRaw(clientEvt.Type); parseErr != nil {
 			evaluator.Bot.Log.Err(parseErr).
 				Stringer("room_id", pdu.RoomID).
-				Stringer("event_id", evtID).
+				Stringer("event_id", clientEvt.ID).
 				Msg("Failed to parse event content")
 		}
 		ctx = zerolog.Ctx(ctx).With().
 			Stringer("room_id", pdu.RoomID).
 			Stringer("event_id", clientEvt.ID).
 			Logger().WithContext(ctx)
+		// TODO always use current time instead of event timestamp when isOrigin is true
 		if evaluator.ShouldExecuteProtections(ctx, clientEvt) {
 			for name, prot := range evaluator.protections {
 				zerolog.Ctx(ctx).Trace().Str("protection", name).Msg("Evaluating protection")
@@ -78,7 +66,7 @@ func (ps *PolicyServer) getRecommendation(ctx context.Context, pdu *pdu.PDU, roo
 				if err != nil {
 					zerolog.Ctx(ctx).Err(err).
 						Stringer("room_id", pdu.RoomID).
-						Stringer("event_id", evtID).
+						Stringer("event_id", clientEvt.ID).
 						Str("protection", name).
 						Msg("Failed to execute protection")
 					continue
@@ -100,6 +88,7 @@ func (ps *PolicyServer) HandleSign(
 	roomVersion id.RoomVersion,
 	evt *pdu.PDU,
 	evaluator *PolicyEvaluator,
+	originServer string,
 ) error {
 	if ps.SigningKey == nil {
 		return errors.New("policy server is not configured with a signing key")
@@ -112,19 +101,42 @@ func (ps *PolicyServer) HandleSign(
 		Stringer("room_id", evt.RoomID).
 		Stringer("event_id", evtID).
 		Logger()
+	sig, err := ps.DB.PSSignature.Get(ctx, evtID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch signature from database: %w", err)
+	} else if sig != nil {
+		log.Trace().
+			Time("cached_at", sig.CreatedAt.Time).
+			Str("signature", sig.Signature).
+			Msg("Using cached result for sign request")
+		evt.AddSignature(ps.Federation.ServerName, PolicyServerKeyID, sig.Signature)
+		return nil
+	}
 
 	log.Trace().Any("event", evt).Msg("Checking event received by policy server")
-	rec, match := ps.getRecommendation(ctx, evt, roomVersion, evaluator)
+	rec, match := ps.getRecommendation(ctx, evt, roomVersion, evaluator, originServer == evt.Sender.Homeserver())
 	if rec == PSRecommendationSpam {
 		// Don't sign spam events
 		log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
-	} else {
-		log.Trace().Msg("Event accepted")
+		return nil
+	}
+	log.Trace().Msg("Event accepted")
 
-		err := evt.Sign(roomVersion, ps.Federation.ServerName, PolicyServerKeyID, ps.SigningKey.Priv)
-		if err != nil {
-			return fmt.Errorf("failed to add signature to PDU: %w", err)
-		}
+	err = evt.Sign(roomVersion, ps.Federation.ServerName, PolicyServerKeyID, ps.SigningKey.Priv)
+	if err != nil {
+		return fmt.Errorf("failed to add signature to PDU: %w", err)
+	}
+	newSig, ok := evt.Signatures[ps.Federation.ServerName][PolicyServerKeyID]
+	if !ok {
+		return errors.New("failed to retrieve signature after signing")
+	}
+	err = ps.DB.PSSignature.Put(ctx, &database.PSSignature{
+		EventID:   evtID,
+		Signature: newSig,
+		CreatedAt: jsontime.UnixMilliNow(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to store signature in database: %w", err)
 	}
 	return nil
 }
@@ -141,46 +153,42 @@ func (ps *PolicyServer) HandleLegacyCheck(
 	roomVersion id.RoomVersion,
 	evtID id.EventID,
 	pdu *pdu.PDU,
-	clientEvt *event.Event,
 	evaluator *PolicyEvaluator,
-	redact bool,
-	caller string,
 ) (res *LegacyPolicyServerResponse, err error) {
 	log := zerolog.Ctx(ctx).With().
-		Stringer("room_id", pdu.RoomID).
 		Stringer("event_id", evtID).
+		Stringer("room_id", pdu.RoomID).
 		Logger()
 	if pdu.VerifySignature(roomVersion, ps.Federation.ServerName, ps.getSigningKey) == nil {
 		log.Trace().Msg("Valid signature from self, short-circuiting legacy check")
 		res = &LegacyPolicyServerResponse{Recommendation: PSRecommendationOk}
 		return res, nil
 	}
-	r := ps.getCache(evtID, clientEvt)
-	finalRec := r.Recommendation
-	r.Lock.Lock()
-	defer func() {
-		r.Lock.Unlock()
-		// TODO if event is older than when the process was started, check if it was already redacted on the server
-		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact && ps.redactionCache.Add(evtID) {
-			go func() {
-				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
-					log.Error().Err(err).Msg("Failed to redact event")
-				}
-			}()
-		}
-	}()
-
-	if r.Recommendation == "" {
-		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
-		rec, match := ps.getRecommendation(ctx, pdu, roomVersion, evaluator)
-		finalRec = rec
-		if rec == PSRecommendationSpam {
-			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
-			r.Recommendation = rec
-		} else {
-			log.Trace().Msg("Event accepted")
-		}
+	err = ps.HandleSign(ctx, roomVersion, pdu, evaluator, "unknown.invalid")
+	if err != nil {
+		return nil, err
 	}
-	r.LastAccessed = time.Now()
-	return &LegacyPolicyServerResponse{Recommendation: r.Recommendation}, nil
+	_, hasSig := pdu.Signatures[ps.Federation.ServerName][PolicyServerKeyID]
+	if hasSig {
+		return &LegacyPolicyServerResponse{Recommendation: PSRecommendationOk}, nil
+	}
+	return &LegacyPolicyServerResponse{Recommendation: PSRecommendationSpam}, nil
+}
+
+func (ps *PolicyServer) HandleCachedLegacyCheck(ctx context.Context, evtID id.EventID) (*LegacyPolicyServerResponse, error) {
+	log := zerolog.Ctx(ctx).With().
+		Stringer("event_id", evtID).
+		Logger()
+	sig, err := ps.DB.PSSignature.Get(ctx, evtID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch signature from database: %w", err)
+	} else if sig != nil && sig.Signature != "" {
+		log.Trace().Msg("Found signature in database, accepting legacy check")
+		return &LegacyPolicyServerResponse{Recommendation: PSRecommendationOk}, nil
+	} else if sig != nil {
+		log.Trace().Msg("Found rejection in database, rejecting legacy check")
+	} else {
+		log.Trace().Msg("Event not found in database, rejecting legacy check")
+	}
+	return &LegacyPolicyServerResponse{Recommendation: PSRecommendationSpam}, nil
 }
