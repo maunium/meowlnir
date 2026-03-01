@@ -20,6 +20,7 @@ import (
 )
 
 var protectionsRegistry map[string]func() any
+var safeProtections = []string{"no_media"}
 
 func init() {
 	protectionsRegistry = make(map[string]func() any)

@@ -229,11 +229,15 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 			delete(pe.wantToProtect, roomID)
 		}
 	}
+	var unsafeProtections []string
 	for protectionName, protectionConfig := range content.Protections {
 		protFactory, ok := protectionsRegistry[protectionName]
 		if !ok {
 			errors = append(errors, fmt.Sprintf("* Unknown protection %q", protectionName))
 			continue
+		}
+		if !slices.Contains(safeProtections, protectionName) {
+			unsafeProtections = append(unsafeProtections, protectionName)
 		}
 		protValue := protFactory().(Protection)
 		err := json.Unmarshal(protectionConfig, protValue)
@@ -252,6 +256,9 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 			delete(pe.protections, protectionName)
 			output = append(output, fmt.Sprintf("* Disabled protection %q", protectionName))
 		}
+	}
+	if len(unsafeProtections) > 0 {
+		output = append(output, fmt.Sprintf("* Warning: the following protections are marked as unsafe and may cause issues: %s", strings.Join(unsafeProtections, ", ")))
 	}
 	pe.protectedRoomsLock.Unlock()
 	joinedRooms, err := pe.Bot.JoinedRooms(ctx)
