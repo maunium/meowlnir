@@ -1712,6 +1712,90 @@ var cmdLists = &CommandHandler{
 	},
 }
 
+type PolicyServerEnableParams struct {
+	Rooms []cmdschema.RoomIDOrString `json:"rooms"`
+}
+
+var cmdPolicyServerDisable = &CommandHandler{
+	Name:        "disable",
+	Aliases:     []string{"unprotect"},
+	Description: event.MakeExtensibleText("Turn off the policy server in rooms"),
+}
+var cmdPolicyServerEnable = &CommandHandler{
+	Name:        "enable",
+	Aliases:     []string{"protect"},
+	Description: event.MakeExtensibleText("Turn on the policy server in rooms"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:         "rooms",
+		Schema:      cmdschema.Array(cmdschema.ParameterSchemaJoinableRoom),
+		Optional:    true,
+		Description: event.MakeExtensibleText("Individual rooms to update. If unset, all protected rooms are updated"),
+	}},
+	TailParam: "rooms",
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *PolicyServerEnableParams) {
+		disable := ce.Handler == cmdPolicyServerDisable
+		if !disable && ce.Meta.policyServer.SigningKey == nil {
+			ce.Reply("Policy server is not available")
+			return
+		}
+		var rooms []id.RoomID
+		if len(args.Rooms) == 0 {
+			rooms = ce.Meta.GetProtectedRooms()
+		} else {
+			rooms = make([]id.RoomID, 0, len(args.Rooms))
+			for _, room := range args.Rooms {
+				roomID := resolveRoom(ce, room)
+				if roomID == "" {
+					ce.Reply("Failed to resolve room %s", format.SafeMarkdownCode(room))
+				} else {
+					rooms = append(rooms, roomID)
+				}
+			}
+		}
+		content := &event.RoomPolicyEventContent{
+			Via:       ce.Meta.Bot.ServerName,
+			PublicKey: ce.Meta.policyServer.SigningKey.Pub,
+			PublicKeys: &event.PolicyServerPublicKeys{
+				Ed25519: ce.Meta.policyServer.SigningKey.Pub,
+			},
+		}
+		if disable {
+			content = &event.RoomPolicyEventContent{}
+		}
+		var output []string
+		for _, roomID := range rooms {
+			if !disable && !ce.Meta.IsProtectedRoom(roomID) {
+				output = append(output, fmt.Sprintf("* Skipped %s as it is not a protected room", format.MarkdownMentionRoomID("", roomID)))
+			} else if _, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, roomID, event.StateRoomPolicy, "", content); err != nil {
+				output = append(output, fmt.Sprintf("* Failed to set `m.room.policy` in %s: %v", format.MarkdownMentionRoomID("", roomID), err))
+			} else if _, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, roomID, event.StateUnstableRoomPolicy, "", content); err != nil {
+				output = append(output, fmt.Sprintf("* Failed to set `org.matrix.msc4284.policy` in %s: %v", format.MarkdownMentionRoomID("", roomID), err))
+			} else {
+				output = append(output, fmt.Sprintf("* Successfully updated %s", format.MarkdownMentionRoomID("", roomID)))
+			}
+		}
+		ce.Reply(strings.Join(output, "\n"))
+	}),
+}
+
+var cmdPolicyServer = &CommandHandler{
+	Name: "policyserver",
+	Subcommands: []*CommandHandler{
+		cmdPolicyServerEnable,
+		cmdPolicyServerDisable,
+	},
+	Aliases:     []string{"ps"},
+	Parameters:  make([]*cmdschema.Parameter, 0),
+	Description: event.MakeExtensibleText("Check status of policy server"),
+	Func: func(ce *CommandEvent) {
+		if ce.Meta.policyServer.SigningKey != nil {
+			ce.Reply("Policy server is available. Public key: %s", format.SafeMarkdownCode(ce.Meta.policyServer.SigningKey.Pub.String()))
+		} else {
+			ce.Reply("Policy server is not available")
+		}
+	},
+}
+
 type HelpParams struct {
 	Command string `json:"command"`
 }
@@ -1882,4 +1966,5 @@ func init() {
 	cmdRoomBlock.CopyFrom(cmdRoomDelete)
 	cmdUnprotectRoom.CopyFrom(cmdProtectRoom)
 	cmdUnsuspend.CopyFrom(cmdSuspend)
+	cmdPolicyServerDisable.CopyFrom(cmdPolicyServerEnable)
 }
