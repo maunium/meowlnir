@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/federation/pdu"
 	"maunium.net/go/mautrix/id"
@@ -161,9 +162,13 @@ func (ps *PolicyServer) HandleLegacyCheck(
 	defer func() {
 		r.Lock.Unlock()
 		// TODO if event is older than when the process was started, check if it was already redacted on the server
-		if caller != pdu.Sender.Homeserver() && finalRec == PSRecommendationSpam && redact && ps.redactionCache.Add(evtID) {
+		if caller != pdu.Sender.Homeserver() &&
+			finalRec == PSRecommendationSpam &&
+			redact &&
+			time.UnixMilli(pdu.OriginServerTS).After(ps.epoch) &&
+			ps.redactionCache.Add(evtID) {
 			go func() {
-				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID); err != nil {
+				if _, err = evaluator.Bot.RedactEvent(context.WithoutCancel(ctx), pdu.RoomID, evtID, mautrix.ReqRedact{Reason: "Event has been flagged for spam."}); err != nil {
 					log.Error().Err(err).Msg("Failed to redact event")
 				}
 			}()

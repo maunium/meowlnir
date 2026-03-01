@@ -25,6 +25,7 @@ type PolicyServer struct {
 	eventCache     map[id.EventID]*psCacheEntry
 	redactionCache *exsync.Set[id.EventID]
 	cacheLock      sync.Mutex
+	epoch          time.Time
 
 	CacheMaxSize   int
 	CacheMaxAge    time.Duration
@@ -35,6 +36,7 @@ func NewPolicyServer(fed *federation.Client, serverAuth *federation.ServerAuth, 
 	return &PolicyServer{
 		eventCache:     make(map[id.EventID]*psCacheEntry),
 		redactionCache: exsync.NewSet[id.EventID](),
+		epoch:          time.Now(),
 		Federation:     fed,
 		ServerAuth:     serverAuth,
 		CacheMaxSize:   1000,
