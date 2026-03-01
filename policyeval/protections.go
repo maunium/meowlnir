@@ -250,13 +250,14 @@ func (b *BadDisplayNames) Execute(ctx context.Context, pe *PolicyEvaluator, evt 
 
 // MaxMentions is a protection that redacts and bans users who mention too many unique users in a given time period.
 type MaxMentions struct {
-	Limit           int              `json:"limit"`                       // how many mentions to allow before actioning
-	Per             jsontime.Seconds `json:"per"`                         // the timespan in which to count mentions
-	MaxInfractions  int              `json:"max_infractions,omitempty"`   // how many warnings can be given before a ban is issued
-	DontTrustServer bool             `json:"dont_trust_server,omitempty"` // if true, always use local time, instead of evt origin
-	counts          map[id.UserID]int
-	expire          map[id.UserID]time.Time
-	countLock       sync.Mutex
+	Limit            int              `json:"limit"`                        // how many mentions to allow before actioning
+	Per              jsontime.Seconds `json:"per"`                          // the timespan in which to count mentions
+	MaxInfractions   int              `json:"max_infractions,omitempty"`    // how many warnings can be given before a ban is issued
+	DontTrustServer  bool             `json:"dont_trust_server,omitempty"`  // if true, always use local time, instead of evt origin
+	MustHaveMentions bool             `json:"must_have_mentions,omitempty"` // if true, require that all m.room.message events have `m.mentions` present
+	counts           map[id.UserID]int
+	expire           map[id.UserID]time.Time
+	countLock        sync.Mutex
 }
 
 func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *event.Event, dry bool) (hit bool, err error) {
@@ -264,7 +265,8 @@ func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 		return false, nil // no-op
 	}
 	content := evt.Content.AsMessage()
-	if content.Mentions == nil || len(content.Mentions.UserIDs) == 0 {
+
+	if content.Mentions != nil && len(content.Mentions.UserIDs) == 0 {
 		return false, nil
 	}
 
@@ -301,8 +303,24 @@ func (mm *MaxMentions) Execute(ctx context.Context, pe *PolicyEvaluator, evt *ev
 	}
 
 	uniqueMentions := make(map[id.UserID]struct{})
-	for _, uid := range content.Mentions.UserIDs {
-		uniqueMentions[uid] = struct{}{}
+	if content.Mentions == nil && mm.MustHaveMentions {
+		// We can't accurately count mentions here, so we'll give the user a single point instead.
+		uniqueMentions["dummy"] = struct{}{}
+		go func() {
+			var execErr error
+			if !dry {
+				_, execErr = pe.Bot.RedactEvent(ctx, evt.RoomID, evt.ID, mautrix.ReqRedact{
+					Reason: "Your client did not include mention metadata. Please use a client that supports intentional mentions.",
+				})
+			}
+			if execErr != nil {
+				pe.Bot.Log.Err(execErr).Msg("failed to redact message for max_mentions")
+			}
+		}()
+	} else {
+		for _, uid := range content.Mentions.UserIDs {
+			uniqueMentions[uid] = struct{}{}
+		}
 	}
 
 	// Count mentions
