@@ -25,6 +25,9 @@ func (ps *PolicyServer) getRecommendation(
 	evaluator *PolicyEvaluator,
 	isOrigin bool,
 ) (PSRecommendation, policylist.Match) {
+	if pdu.Sender == evaluator.Bot.UserID || evaluator.Admins.Has(pdu.Sender) {
+		return PSRecommendationOk, nil
+	}
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {
