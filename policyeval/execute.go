@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -236,10 +238,10 @@ func pluralize(value int, unit string) string {
 	return fmt.Sprintf("%d %ss", value, unit)
 }
 
-func (pe *PolicyEvaluator) redactUserMSC4194(ctx context.Context, userID id.UserID, reason string) {
+func (pe *PolicyEvaluator) redactUserMSC4194(ctx context.Context, userID id.UserID, reason string) (redactedCount int) {
 	rooms := pe.GetProtectedRooms()
 	var errorMessages []string
-	var redactedCount, roomCount int
+	var roomCount int
 Outer:
 	for _, roomID := range rooms {
 		hasMore := true
@@ -264,9 +266,10 @@ Outer:
 		}
 	}
 	pe.sendRedactResult(ctx, redactedCount, roomCount, userID, errorMessages)
+	return
 }
 
-func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.UserID, reason string, allowReredact bool) {
+func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.UserID, reason string, allowReredact bool) (redactedCount int) {
 	start := time.Now()
 	events, maxTS, err := pe.SynapseDB.GetEventsToRedact(ctx, userID, pe.GetProtectedRooms())
 	dur := time.Since(start)
@@ -299,7 +302,6 @@ func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.User
 		Dur("query_duration", dur).
 		Msg("Got events to redact")
 	var errorMessages []string
-	var redactedCount int
 	for roomID, roomEvents := range events {
 		successCount, failedCount := pe.redactEventsInRoom(ctx, userID, roomID, roomEvents, reason)
 		if failedCount > 0 {
@@ -315,8 +317,9 @@ func (pe *PolicyEvaluator) redactUserSynapse(ctx context.Context, userID id.User
 		zerolog.Ctx(ctx).Debug().
 			Stringer("user_id", userID).
 			Msg("Re-redacting user to ensure soft-failed events get redacted")
-		pe.RedactUser(ctx, userID, reason, false)
+		redactedCount += pe.RedactUser(ctx, userID, reason, false)
 	}
+	return redactedCount
 }
 
 func (pe *PolicyEvaluator) sendRedactResult(ctx context.Context, events, rooms int, userID id.UserID, errorMessages []string) {
@@ -333,28 +336,43 @@ func (pe *PolicyEvaluator) sendRedactResult(ctx context.Context, events, rooms i
 	pe.sendNotice(ctx, output)
 }
 
-func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, reason string, allowReredact bool) {
+func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, reason string, allowReredact bool) (totalRedacted int) {
 	if pe.SynapseDB != nil {
-		pe.redactUserSynapse(ctx, userID, reason, allowReredact)
+		return pe.redactUserSynapse(ctx, userID, reason, allowReredact)
 	} else if pe.Bot.Client.SpecVersions.Supports(mautrix.FeatureUserRedaction) {
-		pe.redactUserMSC4194(ctx, userID, reason)
+		return pe.redactUserMSC4194(ctx, userID, reason)
 	} else {
 		zerolog.Ctx(ctx).Warn().
 			Stringer("user_id", userID).
 			Msg("Falling back to history iteration based event discovery for redaction. This is slow.")
+		var (
+			wg                  sync.WaitGroup
+			totalRedactedAtomic atomic.Int64
+		)
 		for _, roomID := range pe.GetProtectedRooms() {
-			redactedCount, err := pe.redactRecentMessages(ctx, roomID, userID, 24*time.Hour, true, reason)
-			if err != nil {
-				zerolog.Ctx(ctx).Err(err).
-					Stringer("user_id", userID).
-					Stringer("room_id", roomID).
-					Msg("Failed to redact recent messages")
-				continue
-			}
-			if redactedCount > 0 {
-				pe.sendNotice(ctx, "Redacted %d events from %s in %s", redactedCount, format.MarkdownMention(userID), format.MarkdownMentionRoomID("", roomID))
-			}
+			wg.Go(func() {
+				redactedCount, err := pe.redactRecentMessages(ctx, roomID, userID, 24*time.Hour, true, reason)
+				if err != nil {
+					zerolog.Ctx(ctx).Err(err).
+						Stringer("user_id", userID).
+						Stringer("room_id", roomID).
+						Msg("Failed to redact recent messages")
+					return
+				}
+				totalRedactedAtomic.Add(int64(redactedCount))
+				if redactedCount > 0 {
+					pe.sendNotice(
+						ctx,
+						"Redacted %d events from %s in %s",
+						redactedCount,
+						format.MarkdownMention(userID),
+						format.MarkdownMentionRoomID("", roomID),
+					)
+				}
+			})
 		}
+		wg.Wait()
+		return int(totalRedactedAtomic.Load())
 	}
 }
 

@@ -176,12 +176,15 @@ func (m *Meowlnir) HandleReaction(ctx context.Context, evt *event.Event) {
 	m.MapLock.RLock()
 	_, isBot := m.Bots[evt.Sender]
 	managementRoom, isManagement := m.EvaluatorByManagementRoom[evt.RoomID]
-	//roomProtector, isProtected := m.EvaluatorByProtectedRoom[evt.RoomID]
+	roomProtector, isProtected := m.EvaluatorByProtectedRoom[evt.RoomID]
 	m.MapLock.RUnlock()
 	if isBot {
 		return
 	}
 	if isManagement && managementRoom.Admins.Has(evt.Sender) {
-		managementRoom.HandleReaction(ctx, evt)
+		managementRoom.HandleReaction(ctx, evt, false)
+	}
+	if isProtected {
+		roomProtector.HandleReaction(ctx, evt, true)
 	}
 }

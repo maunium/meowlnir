@@ -2,6 +2,7 @@ package policyeval
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -226,6 +227,30 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 	for roomID := range pe.wantToProtect {
 		if !slices.Contains(content.Rooms, roomID) {
 			delete(pe.wantToProtect, roomID)
+		}
+	}
+	for protectionName, protectionConfig := range content.Protections {
+		protFactory, ok := protectionsRegistry[protectionName]
+		if !ok {
+			errors = append(errors, fmt.Sprintf("* Unknown protection %q", protectionName))
+			continue
+		}
+		protValue := protFactory().(Protection)
+		err := json.Unmarshal(protectionConfig, protValue)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("* Failed to parse protection %s: %v", protectionName, err))
+			continue
+		}
+		_, existed := pe.protections[protectionName]
+		pe.protections[protectionName] = protValue
+		if !existed {
+			output = append(output, fmt.Sprintf("* Enabled protection %q", protectionName))
+		}
+	}
+	for protectionName := range pe.protections {
+		if _, ok := content.Protections[protectionName]; !ok {
+			delete(pe.protections, protectionName)
+			output = append(output, fmt.Sprintf("* Disabled protection %q", protectionName))
 		}
 	}
 	pe.protectedRoomsLock.Unlock()
