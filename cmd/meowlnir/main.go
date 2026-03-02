@@ -38,6 +38,7 @@ import (
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policyeval"
+	_ "go.mau.fi/meowlnir/policyeval/protections"
 	"go.mau.fi/meowlnir/policyeval/roomhash"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/synapsedb"

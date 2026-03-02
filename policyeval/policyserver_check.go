@@ -23,7 +23,7 @@ func (ps *PolicyServer) getRecommendation(
 	pdu *pdu.PDU,
 	roomVersion id.RoomVersion,
 	evaluator *PolicyEvaluator,
-	isOrigin bool,
+	isOrigin, isLegacyCheck bool,
 ) (PSRecommendation, policylist.Match) {
 	if pdu.Sender == evaluator.Bot.UserID || evaluator.Admins.Has(pdu.Sender) {
 		return PSRecommendationOk, nil
@@ -61,11 +61,16 @@ func (ps *PolicyServer) getRecommendation(
 			Stringer("room_id", pdu.RoomID).
 			Stringer("event_id", clientEvt.ID).
 			Logger().WithContext(ctx)
-		// TODO always use current time instead of event timestamp when isOrigin is true
-		if evaluator.ShouldExecuteProtections(ctx, clientEvt) {
+		if evaluator.ShouldExecuteProtections(ctx, clientEvt, true) {
 			for name, prot := range evaluator.protections {
 				zerolog.Ctx(ctx).Trace().Str("protection", name).Msg("Evaluating protection")
-				rec, err := prot.Execute(ctx, evaluator, clientEvt, true)
+				rec, err := prot.Execute(ctx, ProtectionParams{
+					Eval:     evaluator,
+					Evt:      clientEvt,
+					Policy:   true,
+					IsOrigin: isOrigin,
+					IsLegacy: isLegacyCheck,
+				})
 				if err != nil {
 					zerolog.Ctx(ctx).Err(err).
 						Stringer("room_id", pdu.RoomID).
@@ -85,6 +90,7 @@ func (ps *PolicyServer) getRecommendation(
 }
 
 const PolicyServerKeyID id.KeyID = "ed25519:policy_server"
+const fakeLegacyCheckServerName = "legacy.invalid"
 
 func (ps *PolicyServer) HandleSign(
 	ctx context.Context,
@@ -117,7 +123,14 @@ func (ps *PolicyServer) HandleSign(
 	}
 
 	log.Trace().Any("event", evt).Msg("Checking event received by policy server")
-	rec, match := ps.getRecommendation(ctx, evt, roomVersion, evaluator, originServer == evt.Sender.Homeserver())
+	rec, match := ps.getRecommendation(
+		ctx,
+		evt,
+		roomVersion,
+		evaluator,
+		originServer == evt.Sender.Homeserver(),
+		originServer == fakeLegacyCheckServerName,
+	)
 	if rec == PSRecommendationSpam {
 		// Don't sign spam events
 		log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
@@ -167,7 +180,7 @@ func (ps *PolicyServer) HandleLegacyCheck(
 		res = &LegacyPolicyServerResponse{Recommendation: PSRecommendationOk}
 		return res, nil
 	}
-	err = ps.HandleSign(ctx, roomVersion, pdu, evaluator, "unknown.invalid")
+	err = ps.HandleSign(ctx, roomVersion, pdu, evaluator, fakeLegacyCheckServerName)
 	if err != nil {
 		return nil, err
 	}

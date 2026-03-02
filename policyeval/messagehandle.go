@@ -36,9 +36,9 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 			&bot.SendNoticeOpts{Mentions: &event.Mentions{Room: true}, SendAsText: true},
 		)
 	}
-	if pe.ShouldExecuteProtections(ctx, evt) {
+	if pe.ShouldExecuteProtections(ctx, evt, false) {
 		for _, prot := range pe.protections {
-			hit, err := prot.Execute(ctx, pe, evt, pe.DryRun)
+			hit, err := prot.Execute(ctx, ProtectionParams{Eval: pe, Evt: evt})
 			if err != nil {
 				pe.Bot.Log.Err(err).
 					Stringer("room_id", evt.RoomID).
