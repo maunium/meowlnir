@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -1794,6 +1795,49 @@ var cmdPolicyServer = &CommandHandler{
 			ce.Reply("Policy server is not available")
 		}
 	},
+}
+
+type ToggleProtectionParams struct {
+	Name string `json:"name"`
+}
+
+var cmdToggleProtection = &CommandHandler{
+	Name: "toggleprotection",
+	Parameters: []*cmdschema.Parameter{{
+		Key:         "name",
+		Schema:      cmdschema.PrimitiveTypeString.Schema(),
+		Description: event.MakeExtensibleText("The protection type to toggle"),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ToggleProtectionParams) {
+		_, ok := protectionsRegistry[args.Name]
+		if !ok {
+			ce.Reply("Unknown protection type %s", format.SafeMarkdownCode(args.Name))
+			return
+		}
+		ce.Meta.protectedRoomsLock.RLock()
+		evtContent := ce.Meta.protectedRoomsEvent
+		if evtContent == nil {
+			evtContent = &config.ProtectedRoomsEventContent{Rooms: []id.RoomID{}}
+		}
+		contentCopy := *evtContent
+		contentCopy.Protections = maps.Clone(contentCopy.Protections)
+		ce.Meta.protectedRoomsLock.RUnlock()
+		_, enabled := contentCopy.Protections[args.Name]
+		if enabled {
+			delete(contentCopy.Protections, args.Name)
+		} else {
+			if contentCopy.Protections == nil {
+				contentCopy.Protections = make(map[string]json.RawMessage)
+			}
+			contentCopy.Protections[args.Name] = json.RawMessage("{}")
+		}
+		_, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateProtectedRooms, "", &contentCopy)
+		if err != nil {
+			ce.Reply("Failed to update protected rooms: %v", err)
+			return
+		}
+		ce.React(SuccessReaction)
+	}),
 }
 
 type HelpParams struct {

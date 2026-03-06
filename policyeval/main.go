@@ -169,6 +169,7 @@ func NewPolicyEvaluator(
 		cmdListsSubscribe,
 		cmdListsUnsubscribe,
 		cmdPolicyServer,
+		cmdToggleProtection,
 		cmdVersion,
 		cmdHelp,
 	)
