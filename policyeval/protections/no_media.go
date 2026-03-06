@@ -73,8 +73,7 @@ func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (
 			Msg("no_media protection hit")
 		// At least one of the patterns matched, redact and notify in the background
 		go func() {
-			// TODO replace with if policyserver
-			if p.Eval.DryRun {
+			if p.Policy {
 				return
 			}
 			var execErr error

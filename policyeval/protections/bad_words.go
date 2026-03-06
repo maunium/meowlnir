@@ -87,6 +87,9 @@ func (b *BadWords) Execute(ctx context.Context, p policyeval.ProtectionParams) (
 	if flagged != "" {
 		// At least one of the patterns matched, redact and notify in the background
 		go func() {
+			if p.Policy {
+				return
+			}
 			var execErr error
 			if !p.Eval.DryRun {
 				_, execErr = p.Eval.Bot.RedactEvent(ctx, p.Evt.RoomID, p.Evt.ID, mautrix.ReqRedact{Reason: "bad words"})
