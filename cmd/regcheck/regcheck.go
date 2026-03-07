@@ -22,6 +22,7 @@ import (
 	"go.mau.fi/util/ptr"
 	"go.mau.fi/zeroconfig"
 	"golang.org/x/sync/semaphore"
+	"maunium.net/go/mauflag"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/federation"
@@ -55,7 +56,19 @@ func printlnStderr(args ...any) {
 	_, _ = fmt.Fprintln(os.Stderr, args...)
 }
 
+var jsonOutput = mauflag.MakeFull("j", "json", "Output summary as JSON instead of text", "false").Bool()
+var threads = mauflag.MakeFull("t", "threads", "Number of concurrent threads to use for checking servers", "10").Int64()
+var wantHelp, _ = mauflag.MakeHelpFlag()
+
 func main() {
+	mauflag.SetHelpTitles("regcheck - Check Matrix servers for open registration", "regcheck [-jh] [-t threads]")
+	if err := mauflag.Parse(); err != nil {
+		printlnStderr(err)
+		return
+	} else if *wantHelp {
+		mauflag.PrintHelp()
+		return
+	}
 	log = exerrors.Must((&zeroconfig.Config{
 		Writers: []zeroconfig.WriterConfig{{
 			Type:   zeroconfig.WriterTypeStderr,
@@ -67,7 +80,6 @@ func main() {
 	ctx = log.WithContext(context.Background())
 
 	stdin := string(exerrors.Must(io.ReadAll(os.Stdin)))
-	jsonOutput := slices.Contains(os.Args, "--json")
 	serverNames := slices.DeleteFunc(strings.Fields(stdin), func(s string) bool {
 		if !id.ValidateServerName(s) {
 			printlnStderr("Skipping invalid server name", s)
@@ -78,7 +90,7 @@ func main() {
 	printlnStderr("Checking", serverNames)
 	var wg sync.WaitGroup
 	wg.Add(len(serverNames))
-	sema := semaphore.NewWeighted(10)
+	sema := semaphore.NewWeighted(*threads)
 	out := make([]string, len(serverNames))
 	serversByReg := make(map[RegMode][]string)
 	regByServer := make(map[string]RegMode)
@@ -101,7 +113,7 @@ func main() {
 		printlnStderr("---------------------------------------------------------------")
 		printlnStderr(result)
 	}
-	if jsonOutput {
+	if *jsonOutput {
 		_ = json.NewEncoder(os.Stdout).Encode(regByServer)
 	} else {
 		for mode, servers := range serversByReg {
