@@ -11,13 +11,14 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"go.mau.fi/meowlnir/bot"
 	"go.mau.fi/util/exstrings"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/federation/pdu"
 	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/meowlnir/bot"
 
 	"go.mau.fi/meowlnir/policylist"
 )
