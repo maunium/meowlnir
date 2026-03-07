@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -183,9 +184,9 @@ func checkOpenRegistration(serverName string) (string, RegMode) {
 		_, _ = fmt.Fprintf(&out, format, args...)
 		out.WriteByte('\n')
 	}
-	var errors []string
+	var errorMessages []string
 	addError := func(format string, args ...any) {
-		errors = append(errors, fmt.Sprintf(format, args...))
+		errorMessages = append(errorMessages, fmt.Sprintf(format, args...))
 	}
 	writeOutput("Result for %s:", serverName)
 	fedVersion, err := fed.Version(ctx, serverName)
@@ -255,15 +256,15 @@ func checkOpenRegistration(serverName string) (string, RegMode) {
 			return len(flow.Stages) == 1 && flow.Stages[0] == mautrix.AuthTypeDummy
 		}) {
 			regMode = RegDangerouslyOpen
-		} else if respErr.ErrCode == "M_FORBIDDEN" && strings.Contains(respErr.Err, "disabled") {
+		} else if errors.Is(respErr, mautrix.MForbidden) {
 			regMode = RegClosed
 		} else if respErr.ErrCode == "" {
 			regMode = RegOpen
 		}
 	}
 	_ = versions
-	if len(errors) > 0 {
-		writeOutput("Errors:\n%s", strings.Join(errors, "\n"))
+	if len(errorMessages) > 0 {
+		writeOutput("Errors:\n%s", strings.Join(errorMessages, "\n"))
 	}
 	return out.String(), regMode
 }
