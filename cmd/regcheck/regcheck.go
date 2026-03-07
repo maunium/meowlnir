@@ -51,6 +51,10 @@ func init() {
 
 var log *zerolog.Logger
 
+func printlnStderr(args ...any) {
+	_, _ = fmt.Fprintln(os.Stderr, args...)
+}
+
 func main() {
 	log = exerrors.Must((&zeroconfig.Config{
 		Writers: []zeroconfig.WriterConfig{{
@@ -63,19 +67,21 @@ func main() {
 	ctx = log.WithContext(context.Background())
 
 	stdin := string(exerrors.Must(io.ReadAll(os.Stdin)))
+	jsonOutput := slices.Contains(os.Args, "--json")
 	serverNames := slices.DeleteFunc(strings.Fields(stdin), func(s string) bool {
 		if !id.ValidateServerName(s) {
-			fmt.Println("Skipping invalid server name", s)
+			printlnStderr("Skipping invalid server name", s)
 			return true
 		}
 		return false
 	})
-	fmt.Println("Checking", serverNames)
+	printlnStderr("Checking", serverNames)
 	var wg sync.WaitGroup
 	wg.Add(len(serverNames))
 	sema := semaphore.NewWeighted(10)
 	out := make([]string, len(serverNames))
 	serversByReg := make(map[RegMode][]string)
+	regByServer := make(map[string]RegMode)
 	var serversByRegLock sync.Mutex
 	for i, serverName := range serverNames {
 		go func() {
@@ -86,26 +92,34 @@ func main() {
 			out[i], regMode = checkOpenRegistration(serverName)
 			serversByRegLock.Lock()
 			serversByReg[regMode] = append(serversByReg[regMode], serverName)
+			regByServer[serverName] = regMode
 			serversByRegLock.Unlock()
 		}()
 	}
 	wg.Wait()
 	for _, result := range out {
-		fmt.Println("---------------------------------------------------------------")
-		fmt.Println(result)
+		printlnStderr("---------------------------------------------------------------")
+		printlnStderr(result)
 	}
-	for mode, servers := range serversByReg {
-		fmt.Println("---------------------------------------------------------------")
-		if mode == RegOAuth {
-			fmt.Println("Servers using next-gen auth")
-		} else {
-			fmt.Println("Servers with", mode, "registration")
+	if jsonOutput {
+		_ = json.NewEncoder(os.Stdout).Encode(regByServer)
+	} else {
+		for mode, servers := range serversByReg {
+			fmt.Println("---------------------------------------------------------------")
+			switch mode {
+			case RegOAuthOpen:
+				fmt.Println("Servers using next-gen auth with account creation allowed")
+			case RegOAuth:
+				fmt.Println("Servers using next-gen auth")
+			default:
+				fmt.Println("Servers with", mode, "registration (legacy auth)")
+			}
+			fmt.Println()
+			for _, serverName := range servers {
+				fmt.Println(serverName)
+			}
+			fmt.Println()
 		}
-		fmt.Println()
-		for _, serverName := range servers {
-			fmt.Println(serverName)
-		}
-		fmt.Println()
 	}
 }
 
@@ -172,17 +186,24 @@ func (rm RegMode) String() string {
 		return "closed"
 	case RegOAuth:
 		return "oauth"
+	case RegOAuthOpen:
+		return "oauth open"
 	default:
 		return fmt.Sprintf("unknown (%d)", rm)
 	}
 }
 
+func (rm RegMode) MarshalText() ([]byte, error) {
+	return []byte(rm.String()), nil
+}
+
 const (
-	RegDangerouslyOpen RegMode = 2
-	RegOpen            RegMode = 1
+	RegDangerouslyOpen RegMode = 100
+	RegOpen            RegMode = 50
+	RegOAuthOpen       RegMode = 20
+	RegOAuth           RegMode = 10
 	RegUnknown         RegMode = 0
-	RegClosed          RegMode = -1
-	RegOAuth           RegMode = -2
+	RegClosed          RegMode = -10
 )
 
 func checkOpenRegistration(serverName string) (string, RegMode) {
@@ -272,14 +293,24 @@ func checkOpenRegistration(serverName string) (string, RegMode) {
 	}
 	if regMode == RegUnknown || regMode == RegClosed {
 		authMetadata, err := cli.MakeRequest(ctx, http.MethodGet, cli.BuildClientURL("v1", "auth_metadata"), nil, nil)
-		if err == nil {
-			issuer := gjson.GetBytes(authMetadata, "issuer").Str
-			if issuer != "" {
+		issuer := gjson.GetBytes(authMetadata, "issuer").Str
+		if err == nil && issuer != "" {
+			var createSupported bool
+			gjson.GetBytes(authMetadata, "prompt_values_supported").ForEach(func(key, value gjson.Result) bool {
+				if key.Type == gjson.Number && value.Str == "create" {
+					createSupported = true
+				}
+				return true
+			})
+			if createSupported {
+				regMode = RegOAuthOpen
+				writeOutput("OAuth issuer: %s (create prompt value is supported)", issuer)
+			} else {
 				regMode = RegOAuth
 				writeOutput("OAuth issuer: %s", issuer)
-				log.Debug().Msg("Found next-gen auth metadata")
 			}
-		} else if !errors.Is(err, mautrix.MUnrecognized) {
+			log.Debug().Msg("Found next-gen auth metadata")
+		} else if err != nil && !errors.Is(err, mautrix.MUnrecognized) {
 			addError("Failed to fetch auth metadata: %v", err)
 		}
 	}
