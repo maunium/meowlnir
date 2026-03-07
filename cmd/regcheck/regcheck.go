@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/tidwall/gjson"
 	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/ptr"
@@ -95,7 +96,11 @@ func main() {
 	}
 	for mode, servers := range serversByReg {
 		fmt.Println("---------------------------------------------------------------")
-		fmt.Println("Servers with", mode, "registration")
+		if mode == RegOAuth {
+			fmt.Println("Servers using next-gen auth")
+		} else {
+			fmt.Println("Servers with", mode, "registration")
+		}
 		fmt.Println()
 		for _, serverName := range servers {
 			fmt.Println(serverName)
@@ -165,6 +170,8 @@ func (rm RegMode) String() string {
 		return "unknown"
 	case RegClosed:
 		return "closed"
+	case RegOAuth:
+		return "oauth"
 	default:
 		return fmt.Sprintf("unknown (%d)", rm)
 	}
@@ -175,6 +182,7 @@ const (
 	RegOpen            RegMode = 1
 	RegUnknown         RegMode = 0
 	RegClosed          RegMode = -1
+	RegOAuth           RegMode = -2
 )
 
 func checkOpenRegistration(serverName string) (string, RegMode) {
@@ -260,6 +268,19 @@ func checkOpenRegistration(serverName string) (string, RegMode) {
 			regMode = RegClosed
 		} else if respErr.ErrCode == "" {
 			regMode = RegOpen
+		}
+	}
+	if regMode == RegUnknown || regMode == RegClosed {
+		authMetadata, err := cli.MakeRequest(ctx, http.MethodGet, cli.BuildClientURL("v1", "auth_metadata"), nil, nil)
+		if err == nil {
+			issuer := gjson.GetBytes(authMetadata, "issuer").Str
+			if issuer != "" {
+				regMode = RegOAuth
+				writeOutput("OAuth issuer: %s", issuer)
+				log.Debug().Msg("Found next-gen auth metadata")
+			}
+		} else if !errors.Is(err, mautrix.MUnrecognized) {
+			addError("Failed to fetch auth metadata: %v", err)
 		}
 	}
 	_ = versions
