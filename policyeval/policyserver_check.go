@@ -121,7 +121,7 @@ func (ps *PolicyServer) HandleSign(
 		Logger()
 
 	log.Trace().Any("event", evt).Msg("Checking event received by policy server")
-	rec, match := ps.getRecommendation(ctx, evt, roomVersion, evaluator)
+	rec, match := ps.getRecommendation(context.WithoutCancel(ctx), evt, roomVersion, evaluator)
 	if rec == PSRecommendationSpam {
 		// Don't sign spam events
 		log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
@@ -232,7 +232,7 @@ func (ps *PolicyServer) HandleLegacyCheck(
 
 	if r.Recommendation == "" {
 		log.Trace().Any("event", pdu).Msg("Checking event received by policy server")
-		rec, match := ps.getRecommendation(ctx, pdu, roomVersion, evaluator)
+		rec, match := ps.getRecommendation(context.WithoutCancel(ctx), pdu, roomVersion, evaluator)
 		finalRec = rec
 		if rec == PSRecommendationSpam {
 			log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
