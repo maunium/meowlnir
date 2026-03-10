@@ -93,8 +93,15 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 	}
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
+func (m *Meowlnir) PostMSC4284LegacySign(w http.ResponseWriter, r *http.Request) {
+	m.postPolicyServerSign(w, r, true)
+}
 
-func (m *Meowlnir) PostMSC4284Sign(w http.ResponseWriter, r *http.Request) {
+func (m *Meowlnir) PostPolicyServerSign(w http.ResponseWriter, r *http.Request) {
+	m.postPolicyServerSign(w, r, false)
+}
+
+func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, legacy bool) {
 	if m.PolicyServer.SigningKey == nil {
 		mautrix.MUnknown.WithMessage("Policy server signing key is not configured").Write(w)
 		return
@@ -132,6 +139,12 @@ func (m *Meowlnir) PostMSC4284Sign(w http.ResponseWriter, r *http.Request) {
 		// Return all signatures to work around a synapse bug where it only does a shallow merge
 		// https://github.com/element-hq/synapse/blob/v1.148.0/synapse/handlers/room_policy.py#L177
 		sigs[m.PolicyServer.Federation.ServerName] = parsedPDU.Signatures[m.PolicyServer.Federation.ServerName]
+	} else if !legacy {
+		mautrix.MForbidden.
+			WithMessage("This message has been rejected as probable spam").
+			WithStatus(http.StatusBadRequest).
+			Write(w)
+		return
 	}
 	exhttp.WriteJSONResponse(w, http.StatusOK, parsedPDU.Signatures)
 }
