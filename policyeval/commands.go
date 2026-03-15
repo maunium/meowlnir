@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -64,9 +65,9 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 
 func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event, execProtections bool) {
 	pe.commandProcessor.Process(ctx, evt)
-	if execProtections && pe.ShouldExecuteProtections(ctx, evt) {
+	if execProtections && pe.ShouldExecuteProtections(ctx, evt, false) {
 		for _, prot := range pe.protections {
-			hit, err := prot.Execute(ctx, pe, evt, pe.DryRun)
+			hit, err := prot.Execute(ctx, ProtectionParams{Eval: pe, Evt: evt})
 			if err != nil {
 				pe.Bot.Log.Err(err).
 					Stringer("room_id", evt.RoomID).
@@ -706,6 +707,23 @@ var cmdAddUnban = &CommandHandler{
 			Any("policy", policy).
 			Stringer("policy_event_id", resp.EventID).
 			Msg("Sent unban policy from command")
+		ce.React(SuccessReaction)
+	}),
+}
+
+type AllowInviteParams struct {
+	User id.UserID `json:"user"`
+}
+
+var cmdAllowInvite = &CommandHandler{
+	Name:        "allow-invite",
+	Description: event.MakeExtensibleText("Allow a user to bypass the block_invites_to list once"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:    "user",
+		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *AllowInviteParams) {
+		ce.Meta.BlockInvitesOverride.Add(args.User)
 		ce.React(SuccessReaction)
 	}),
 }
@@ -1695,6 +1713,133 @@ var cmdLists = &CommandHandler{
 	},
 }
 
+type PolicyServerEnableParams struct {
+	Rooms []cmdschema.RoomIDOrString `json:"rooms"`
+}
+
+var cmdPolicyServerDisable = &CommandHandler{
+	Name:        "disable",
+	Aliases:     []string{"unprotect"},
+	Description: event.MakeExtensibleText("Turn off the policy server in rooms"),
+}
+var cmdPolicyServerEnable = &CommandHandler{
+	Name:        "enable",
+	Aliases:     []string{"protect"},
+	Description: event.MakeExtensibleText("Turn on the policy server in rooms"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:         "rooms",
+		Schema:      cmdschema.Array(cmdschema.ParameterSchemaJoinableRoom),
+		Optional:    true,
+		Description: event.MakeExtensibleText("Individual rooms to update. If unset, all protected rooms are updated"),
+	}},
+	TailParam: "rooms",
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *PolicyServerEnableParams) {
+		disable := ce.Handler == cmdPolicyServerDisable
+		if !disable && ce.Meta.policyServer.SigningKey == nil {
+			ce.Reply("Policy server is not available")
+			return
+		}
+		var rooms []id.RoomID
+		if len(args.Rooms) == 0 {
+			rooms = ce.Meta.GetProtectedRooms()
+		} else {
+			rooms = make([]id.RoomID, 0, len(args.Rooms))
+			for _, room := range args.Rooms {
+				roomID := resolveRoom(ce, room)
+				if roomID == "" {
+					ce.Reply("Failed to resolve room %s", format.SafeMarkdownCode(room))
+				} else {
+					rooms = append(rooms, roomID)
+				}
+			}
+		}
+		content := &event.RoomPolicyEventContent{
+			Via:       ce.Meta.Bot.ServerName,
+			PublicKey: ce.Meta.policyServer.SigningKey.Pub,
+			PublicKeys: &event.PolicyServerPublicKeys{
+				Ed25519: ce.Meta.policyServer.SigningKey.Pub,
+			},
+		}
+		if disable {
+			content = &event.RoomPolicyEventContent{}
+		}
+		var output []string
+		for _, roomID := range rooms {
+			if !disable && !ce.Meta.IsProtectedRoom(roomID) {
+				output = append(output, fmt.Sprintf("* Skipped %s as it is not a protected room", format.MarkdownMentionRoomID("", roomID)))
+			} else if _, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, roomID, event.StateRoomPolicy, "", content); err != nil {
+				output = append(output, fmt.Sprintf("* Failed to set `m.room.policy` in %s: %v", format.MarkdownMentionRoomID("", roomID), err))
+			} else if _, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, roomID, event.StateUnstableRoomPolicy, "", content); err != nil {
+				output = append(output, fmt.Sprintf("* Failed to set `org.matrix.msc4284.policy` in %s: %v", format.MarkdownMentionRoomID("", roomID), err))
+			} else {
+				output = append(output, fmt.Sprintf("* Successfully updated %s", format.MarkdownMentionRoomID("", roomID)))
+			}
+		}
+		ce.Reply(strings.Join(output, "\n"))
+	}),
+}
+
+var cmdPolicyServer = &CommandHandler{
+	Name: "policyserver",
+	Subcommands: []*CommandHandler{
+		cmdPolicyServerEnable,
+		cmdPolicyServerDisable,
+	},
+	Aliases:     []string{"ps"},
+	Parameters:  make([]*cmdschema.Parameter, 0),
+	Description: event.MakeExtensibleText("Check status of policy server"),
+	Func: func(ce *CommandEvent) {
+		if ce.Meta.policyServer.SigningKey != nil {
+			ce.Reply("Policy server is available. Public key: %s", format.SafeMarkdownCode(ce.Meta.policyServer.SigningKey.Pub.String()))
+		} else {
+			ce.Reply("Policy server is not available")
+		}
+	},
+}
+
+type ToggleProtectionParams struct {
+	Name string `json:"name"`
+}
+
+var cmdToggleProtection = &CommandHandler{
+	Name: "toggleprotection",
+	Parameters: []*cmdschema.Parameter{{
+		Key:         "name",
+		Schema:      cmdschema.PrimitiveTypeString.Schema(),
+		Description: event.MakeExtensibleText("The protection type to toggle"),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ToggleProtectionParams) {
+		_, ok := protectionsRegistry[args.Name]
+		if !ok {
+			ce.Reply("Unknown protection type %s", format.SafeMarkdownCode(args.Name))
+			return
+		}
+		ce.Meta.protectedRoomsLock.RLock()
+		evtContent := ce.Meta.protectedRoomsEvent
+		if evtContent == nil {
+			evtContent = &config.ProtectedRoomsEventContent{Rooms: []id.RoomID{}}
+		}
+		contentCopy := *evtContent
+		contentCopy.Protections = maps.Clone(contentCopy.Protections)
+		ce.Meta.protectedRoomsLock.RUnlock()
+		_, enabled := contentCopy.Protections[args.Name]
+		if enabled {
+			delete(contentCopy.Protections, args.Name)
+		} else {
+			if contentCopy.Protections == nil {
+				contentCopy.Protections = make(map[string]json.RawMessage)
+			}
+			contentCopy.Protections[args.Name] = json.RawMessage("{}")
+		}
+		_, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateProtectedRooms, "", &contentCopy)
+		if err != nil {
+			ce.Reply("Failed to update protected rooms: %v", err)
+			return
+		}
+		ce.React(SuccessReaction)
+	}),
+}
+
 type HelpParams struct {
 	Command string `json:"command"`
 }
@@ -1873,4 +2018,5 @@ func init() {
 	cmdRoomBlock.CopyFrom(cmdRoomDelete)
 	cmdUnprotectRoom.CopyFrom(cmdProtectRoom)
 	cmdUnsuspend.CopyFrom(cmdSuspend)
+	cmdPolicyServerDisable.CopyFrom(cmdPolicyServerEnable)
 }

@@ -49,7 +49,6 @@ func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, po
 				Stringer("user_id", userID).
 				Any("matches", policy).
 				Msg("Applying ban recommendation")
-			pe.policyServer.UpdateRecommendation(userID, pe.GetProtectedRooms(), PSRecommendationSpam)
 			shouldRedact := recs.BanOrUnban.Recommendation == event.PolicyRecommendationUnstableTakedown
 			if !shouldRedact && recs.BanOrUnban.Reason != "" {
 				for _, pattern := range pe.autoRedactPatterns {

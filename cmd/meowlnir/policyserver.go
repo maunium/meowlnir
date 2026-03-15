@@ -34,9 +34,11 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if r.ContentLength >= 0 && r.ContentLength <= 2 {
-		resp := m.PolicyServer.HandleLegacyCachedCheck(eventID)
-		if resp == nil {
-			mautrix.MNotFound.WithMessage("Event not found in cache, please provide it in the request").Write(w)
+		resp, err := m.PolicyServer.HandleCachedLegacyCheck(r.Context(), eventID)
+		if err != nil {
+			hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
+			mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
+			return
 		} else if resp.Recommendation == "spam" && m.Config.Meowlnir.DryRun {
 			exhttp.WriteJSONResponse(w, http.StatusOK, &policyeval.LegacyPolicyServerResponse{Recommendation: "ok"})
 		} else {
@@ -72,22 +74,13 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 		mautrix.MInvalidParam.WithMessage("Event ID does not match hash of request body").Write(w)
 		return
 	}
-	clientEvent, err := parsedPDU.ToClientEvent(createEvt.RoomVersion)
-	if err != nil {
-		hlog.FromRequest(r).Err(err).Msg("Failed to convert PDU to client event")
-		mautrix.MUnknown.WithMessage("Failed to convert PDU to client event").Write(w)
-		return
-	}
 
 	resp, err := m.PolicyServer.HandleLegacyCheck(
 		r.Context(),
 		createEvt.RoomVersion,
 		eventID,
 		parsedPDU,
-		clientEvent,
 		eval,
-		m.Config.PolicyServer.AlwaysRedact && !m.Config.Meowlnir.DryRun,
-		federation.OriginServerNameFromRequest(r),
 	)
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
@@ -100,8 +93,15 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 	}
 	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
 }
+func (m *Meowlnir) PostMSC4284LegacySign(w http.ResponseWriter, r *http.Request) {
+	m.postPolicyServerSign(w, r, true)
+}
 
-func (m *Meowlnir) PostMSC4284Sign(w http.ResponseWriter, r *http.Request) {
+func (m *Meowlnir) PostPolicyServerSign(w http.ResponseWriter, r *http.Request) {
+	m.postPolicyServerSign(w, r, false)
+}
+
+func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, legacy bool) {
 	if m.PolicyServer.SigningKey == nil {
 		mautrix.MUnknown.WithMessage("Policy server signing key is not configured").Write(w)
 		return
@@ -126,16 +126,25 @@ func (m *Meowlnir) PostMSC4284Sign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = m.PolicyServer.HandleSign(r.Context(), createEvt.RoomVersion, parsedPDU, eval)
+	err = m.PolicyServer.HandleSign(r.Context(), createEvt.RoomVersion, parsedPDU, eval, federation.OriginServerNameFromRequest(r))
 	if err != nil {
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
 		mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
 		return
 	}
-	sig, ok := parsedPDU.Signatures[m.PolicyServer.Federation.ServerName][policyeval.PolicyServerKeyID]
+	_, ok = parsedPDU.Signatures[m.PolicyServer.Federation.ServerName][policyeval.PolicyServerKeyID]
 	sigs := map[string]map[id.KeyID]string{}
 	if ok {
-		sigs[m.PolicyServer.Federation.ServerName] = map[id.KeyID]string{policyeval.PolicyServerKeyID: sig}
+		//sigs[m.PolicyServer.Federation.ServerName] = map[id.KeyID]string{policyeval.PolicyServerKeyID: sig}
+		// Return all signatures to work around a synapse bug where it only does a shallow merge
+		// https://github.com/element-hq/synapse/blob/v1.148.0/synapse/handlers/room_policy.py#L177
+		sigs[m.PolicyServer.Federation.ServerName] = parsedPDU.Signatures[m.PolicyServer.Federation.ServerName]
+	} else if !legacy {
+		mautrix.MForbidden.
+			WithMessage("This message has been rejected as probable spam").
+			WithStatus(http.StatusBadRequest).
+			Write(w)
+		return
 	}
-	exhttp.WriteJSONResponse(w, http.StatusOK, sigs)
+	exhttp.WriteJSONResponse(w, http.StatusOK, parsedPDU.Signatures)
 }

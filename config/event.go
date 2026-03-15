@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"reflect"
 
 	"maunium.net/go/mautrix/event"
@@ -31,8 +32,8 @@ type WatchedListsEventContent struct {
 }
 
 type ProtectedRoomsEventContent struct {
-	Rooms       []id.RoomID               `json:"rooms"`
-	Protections map[string]map[string]any `json:"protections,omitempty"`
+	Rooms       []id.RoomID                `json:"rooms"`
+	Protections map[string]json.RawMessage `json:"protections,omitempty"`
 
 	// TODO make this less hacky
 	SkipACL []id.RoomID `json:"skip_acl"`

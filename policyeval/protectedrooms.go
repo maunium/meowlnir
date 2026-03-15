@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"strings"
 	"sync"
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/dbutil"
-	"go.mau.fi/util/exerrors"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -230,20 +228,24 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 			delete(pe.wantToProtect, roomID)
 		}
 	}
+	var unsafeProtections []string
 	for protectionName, protectionConfig := range content.Protections {
-		protType, ok := protectionsRegistry[protectionName]
+		protFactory, ok := protectionsRegistry[protectionName]
 		if !ok {
 			errors = append(errors, fmt.Sprintf("* Unknown protection %q", protectionName))
 			continue
 		}
-		protValue := reflect.New(protType).Interface()
-		err := json.Unmarshal(exerrors.Must(json.Marshal(protectionConfig)), protValue)
+		if !slices.Contains(safeProtections, protectionName) {
+			unsafeProtections = append(unsafeProtections, protectionName)
+		}
+		protValue := protFactory().(Protection)
+		err := json.Unmarshal(protectionConfig, protValue)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("* Failed to parse protection %s: %v", protectionName, err))
 			continue
 		}
 		_, existed := pe.protections[protectionName]
-		pe.protections[protectionName] = protValue.(Protection)
+		pe.protections[protectionName] = protValue
 		if !existed {
 			output = append(output, fmt.Sprintf("* Enabled protection %q", protectionName))
 		}
@@ -253,6 +255,9 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 			delete(pe.protections, protectionName)
 			output = append(output, fmt.Sprintf("* Disabled protection %q", protectionName))
 		}
+	}
+	if len(unsafeProtections) > 0 {
+		output = append(output, fmt.Sprintf("* Warning: the following protections are marked as unsafe and may cause issues: %s", strings.Join(unsafeProtections, ", ")))
 	}
 	pe.protectedRoomsLock.Unlock()
 	joinedRooms, err := pe.Bot.JoinedRooms(ctx)

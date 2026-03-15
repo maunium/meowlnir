@@ -1,3 +1,12 @@
+# v26.02
+
+* Bumped minimum Go version to 1.25.
+* Added support for subscribing to policy lists using commands
+  (thanks to [@nexy7574] in [#51]).
+* Blocked invites from IP server names when using invite antispam.
+
+[#51]: https://github.com/maunium/meowlnir/pull/51
+
 # v26.01
 
 * Added notice if dry run is enabled (thanks to [@nexy7574] in [#46]).

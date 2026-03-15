@@ -11,6 +11,7 @@ type Database struct {
 	TakenAction    *TakenActionQuery
 	Bot            *BotQuery
 	ManagementRoom *ManagementRoomQuery
+	PSSignature    *PSSignatureQuery
 }
 
 func New(db *dbutil.Database) *Database {
@@ -30,6 +31,11 @@ func New(db *dbutil.Database) *Database {
 		ManagementRoom: &ManagementRoomQuery{
 			QueryHelper: dbutil.MakeQueryHelper(db, func(qh *dbutil.QueryHelper[*ManagementRoom]) *ManagementRoom {
 				return &ManagementRoom{}
+			}),
+		},
+		PSSignature: &PSSignatureQuery{
+			QueryHelper: dbutil.MakeQueryHelperSimple(db, func() *PSSignature {
+				return &PSSignature{}
 			}),
 		},
 	}

@@ -38,6 +38,7 @@ import (
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policyeval"
+	_ "go.mau.fi/meowlnir/policyeval/protections"
 	"go.mau.fi/meowlnir/policyeval/roomhash"
 	"go.mau.fi/meowlnir/policylist"
 	"go.mau.fi/meowlnir/synapsedb"
@@ -184,7 +185,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	serverAuth := federation.NewServerAuth(m.Federation, inMemCache, func(auth federation.XMatrixAuth) string {
 		return auth.Destination
 	})
-	m.PolicyServer = policyeval.NewPolicyServer(m.Federation, serverAuth, pskey)
+	m.PolicyServer = policyeval.NewPolicyServer(m.Federation, serverAuth, pskey, m.DB)
 	m.AS.Log = m.Log.With().Str("component", "matrix").Logger()
 	m.AS.StateStore = m.StateStore
 	m.EventProcessor = appservice.NewEventProcessor(m.AS)
@@ -289,6 +290,7 @@ func (m *Meowlnir) newPolicyEvaluator(bot *bot.Bot, roomID id.RoomID, encrypted 
 		m.Config.Antispam.FilterLocalInvites,
 		m.Config.Antispam.NotifyManagementRoom,
 		m.Config.Meowlnir.DryRun,
+		m.Config.Antispam.BlockInvitesTo,
 		m.HackyAutoRedactPatterns,
 		m.PolicyServer,
 		roomHashes,
