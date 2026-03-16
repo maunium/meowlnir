@@ -1,3 +1,11 @@
+# v26.03
+
+* Added experimental support for protections (thanks to [@nexy7574] in [#43]).
+  * Note that only the `no_media` protection is currently considered stable.
+* Added support for stable policy server endpoints.
+
+[#43]: https://github.com/maunium/meowlnir/pull/43
+
 # v26.02
 
 * Bumped minimum Go version to 1.25.

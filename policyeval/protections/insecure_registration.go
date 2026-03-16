@@ -112,7 +112,7 @@ func (ir *InsecureRegistration) Execute(ctx context.Context, p policyeval.Protec
 		zerolog.Ctx(ctx).Err(err).Str("homeserver", hs).Msg("failed to create client for insecure registration check")
 		return false, err
 	}
-	_, flows, err := client.Register(ctx, &mautrix.ReqRegister{})
+	_, flows, err := client.Register(ctx, &mautrix.ReqRegister[any]{})
 	zerolog.Ctx(ctx).Trace().Stringer("user_id", target).Err(err).Msg("finished insecure registration check")
 	if err != nil {
 		if errors.Is(err, mautrix.MForbidden) || errors.Is(err, mautrix.MNotFound) {
