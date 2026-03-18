@@ -1,6 +1,7 @@
 package policyeval
 
 import (
+	"sync"
 	"time"
 
 	"go.mau.fi/util/exsync"
@@ -17,6 +18,8 @@ type PolicyServer struct {
 	DB             *database.Database
 	redactionCache *exsync.Set[id.EventID]
 	epoch          time.Time
+	signMu         sync.Mutex
+	notified       *exsync.Set[id.EventID]
 }
 
 func NewPolicyServer(fed *federation.Client, serverAuth *federation.ServerAuth, signingKey *federation.SigningKey, db *database.Database) *PolicyServer {
@@ -27,6 +30,7 @@ func NewPolicyServer(fed *federation.Client, serverAuth *federation.ServerAuth, 
 		ServerAuth:     serverAuth,
 		DB:             db,
 		SigningKey:     signingKey,
+		notified:       exsync.NewSet[id.EventID](),
 	}
 }
 

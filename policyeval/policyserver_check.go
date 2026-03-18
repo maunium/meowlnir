@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/exstrings"
 	"go.mau.fi/util/jsontime"
 	"maunium.net/go/mautrix/event"
@@ -98,6 +99,71 @@ func (ps *PolicyServer) getRecommendation(
 const PolicyServerKeyID id.KeyID = "ed25519:policy_server"
 const fakeLegacyCheckServerName = "legacy.invalid"
 
+func (ps *PolicyServer) NotifyBlockedEvent(
+	ctx context.Context,
+	match policylist.Match,
+	pe *PolicyEvaluator,
+	evt *pdu.PDU,
+	roomVersion id.RoomVersion,
+	origin string,
+) {
+	if time.Now().UTC().UnixMilli()-evt.OriginServerTS > 3600000 {
+		// Don't notify about old events
+		return
+	}
+	eventID := exerrors.Must(evt.GetEventID(roomVersion))
+	if ps.notified.Has(eventID) {
+		return
+	}
+	defer ps.notified.Add(eventID)
+	var reason string
+	if match != nil {
+		policy := match.Recommendations().BanOrUnban
+		policyRoomName := policy.RoomID.String()
+		if meta := pe.GetWatchedListMeta(policy.RoomID); meta != nil {
+			policyRoomName = meta.Name
+		}
+		reason = fmt.Sprintf(
+			"matched policy from %s set by %s: %s for %s",
+			format.EscapeMarkdown(policyRoomName),
+			format.MarkdownMention(policy.Sender),
+			format.SafeMarkdownCode(policy.Recommendation),
+			format.SafeMarkdownCode(policy.Reason),
+		)
+	} else {
+		reason = "protections check flagged event."
+	}
+	var formattedData string
+	cle, err := evt.ToClientEvent(roomVersion)
+	if err != nil {
+		formattedData = fmt.Sprintf("Failed to convert PDU to client event: %v", err)
+	} else {
+		m, err := json.MarshalIndent(cle, "", "    ")
+		if err != nil {
+			formattedData = fmt.Sprintf("Failed to re-encode client event: %v", err)
+		} else {
+			formattedData = string(m)
+		}
+	}
+	backtickCount := max(exstrings.LongestSequenceOf(formattedData, '`')+1, 3)
+	msg := fmt.Sprintf(
+		"Blocked an event in %s from %s (requested by %s): %s\n"+
+			"<details><summary>Event JSON</summary>\n\n%sjson\n%s\n%s\n</details>",
+		pe.formatRoomLink(ctx, evt.RoomID, evt.Sender.Homeserver(), pe.Bot.UserID.Homeserver()),
+		format.MarkdownMention(evt.Sender),
+		format.SafeMarkdownCode(origin),
+		reason,
+		strings.Repeat("`", backtickCount),
+		formattedData,
+		strings.Repeat("`", backtickCount))
+	pe.Bot.SendNoticeOpts(
+		ctx,
+		pe.ManagementRoom,
+		msg,
+		&bot.SendNoticeOpts{AllowHTML: true},
+	)
+}
+
 func (ps *PolicyServer) HandleSign(
 	ctx context.Context,
 	roomVersion id.RoomVersion,
@@ -108,6 +174,8 @@ func (ps *PolicyServer) HandleSign(
 	if ps.SigningKey == nil {
 		return errors.New("policy server is not configured with a signing key")
 	}
+	ps.signMu.Lock()
+	defer ps.signMu.Unlock()
 	evtID, err := evt.GetEventID(roomVersion)
 	if err != nil {
 		return fmt.Errorf("failed to calculate event ID: %w", err)
@@ -140,55 +208,7 @@ func (ps *PolicyServer) HandleSign(
 	if rec == PSRecommendationSpam {
 		// Don't sign spam events
 		log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
-		go func() {
-			ctx2 := context.WithoutCancel(ctx)
-			// TODO: clean up
-			var reason string
-			if match != nil {
-				policy := match.Recommendations().BanOrUnban
-				policyRoomName := policy.RoomID.String()
-				if meta := evaluator.GetWatchedListMeta(policy.RoomID); meta != nil {
-					policyRoomName = meta.Name
-				}
-				reason = fmt.Sprintf(
-					"matched policy from %s set by %s: %s for %s",
-					format.EscapeMarkdown(policyRoomName),
-					format.MarkdownMention(policy.Sender),
-					format.SafeMarkdownCode(policy.Recommendation),
-					format.SafeMarkdownCode(policy.Reason),
-				)
-			} else {
-				reason = "protections check flagged event."
-			}
-			var formattedData string
-			cle, err := evt.ToClientEvent(roomVersion)
-			if err != nil {
-				formattedData = fmt.Sprintf("Failed to convert PDU to client event: %v", err)
-			} else {
-				m, err := json.MarshalIndent(cle, "", "    ")
-				if err != nil {
-					formattedData = fmt.Sprintf("Failed to re-encode client event: %v", err)
-				} else {
-					formattedData = string(m)
-				}
-			}
-			backtickCount := max(exstrings.LongestSequenceOf(formattedData, '`')+1, 3)
-			msg := fmt.Sprintf(
-				"Blocked %s from sending an event in %s: %s\n"+
-					"<details><summary>Event JSON</summary>\n\n%sjson\n%s\n%s\n</details>",
-				format.MarkdownMention(evt.Sender),
-				evaluator.formatRoomLink(ctx2, evt.RoomID, evt.Sender.Homeserver(), evaluator.Bot.UserID.Homeserver()),
-				reason,
-				strings.Repeat("`", backtickCount),
-				formattedData,
-				strings.Repeat("`", backtickCount))
-			evaluator.Bot.SendNoticeOpts(
-				ctx2,
-				evaluator.ManagementRoom,
-				msg,
-				&bot.SendNoticeOpts{AllowHTML: true},
-			)
-		}()
+		go ps.NotifyBlockedEvent(context.WithoutCancel(ctx), match, evaluator, evt, roomVersion, originServer)
 		return nil
 	}
 	log.Trace().Msg("Event accepted")
