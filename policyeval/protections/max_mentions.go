@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/jsontime"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
@@ -70,7 +71,7 @@ func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParam
 	}
 
 	uniqueMentions := make(map[id.UserID]struct{})
-	if content.Mentions == nil && mm.MustHaveMentions {
+	if content.Mentions == nil && mm.MustHaveMentions && p.Evt.Type == event.EventMessage {
 		// We can't accurately count mentions here, so we'll give the user a single point instead.
 		uniqueMentions["dummy"] = struct{}{}
 		hit = true
