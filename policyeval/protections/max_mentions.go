@@ -73,6 +73,7 @@ func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParam
 	if content.Mentions == nil && mm.MustHaveMentions {
 		// We can't accurately count mentions here, so we'll give the user a single point instead.
 		uniqueMentions["dummy"] = struct{}{}
+		hit = true
 		go func() {
 			var execErr error
 			if !p.Eval.DryRun {
