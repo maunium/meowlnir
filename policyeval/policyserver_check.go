@@ -106,6 +106,7 @@ func (ps *PolicyServer) NotifyBlockedEvent(
 	evt *pdu.PDU,
 	roomVersion id.RoomVersion,
 	origin string,
+	check bool,
 ) {
 	if time.Now().UTC().UnixMilli()-evt.OriginServerTS > 3600000 {
 		// Don't notify about old events
@@ -146,9 +147,14 @@ func (ps *PolicyServer) NotifyBlockedEvent(
 		}
 	}
 	backtickCount := max(exstrings.LongestSequenceOf(formattedData, '`')+1, 3)
+	prefix := "Blocked an event"
+	if check {
+		prefix = "Marked an event as spam"
+	}
 	msg := fmt.Sprintf(
-		"Blocked an event in %s from %s (requested by %s): %s\n"+
+		"%s in %s from %s (requested by %s): %s\n"+
 			"<details><summary>Event JSON</summary>\n\n%sjson\n%s\n%s\n</details>",
+		prefix,
 		pe.formatRoomLink(ctx, evt.RoomID, evt.Sender.Homeserver(), pe.Bot.UserID.Homeserver()),
 		format.MarkdownMention(evt.Sender),
 		format.SafeMarkdownCode(origin),
@@ -208,7 +214,7 @@ func (ps *PolicyServer) HandleSign(
 	if rec == PSRecommendationSpam {
 		// Don't sign spam events
 		log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
-		go ps.NotifyBlockedEvent(context.WithoutCancel(ctx), match, evaluator, evt, roomVersion, originServer)
+		go ps.NotifyBlockedEvent(context.WithoutCancel(ctx), match, evaluator, evt, roomVersion, originServer, originServer == fakeLegacyCheckServerName)
 		return nil
 	}
 	log.Trace().Msg("Event accepted")
