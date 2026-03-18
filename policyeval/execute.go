@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/random"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
@@ -188,7 +189,7 @@ func (pe *PolicyEvaluator) ApplyBan(
 		} else {
 			profile := &event.MemberEventContent{
 				Membership:          event.MembershipBan,
-				Displayname:         "Banned User",
+				Displayname:         "Banned User " + random.String(8),
 				AvatarURL:           "mxc://matrix.org/NZGChxcCXbBvgkCNZTLXlpux",
 				MSC4293RedactEvents: shouldRedact,
 			}
