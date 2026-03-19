@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/random"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
@@ -178,12 +179,22 @@ func (pe *PolicyEvaluator) ApplyBan(
 	}
 	var err error
 	if !pe.DryRun {
-		_, err = pe.Bot.BanUser(ctx, roomID, &mautrix.ReqBanUser{
-			Reason: filterReason(policy.Reason),
-			UserID: userID,
+		if !pe.ObfuscateBans {
+			_, err = pe.Bot.BanUser(ctx, roomID, &mautrix.ReqBanUser{
+				Reason: filterReason(policy.Reason),
+				UserID: userID,
 
-			MSC4293RedactEvents: shouldRedact,
-		})
+				MSC4293RedactEvents: shouldRedact,
+			})
+		} else {
+			profile := &event.MemberEventContent{
+				Membership:          event.MembershipBan,
+				Displayname:         "Banned User " + random.String(8),
+				AvatarURL:           "mxc://matrix.org/NZGChxcCXbBvgkCNZTLXlpux",
+				MSC4293RedactEvents: shouldRedact,
+			}
+			_, err = pe.Bot.SendStateEvent(ctx, roomID, event.StateMember, userID.String(), profile)
+		}
 	}
 	if err != nil {
 		var respErr mautrix.HTTPError
