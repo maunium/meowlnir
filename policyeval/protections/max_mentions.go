@@ -84,7 +84,7 @@ func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParam
 				zerolog.Ctx(ctx).Err(execErr).Msg("failed to redact message for max_mentions")
 			}
 		}()
-	} else {
+	} else if content.Mentions != nil {
 		for _, uid := range content.Mentions.UserIDs {
 			uniqueMentions[uid] = struct{}{}
 		}
