@@ -1,6 +1,8 @@
 package policyeval
 
 import (
+	"sync"
+
 	"go.mau.fi/util/exsync"
 	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
@@ -14,15 +16,19 @@ type PolicyServer struct {
 	SigningKey     *federation.SigningKey
 	DB             *database.Database
 	redactionCache *exsync.Set[id.EventID]
+	signatureCache map[id.EventID]*database.PSSignature
+	sigCacheMu     sync.RWMutex
 }
 
 func NewPolicyServer(fed *federation.Client, serverAuth *federation.ServerAuth, signingKey *federation.SigningKey, db *database.Database) *PolicyServer {
 	return &PolicyServer{
 		redactionCache: exsync.NewSet[id.EventID](),
+		signatureCache: make(map[id.EventID]*database.PSSignature),
 		Federation:     fed,
 		ServerAuth:     serverAuth,
 		DB:             db,
 		SigningKey:     signingKey,
+		sigCacheMu:     sync.RWMutex{},
 	}
 }
 

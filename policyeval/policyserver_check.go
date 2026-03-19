@@ -110,10 +110,17 @@ func (ps *PolicyServer) HandleSign(
 		Stringer("room_id", evt.RoomID).
 		Stringer("event_id", evtID).
 		Logger()
-	sig, err := ps.DB.PSSignature.Get(ctx, evtID)
-	if err != nil {
-		return fmt.Errorf("failed to fetch signature from database: %w", err)
-	} else if sig != nil {
+	ps.sigCacheMu.RLock()
+	sig, ok := ps.signatureCache[evtID]
+	ps.sigCacheMu.RUnlock()
+	if !ok {
+		var err error
+		sig, err = ps.DB.PSSignature.Get(ctx, evtID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch signature from database: %w", err)
+		}
+	}
+	if sig != nil {
 		log.Trace().
 			Time("cached_at", sig.CreatedAt.Time).
 			Str("signature", sig.Signature).
@@ -146,6 +153,9 @@ func (ps *PolicyServer) HandleSign(
 	if !ok {
 		return errors.New("failed to retrieve signature after signing")
 	}
+	ps.sigCacheMu.Lock()
+	ps.signatureCache[evtID] = sig
+	ps.sigCacheMu.Unlock()
 	err = ps.DB.PSSignature.Put(ctx, &database.PSSignature{
 		EventID:   evtID,
 		Signature: newSig,
