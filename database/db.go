@@ -1,7 +1,10 @@
 package database
 
 import (
+	lru "github.com/hashicorp/golang-lru/v2"
 	"go.mau.fi/util/dbutil"
+	"go.mau.fi/util/exerrors"
+	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/database/upgrades"
 )
@@ -37,6 +40,7 @@ func New(db *dbutil.Database) *Database {
 			QueryHelper: dbutil.MakeQueryHelperSimple(db, func() *PSSignature {
 				return &PSSignature{}
 			}),
+			cache: exerrors.Must(lru.New[id.EventID, *PSSignature](1024)),
 		},
 	}
 }

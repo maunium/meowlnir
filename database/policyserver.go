@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 
+	lru "github.com/hashicorp/golang-lru/v2"
 	"go.mau.fi/util/dbutil"
 	"go.mau.fi/util/jsontime"
 	"maunium.net/go/mautrix/id"
@@ -22,13 +23,24 @@ const (
 
 type PSSignatureQuery struct {
 	*dbutil.QueryHelper[*PSSignature]
+	cache *lru.Cache[id.EventID, *PSSignature]
 }
 
-func (psq *PSSignatureQuery) Get(ctx context.Context, eventID id.EventID) (*PSSignature, error) {
-	return psq.QueryOne(ctx, getSignatureQuery, eventID)
+func (psq *PSSignatureQuery) Get(ctx context.Context, eventID id.EventID) (val *PSSignature, err error) {
+	var ok bool
+	val, ok = psq.cache.Get(eventID)
+	if ok {
+		return
+	}
+	val, err = psq.QueryOne(ctx, getSignatureQuery, eventID)
+	if err == nil {
+		psq.cache.Add(eventID, val)
+	}
+	return
 }
 
 func (psq *PSSignatureQuery) Put(ctx context.Context, sig *PSSignature) error {
+	psq.cache.Add(sig.EventID, sig)
 	return psq.Exec(ctx, putSignatureQuery, sig.sqlVariables()...)
 }
 
