@@ -179,7 +179,7 @@ func (pe *PolicyEvaluator) ApplyBan(
 	}
 	var err error
 	if !pe.DryRun {
-		if !pe.ObfuscateBans {
+		if !pe.protectedRoomsEvent.ObfuscateBans {
 			_, err = pe.Bot.BanUser(ctx, roomID, &mautrix.ReqBanUser{
 				Reason: filterReason(policy.Reason),
 				UserID: userID,
