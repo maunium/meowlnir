@@ -179,14 +179,10 @@ func (pe *PolicyEvaluator) ApplyBan(
 	}
 	var err error
 	if !pe.DryRun {
-		if !pe.ObfuscateBans {
-			_, err = pe.Bot.BanUser(ctx, roomID, &mautrix.ReqBanUser{
-				Reason: filterReason(policy.Reason),
-				UserID: userID,
-
-				MSC4293RedactEvents: shouldRedact,
-			})
-		} else {
+		pe.protectedRoomsLock.RLock()
+		shouldObfuscate := pe.protectedRoomsEvent.ObfuscateBans
+		pe.protectedRoomsLock.RUnlock()
+		if shouldObfuscate {
 			profile := &event.MemberEventContent{
 				Membership:          event.MembershipBan,
 				Displayname:         "Banned User " + random.String(8),
@@ -194,6 +190,13 @@ func (pe *PolicyEvaluator) ApplyBan(
 				MSC4293RedactEvents: shouldRedact,
 			}
 			_, err = pe.Bot.SendStateEvent(ctx, roomID, event.StateMember, userID.String(), profile)
+		} else {
+			_, err = pe.Bot.BanUser(ctx, roomID, &mautrix.ReqBanUser{
+				Reason: filterReason(policy.Reason),
+				UserID: userID,
+
+				MSC4293RedactEvents: shouldRedact,
+			})
 		}
 	}
 	if err != nil {

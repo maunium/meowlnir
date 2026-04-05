@@ -32,12 +32,11 @@ type protectedRoomMeta struct {
 }
 
 type PolicyEvaluator struct {
-	Bot           *bot.Bot
-	Store         *policylist.Store
-	SynapseDB     *synapsedb.SynapseDB
-	DB            *database.Database
-	DryRun        bool
-	ObfuscateBans bool
+	Bot       *bot.Bot
+	Store     *policylist.Store
+	SynapseDB *synapsedb.SynapseDB
+	DB        *database.Database
+	DryRun    bool
 
 	ManagementRoom    id.RoomID
 	RequireEncryption bool
@@ -87,7 +86,7 @@ func NewPolicyEvaluator(
 	bot *bot.Bot,
 	store *policylist.Store,
 	managementRoom id.RoomID,
-	requireEncryption, untrusted, obfuscateBans bool,
+	requireEncryption, untrusted bool,
 	provisionM4A func(context.Context, id.UserID) (id.UserID, id.RoomID, error),
 	db *database.Database,
 	synapseDB *synapsedb.SynapseDB,
@@ -107,7 +106,6 @@ func NewPolicyEvaluator(
 		ManagementRoom:       managementRoom,
 		RequireEncryption:    requireEncryption,
 		Untrusted:            untrusted,
-		ObfuscateBans:        obfuscateBans,
 		provisionM4A:         provisionM4A,
 		Admins:               exsync.NewSet[id.UserID](),
 		commandProcessor:     commands.NewProcessor[*PolicyEvaluator](bot.Client),
