@@ -26,13 +26,6 @@ func NewPolicyServer(fed *federation.Client, serverAuth *federation.ServerAuth, 
 	}
 }
 
-type PSRecommendation string
-
-const (
-	PSRecommendationOk   PSRecommendation = "ok"
-	PSRecommendationSpam PSRecommendation = "spam"
-)
-
 type LegacyPolicyServerResponse struct {
-	Recommendation PSRecommendation `json:"recommendation"`
+	Recommendation string `json:"recommendation"`
 }

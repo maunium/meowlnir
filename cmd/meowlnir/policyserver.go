@@ -34,15 +34,15 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if r.ContentLength >= 0 && r.ContentLength <= 2 {
-		resp, err := m.PolicyServer.HandleCachedLegacyCheck(r.Context(), eventID)
+		allow, err := m.PolicyServer.HandleCachedLegacyCheck(r.Context(), eventID)
 		if err != nil {
 			hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
 			mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
 			return
-		} else if resp.Recommendation == "spam" && m.Config.Meowlnir.DryRun {
+		} else if allow || m.Config.Meowlnir.DryRun {
 			exhttp.WriteJSONResponse(w, http.StatusOK, &policyeval.LegacyPolicyServerResponse{Recommendation: "ok"})
 		} else {
-			exhttp.WriteJSONResponse(w, http.StatusOK, resp)
+			exhttp.WriteJSONResponse(w, http.StatusOK, &policyeval.LegacyPolicyServerResponse{Recommendation: "spam"})
 		}
 		return
 	}
@@ -75,7 +75,7 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	resp, err := m.PolicyServer.HandleLegacyCheck(
+	allow, err := m.PolicyServer.HandleLegacyCheck(
 		r.Context(),
 		createEvt.RoomVersion,
 		eventID,
@@ -87,11 +87,15 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 		mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
 		return
 	}
-	if resp.Recommendation == "spam" && m.Config.Meowlnir.DryRun {
+	if !allow && m.Config.Meowlnir.DryRun {
 		hlog.FromRequest(r).Warn().Msg("Event would have been marked as spam, but dry run is enabled")
-		resp = &policyeval.LegacyPolicyServerResponse{Recommendation: "ok"}
+		allow = true
 	}
-	exhttp.WriteJSONResponse(w, http.StatusOK, resp)
+	if allow {
+		exhttp.WriteJSONResponse(w, http.StatusOK, &policyeval.LegacyPolicyServerResponse{Recommendation: "ok"})
+	} else {
+		exhttp.WriteJSONResponse(w, http.StatusOK, &policyeval.LegacyPolicyServerResponse{Recommendation: "spam"})
+	}
 }
 func (m *Meowlnir) PostMSC4284LegacySign(w http.ResponseWriter, r *http.Request) {
 	m.postPolicyServerSign(w, r, true)

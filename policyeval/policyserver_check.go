@@ -18,30 +18,38 @@ import (
 	"go.mau.fi/meowlnir/policylist"
 )
 
+type BlockRecommendation struct {
+	Error error            `json:"error,omitempty"`
+	Match policylist.Match `json:"match,omitempty"`
+}
+
 func (ps *PolicyServer) getRecommendation(
 	ctx context.Context,
 	pdu *pdu.PDU,
 	roomVersion id.RoomVersion,
 	evaluator *PolicyEvaluator,
 	isOrigin, isLegacyCheck bool,
-) (PSRecommendation, policylist.Match) {
+) (string, *BlockRecommendation) {
 	if pdu.Sender == evaluator.Bot.UserID || evaluator.Admins.Has(pdu.Sender) {
-		return PSRecommendationOk, nil
+		return "admin", nil
 	}
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {
 		rec := match.Recommendations().BanOrUnban
 		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
-			return PSRecommendationSpam, match
+			return "", &BlockRecommendation{Match: match}
 		}
 	}
 	match = evaluator.Store.MatchServer(watchedLists, pdu.Sender.Homeserver())
 	if match != nil {
 		rec := match.Recommendations().BanOrUnban
 		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
-			return PSRecommendationSpam, match
+			return "", &BlockRecommendation{Match: match}
 		}
+	}
+	if pdu.StateKey == nil && !pdu.VerifyContentHash() {
+		return "", &BlockRecommendation{Error: fmt.Errorf("mismatching content hash")}
 	}
 	if evaluator.protections != nil {
 		clientEvt, err := pdu.ToClientEvent(roomVersion)
@@ -49,7 +57,7 @@ func (ps *PolicyServer) getRecommendation(
 			zerolog.Ctx(ctx).Err(err).
 				Stringer("room_id", pdu.RoomID).
 				Msg("Failed to convert PDU to client event")
-			return PSRecommendationSpam, nil
+			return "", &BlockRecommendation{Error: fmt.Errorf("failed to convert PDU to client event: %w", err)}
 		}
 		if parseErr := clientEvt.Content.ParseRaw(clientEvt.Type); parseErr != nil {
 			evaluator.Bot.Log.Err(parseErr).
@@ -81,12 +89,12 @@ func (ps *PolicyServer) getRecommendation(
 				}
 				zerolog.Ctx(ctx).Trace().Bool("spam", rec).Str("protection", name).Msg("Evaluated protection")
 				if rec {
-					return PSRecommendationSpam, nil
+					return "", &BlockRecommendation{Error: fmt.Errorf("protections rejected event")}
 				}
 			}
 		}
 	}
-	return PSRecommendationOk, nil
+	return "no reason to disallow", nil
 }
 
 const PolicyServerKeyID id.KeyID = "ed25519:policy_server"
@@ -123,7 +131,7 @@ func (ps *PolicyServer) HandleSign(
 	}
 
 	log.Trace().Any("event", evt).Msg("Checking event received by policy server")
-	rec, match := ps.getRecommendation(
+	allowReason, blockRec := ps.getRecommendation(
 		ctx,
 		evt,
 		roomVersion,
@@ -131,12 +139,12 @@ func (ps *PolicyServer) HandleSign(
 		originServer == evt.Sender.Homeserver(),
 		originServer == fakeLegacyCheckServerName,
 	)
-	if rec == PSRecommendationSpam {
+	if blockRec != nil {
 		// Don't sign spam events
-		log.Debug().Stringer("recommendations", match.Recommendations()).Msg("Event rejected for spam")
+		log.Debug().Any("recommendation", blockRec).Msg("Event rejected for spam")
 		return nil
 	}
-	log.Trace().Msg("Event accepted")
+	log.Trace().Str("allow_reason", allowReason).Msg("Event accepted")
 
 	err = evt.Sign(roomVersion, ps.Federation.ServerName, PolicyServerKeyID, ps.SigningKey.Priv)
 	if err != nil {
@@ -170,41 +178,40 @@ func (ps *PolicyServer) HandleLegacyCheck(
 	evtID id.EventID,
 	pdu *pdu.PDU,
 	evaluator *PolicyEvaluator,
-) (res *LegacyPolicyServerResponse, err error) {
+) (allow bool, err error) {
 	log := zerolog.Ctx(ctx).With().
 		Stringer("event_id", evtID).
 		Stringer("room_id", pdu.RoomID).
 		Logger()
 	if pdu.VerifySignature(roomVersion, ps.Federation.ServerName, ps.getSigningKey) == nil {
 		log.Trace().Msg("Valid signature from self, short-circuiting legacy check")
-		res = &LegacyPolicyServerResponse{Recommendation: PSRecommendationOk}
-		return res, nil
+		return true, nil
 	}
 	err = ps.HandleSign(ctx, roomVersion, pdu, evaluator, fakeLegacyCheckServerName)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 	_, hasSig := pdu.Signatures[ps.Federation.ServerName][PolicyServerKeyID]
 	if hasSig {
-		return &LegacyPolicyServerResponse{Recommendation: PSRecommendationOk}, nil
+		return true, nil
 	}
-	return &LegacyPolicyServerResponse{Recommendation: PSRecommendationSpam}, nil
+	return false, nil
 }
 
-func (ps *PolicyServer) HandleCachedLegacyCheck(ctx context.Context, evtID id.EventID) (*LegacyPolicyServerResponse, error) {
+func (ps *PolicyServer) HandleCachedLegacyCheck(ctx context.Context, evtID id.EventID) (bool, error) {
 	log := zerolog.Ctx(ctx).With().
 		Stringer("event_id", evtID).
 		Logger()
 	sig, err := ps.DB.PSSignature.Get(ctx, evtID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch signature from database: %w", err)
+		return false, fmt.Errorf("failed to fetch signature from database: %w", err)
 	} else if sig != nil && sig.Signature != "" {
 		log.Trace().Msg("Found signature in database, accepting legacy check")
-		return &LegacyPolicyServerResponse{Recommendation: PSRecommendationOk}, nil
+		return true, nil
 	} else if sig != nil {
 		log.Trace().Msg("Found rejection in database, rejecting legacy check")
 	} else {
 		log.Trace().Msg("Event not found in database, rejecting legacy check")
 	}
-	return &LegacyPolicyServerResponse{Recommendation: PSRecommendationSpam}, nil
+	return false, nil
 }
