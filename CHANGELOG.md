@@ -1,3 +1,10 @@
+# v26.04
+
+* Added cache for signatures to prevent the database from being overloaded.
+* Added option to obfuscate banned user profiles
+  (thanks to [@nexy7574] in [#57] and [#60]).
+* Changed policy server to not sign redacted message events.
+
 # v26.03
 
 * Added experimental support for protections (thanks to [@nexy7574] in [#43]).
