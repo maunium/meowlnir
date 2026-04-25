@@ -4,15 +4,21 @@ package policyeval
 
 import (
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/jsontime"
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/federation/pdu"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/meowlnir/bot"
 
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
@@ -21,6 +27,13 @@ import (
 type BlockRecommendation struct {
 	Error error            `json:"error,omitempty"`
 	Match policylist.Match `json:"match,omitempty"`
+}
+
+func (rec *BlockRecommendation) String() string {
+	if rec.Error != nil {
+		return rec.Error.Error()
+	}
+	return rec.Match.Recommendations().BanOrUnban.Reason
 }
 
 func (ps *PolicyServer) getRecommendation(
@@ -89,7 +102,7 @@ func (ps *PolicyServer) getRecommendation(
 				}
 				zerolog.Ctx(ctx).Trace().Bool("spam", rec).Str("protection", name).Msg("Evaluated protection")
 				if rec {
-					return "", &BlockRecommendation{Error: fmt.Errorf("protections rejected event")}
+					return "", &BlockRecommendation{Error: fmt.Errorf("protection %q rejected event", name)}
 				}
 			}
 		}
@@ -141,6 +154,40 @@ func (ps *PolicyServer) HandleSign(
 	)
 	if blockRec != nil {
 		// Don't sign spam events
+		go func() {
+			// Notify the management room if the event didn't already exist.
+			// If the HS already had the event, this is a check on an existing event,
+			// which should not notify, as nothing was prevented.
+			ctx = context.WithoutCancel(ctx)
+			_, err := evaluator.Bot.GetEvent(ctx, evt.RoomID, evtID)
+			if err == nil {
+				return
+			} else if !errors.Is(err, mautrix.MNotFound) {
+				log.Err(err).Stringer("event_id", evtID).Stringer("room_id", evt.RoomID).Msg("Failed to get event")
+				// Assume it's new and continue
+			}
+			pretty, err := json.Marshal(evt, jsontext.WithIndent("\t"))
+			if err != nil {
+				log.Err(err).Msg("Failed to marshal event")
+				return
+			}
+			evaluator.Bot.SendNoticeOpts(
+				ctx,
+				evaluator.ManagementRoom,
+				fmt.Sprintf(
+					"Prevented %s sending a %s event in %s: %s.\n\n<details><summary>Event JSON</summary>\n\n"+
+						"```json\n%s\n```\n</details>",
+					format.MarkdownMention(evt.Sender),
+					format.SafeMarkdownCode(evt.Type),
+					format.MarkdownMentionRoomID("", evt.RoomID),
+					blockRec,
+					string(pretty),
+				),
+				&bot.SendNoticeOpts{
+					AllowHTML: true,
+				},
+			)
+		}()
 		log.Debug().Any("recommendation", blockRec).Msg("Event rejected for spam")
 		return nil
 	}
