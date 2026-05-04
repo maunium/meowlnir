@@ -4,6 +4,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 
 	"go.mau.fi/util/glob"
@@ -155,14 +156,16 @@ func (s *Store) Match(listIDs []id.RoomID, entityType EntityType, entity string)
 			return Match{fakeBanForIPLiterals}
 		}
 	}
+	entityLower := strings.ToLower(entity)
 	return s.matchFunc(listIDs, entityType, func(list *List) Match {
-		return list.Match(entity)
+		return list.Match(entity, entityLower)
 	})
 }
 
 func (s *Store) MatchExact(listIDs []id.RoomID, entityType EntityType, entity string) (output Match) {
+	entityLower := strings.ToLower(entity)
 	return s.matchFunc(listIDs, entityType, func(list *List) Match {
-		return list.MatchExact(entity)
+		return list.MatchExact(entity, entityLower)
 	})
 }
 

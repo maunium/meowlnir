@@ -11,7 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rs/zerolog v1.35.0
 	github.com/tidwall/gjson v1.18.0
-	go.mau.fi/util v0.9.8
+	go.mau.fi/util v0.9.9-0.20260504223326-1db2c46ca8b4
 	go.mau.fi/zeroconfig v0.2.0
 	golang.org/x/sync v0.20.0
 	gopkg.in/yaml.v3 v3.0.1
