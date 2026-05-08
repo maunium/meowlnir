@@ -20,6 +20,7 @@ import (
 	"go.mau.fi/util/dbutil"
 	_ "go.mau.fi/util/dbutil/litestream"
 	"go.mau.fi/util/exerrors"
+	"go.mau.fi/util/exhttp"
 	"go.mau.fi/util/exslices"
 	"go.mau.fi/util/exsync"
 	"go.mau.fi/util/exzerolog"
@@ -181,7 +182,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		}
 	}
 	inMemCache := federation.NewInMemoryCache()
-	m.Federation = federation.NewClient(m.Config.Homeserver.Domain, nil, inMemCache)
+	m.Federation = federation.NewClient(m.Config.Homeserver.Domain, nil, inMemCache, exhttp.SensibleClientSettings)
 	serverAuth := federation.NewServerAuth(m.Federation, inMemCache, func(auth federation.XMatrixAuth) string {
 		return auth.Destination
 	})

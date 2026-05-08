@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 	"go.mau.fi/util/exerrors"
+	"go.mau.fi/util/exhttp"
 	"go.mau.fi/util/exzerolog"
 	"go.mau.fi/util/ptr"
 	"go.mau.fi/zeroconfig"
@@ -30,24 +30,10 @@ import (
 )
 
 var ctx context.Context
-var defaultDialer = &net.Dialer{Timeout: 10 * time.Second}
-var defaultTransport = &http.Transport{
-	DialContext:           defaultDialer.DialContext,
-	TLSHandshakeTimeout:   10 * time.Second,
-	ResponseHeaderTimeout: 30 * time.Second,
-	ForceAttemptHTTP2:     true,
-}
-var defaultHTTP = &http.Client{Timeout: 2 * time.Minute, Transport: defaultTransport}
-var srt = federation.NewServerResolvingTransport(federation.NewInMemoryCache())
-var fed = federation.NewClient("", nil, nil)
+var fed = federation.NewClient("", nil, nil, exhttp.SensibleClientSettings.WithGlobalTimeout(2*time.Minute))
 
 func init() {
-	fedTransport := defaultTransport.Clone()
-	fedTransport.DialContext = srt.DialContext
 	fed.ResponseSizeLimit = 1024 * 1024
-	srt.Transport = fedTransport
-	srt.Dialer = defaultDialer
-	fed.HTTP.Transport = srt
 }
 
 var log *zerolog.Logger
@@ -146,7 +132,7 @@ func newClient(serverURL string) (*mautrix.Client, error) {
 func newClientWithURL(parsedURL *url.URL) *mautrix.Client {
 	return &mautrix.Client{
 		HomeserverURL:     parsedURL,
-		Client:            defaultHTTP,
+		Client:            fed.ExtHTTP,
 		Log:               log.With().Stringer("homeserver_url", parsedURL).Logger(),
 		ResponseSizeLimit: 1024 * 1024,
 	}
@@ -240,7 +226,7 @@ func checkOpenRegistration(serverName string) (string, RegMode) {
 	var cli *mautrix.Client
 	var versions *mautrix.RespVersions
 	var registerData json.RawMessage
-	wkResp, err := mautrix.DiscoverClientAPIWithClient(ctx, defaultHTTP, serverName)
+	wkResp, err := mautrix.DiscoverClientAPIWithClient(ctx, fed.ExtHTTP, serverName)
 	if wkResp != nil {
 		writeOutput("URL from .well-known: %s", wkResp.Homeserver.BaseURL)
 	}
