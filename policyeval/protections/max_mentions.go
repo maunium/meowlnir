@@ -97,8 +97,9 @@ func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParam
 				logger.Warn().Err(err).
 					Stringer("in_reply_to", reply).
 					Msg("could not fetch replied event to determine sender")
+			} else {
+				delete(uniqueMentions, prev.Sender)
 			}
-			delete(uniqueMentions, prev.Sender)
 		}
 	}
 	if len(uniqueMentions) == 0 {
