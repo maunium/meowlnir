@@ -1186,6 +1186,7 @@ var cmdSuspend = &CommandHandler{
 
 type DeactivateParams struct {
 	UserID id.UserID `json:"user"`
+	Redact bool      `json:"redact"`
 	Erase  bool      `json:"erase"`
 }
 
@@ -1196,11 +1197,41 @@ var cmdDeactivate = &CommandHandler{
 		Key:    "user",
 		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
 	}, {
+		Key:    "redact",
+		Schema: cmdschema.PrimitiveTypeBoolean.Schema(),
+	}, {
 		Key:      "erase",
 		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
 		Optional: true,
 	}},
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *DeactivateParams) {
+		if args.Redact {
+			task, err := ce.Meta.Bot.SynapseAdmin.RedactUser(ce.Ctx, args.UserID, synapseadmin.ReqRedactUser{})
+			if err != nil {
+				ce.Reply("Failed to start user redaction task: %v", err)
+			}
+			r := ce.React(ActionPendingReaction)
+			for {
+				progress, err := ce.Meta.Bot.SynapseAdmin.RedactUserStatus(ce.Ctx, task.RedactID)
+				if err != nil {
+					ce.Reply("User redaction task failed: %v", err)
+					return
+				}
+				switch progress.Status {
+				case "complete":
+					if len(progress.FailedRedactions) > 0 {
+						ce.Reply("User redaction task finished successfully but failed to redact %d events", len(progress.FailedRedactions))
+					}
+				case "failed", "cancelled":
+					ce.Reply("User redaction task failed.")
+				default:
+					time.Sleep(time.Second)
+					continue
+				}
+				break
+			}
+			_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, r)
+		}
 		err := ce.Meta.Bot.SynapseAdmin.DeactivateAccount(ce.Ctx, args.UserID, synapseadmin.ReqDeleteUser{
 			Erase: args.Erase,
 		})
