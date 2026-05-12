@@ -29,6 +29,11 @@ type MaxMentions struct {
 }
 
 func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParams) (hit bool, err error) {
+	logger := zerolog.Ctx(ctx).With().
+		Str("protection", "max_mentions").
+		Stringer("room_id", p.Evt.RoomID).
+		Stringer("event_id", p.Evt.ID).
+		Stringer("sender", p.Evt.Sender).Logger()
 	if mm.Limit <= 0 {
 		return false, nil // no-op
 	}
@@ -52,11 +57,7 @@ func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParam
 	origin := time.UnixMilli(p.Evt.Timestamp)
 	if !useOrigin(mm.DontTrustServer, origin) {
 		if !mm.DontTrustServer {
-			zerolog.Ctx(ctx).Warn().
-				Str("protection", "max_mentions").
-				Stringer("sender", p.Evt.Sender).
-				Stringer("room_id", p.Evt.RoomID).
-				Stringer("event_id", p.Evt.ID).
+			logger.Warn().
 				Time("event_origin", origin).
 				Time("current_time", now).
 				Msg("event origin time is more than 1 hour in the future; falling back to local time")
@@ -90,16 +91,27 @@ func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParam
 		for _, uid := range content.Mentions.UserIDs {
 			uniqueMentions[uid] = struct{}{}
 		}
+		delete(uniqueMentions, p.Evt.Sender)
+		delete(uniqueMentions, p.Eval.Bot.UserID)
+		if reply := content.RelatesTo.GetReplyTo(); reply != "" {
+			prev, err := p.Eval.Bot.GetEvent(ctx, p.Evt.RoomID, reply)
+			if err != nil {
+				logger.Warn().Err(err).
+					Stringer("in_reply_to", reply).
+					Msg("could not fetch replied event to determine sender")
+			} else {
+				delete(uniqueMentions, prev.Sender)
+			}
+		}
+	}
+	if len(uniqueMentions) == 0 {
+		return false, nil
 	}
 
 	// Count mentions
 	mm.counts[p.Evt.Sender] += len(uniqueMentions)
 	mm.expire[p.Evt.Sender] = origin.Add(mm.Per.Duration)
-	zerolog.Ctx(ctx).Trace().
-		Str("protection", "max_mentions").
-		Stringer("sender", p.Evt.Sender).
-		Stringer("room_id", p.Evt.RoomID).
-		Stringer("event_id", p.Evt.ID).
+	logger.Trace().
 		Int("count", mm.counts[p.Evt.Sender]).
 		Time("expires", mm.expire[p.Evt.Sender]).
 		Msg("max_mentions count and expiry updated")
@@ -127,7 +139,7 @@ func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParam
 					),
 				)
 			} else {
-				zerolog.Ctx(ctx).Err(execErr).Msg("failed to redact message for max_mentions")
+				logger.Err(execErr).Msg("failed to redact message for max_mentions")
 			}
 		}()
 		// If the infractions are over the limit, issue a ban
@@ -157,7 +169,7 @@ func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParam
 						),
 					)
 				} else {
-					zerolog.Ctx(ctx).Err(execErr).Msg("failed to ban user for max_mentions")
+					logger.Err(execErr).Msg("failed to ban user for max_mentions")
 				}
 			}()
 		}
