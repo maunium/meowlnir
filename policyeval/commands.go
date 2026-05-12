@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -62,8 +63,22 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 	pe.commandProcessor.Process(ctx, evt)
 }
 
-func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event) {
+func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event, execProtections bool) {
 	pe.commandProcessor.Process(ctx, evt)
+	if execProtections && pe.ShouldExecuteProtections(ctx, evt, false) {
+		for _, prot := range pe.protections {
+			hit, err := prot.Execute(ctx, ProtectionParams{Eval: pe, Evt: evt})
+			if err != nil {
+				pe.Bot.Log.Err(err).
+					Stringer("room_id", evt.RoomID).
+					Stringer("event_id", evt.ID).
+					Msg("Failed to execute protection")
+			}
+			if hit {
+				break
+			}
+		}
+	}
 }
 
 type JoinArgs struct {
@@ -303,8 +318,19 @@ var cmdRedact = &CommandHandler{
 				return
 			}
 		}
+		var workingEvtID id.EventID
+		defer func() {
+			if workingEvtID != "" {
+				_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, workingEvtID)
+			}
+			ce.React(SuccessReaction)
+		}()
 		if target.Sigil1 == '@' {
-			ce.Meta.RedactUser(ce.Ctx, target.UserID(), args.Reason, false)
+			workingEvtID = ce.React(ActionPendingReaction)
+			redactedCount := ce.Meta.RedactUser(ce.Ctx, target.UserID(), args.Reason, false)
+			if redactedCount == 0 {
+				ce.Reply("No events from %s were redacted.", format.MarkdownMention(target.UserID()))
+			}
 		} else if target.Sigil1 == '!' && target.Sigil2 == '$' {
 			_, err = ce.Meta.Bot.RedactEvent(ce.Ctx, target.RoomID(), target.EventID(), mautrix.ReqRedact{Reason: args.Reason})
 			if err != nil {
@@ -315,7 +341,6 @@ var cmdRedact = &CommandHandler{
 			ce.Reply("Invalid target %s (must be a user ID or event link)", format.SafeMarkdownCode(args.Target))
 			return
 		}
-		ce.React(SuccessReaction)
 	}),
 }
 
@@ -347,16 +372,45 @@ var cmdRedactRecent = &CommandHandler{
 		}
 		since, err := time.ParseDuration(args.Since)
 		if err != nil {
-			ce.Reply("Invalid duration %s: %v", format.SafeMarkdownCode(args.Since), err)
-			return
+			uri, uriErr := id.ParseMatrixURIOrMatrixToURL(string(args.Since))
+			if uri != nil && uri.EventID() != "" {
+				afterEvt, err := ce.Meta.Bot.GetEvent(ce.Ctx, room, uri.EventID())
+				if err != nil {
+					ce.Reply("Failed to fetch %s: %v", format.SafeMarkdownCode(uri.EventID()), err)
+					return
+				}
+				since = time.Since(time.UnixMilli(afterEvt.Timestamp))
+			} else if strings.HasPrefix(args.Since, "$") {
+				eventID := id.EventID(args.Since)
+				afterEvt, err := ce.Meta.Bot.GetEvent(ce.Ctx, room, eventID)
+				if err != nil {
+					ce.Reply("Failed to fetch %s: %v", format.SafeMarkdownCode(eventID), err)
+					return
+				}
+				since = time.Since(time.UnixMilli(afterEvt.Timestamp))
+			} else {
+				ce.Reply(
+					"Invalid duration or event link %s: %s & %s",
+					format.SafeMarkdownCode(args.Since),
+					format.SafeMarkdownCode(err.Error()),
+					format.SafeMarkdownCode(uriErr.Error()),
+				)
+				return
+			}
 		}
+		workingEvtID := ce.React(ActionPendingReaction)
+		defer func() {
+			if workingEvtID != "" {
+				_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, workingEvtID)
+			}
+			ce.React(SuccessReaction)
+		}()
 		redactedCount, err := ce.Meta.redactRecentMessages(ce.Ctx, room, "", since, false, args.Reason)
 		if err != nil {
 			ce.Reply("Failed to redact recent messages: %v", err)
 			return
 		}
 		ce.Reply("Redacted %d messages", redactedCount)
-		ce.React(SuccessReaction)
 	}),
 }
 
@@ -1690,6 +1744,133 @@ var cmdLists = &CommandHandler{
 	},
 }
 
+type PolicyServerEnableParams struct {
+	Rooms []cmdschema.RoomIDOrString `json:"rooms"`
+}
+
+var cmdPolicyServerDisable = &CommandHandler{
+	Name:        "disable",
+	Aliases:     []string{"unprotect"},
+	Description: event.MakeExtensibleText("Turn off the policy server in rooms"),
+}
+var cmdPolicyServerEnable = &CommandHandler{
+	Name:        "enable",
+	Aliases:     []string{"protect"},
+	Description: event.MakeExtensibleText("Turn on the policy server in rooms"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:         "rooms",
+		Schema:      cmdschema.Array(cmdschema.ParameterSchemaJoinableRoom),
+		Optional:    true,
+		Description: event.MakeExtensibleText("Individual rooms to update. If unset, all protected rooms are updated"),
+	}},
+	TailParam: "rooms",
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *PolicyServerEnableParams) {
+		disable := ce.Handler == cmdPolicyServerDisable
+		if !disable && ce.Meta.policyServer.SigningKey == nil {
+			ce.Reply("Policy server is not available")
+			return
+		}
+		var rooms []id.RoomID
+		if len(args.Rooms) == 0 {
+			rooms = ce.Meta.GetProtectedRooms()
+		} else {
+			rooms = make([]id.RoomID, 0, len(args.Rooms))
+			for _, room := range args.Rooms {
+				roomID := resolveRoom(ce, room)
+				if roomID == "" {
+					ce.Reply("Failed to resolve room %s", format.SafeMarkdownCode(room))
+				} else {
+					rooms = append(rooms, roomID)
+				}
+			}
+		}
+		content := &event.RoomPolicyEventContent{
+			Via:       ce.Meta.Bot.ServerName,
+			PublicKey: ce.Meta.policyServer.SigningKey.Pub,
+			PublicKeys: &event.PolicyServerPublicKeys{
+				Ed25519: ce.Meta.policyServer.SigningKey.Pub,
+			},
+		}
+		if disable {
+			content = &event.RoomPolicyEventContent{}
+		}
+		var output []string
+		for _, roomID := range rooms {
+			if !disable && !ce.Meta.IsProtectedRoom(roomID) {
+				output = append(output, fmt.Sprintf("* Skipped %s as it is not a protected room", format.MarkdownMentionRoomID("", roomID)))
+			} else if _, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, roomID, event.StateRoomPolicy, "", content); err != nil {
+				output = append(output, fmt.Sprintf("* Failed to set `m.room.policy` in %s: %v", format.MarkdownMentionRoomID("", roomID), err))
+			} else if _, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, roomID, event.StateUnstableRoomPolicy, "", content); err != nil {
+				output = append(output, fmt.Sprintf("* Failed to set `org.matrix.msc4284.policy` in %s: %v", format.MarkdownMentionRoomID("", roomID), err))
+			} else {
+				output = append(output, fmt.Sprintf("* Successfully updated %s", format.MarkdownMentionRoomID("", roomID)))
+			}
+		}
+		ce.Reply(strings.Join(output, "\n"))
+	}),
+}
+
+var cmdPolicyServer = &CommandHandler{
+	Name: "policyserver",
+	Subcommands: []*CommandHandler{
+		cmdPolicyServerEnable,
+		cmdPolicyServerDisable,
+	},
+	Aliases:     []string{"ps"},
+	Parameters:  make([]*cmdschema.Parameter, 0),
+	Description: event.MakeExtensibleText("Check status of policy server"),
+	Func: func(ce *CommandEvent) {
+		if ce.Meta.policyServer.SigningKey != nil {
+			ce.Reply("Policy server is available. Public key: %s", format.SafeMarkdownCode(ce.Meta.policyServer.SigningKey.Pub.String()))
+		} else {
+			ce.Reply("Policy server is not available")
+		}
+	},
+}
+
+type ToggleProtectionParams struct {
+	Name string `json:"name"`
+}
+
+var cmdToggleProtection = &CommandHandler{
+	Name: "toggleprotection",
+	Parameters: []*cmdschema.Parameter{{
+		Key:         "name",
+		Schema:      cmdschema.PrimitiveTypeString.Schema(),
+		Description: event.MakeExtensibleText("The protection type to toggle"),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *ToggleProtectionParams) {
+		_, ok := protectionsRegistry[args.Name]
+		if !ok {
+			ce.Reply("Unknown protection type %s", format.SafeMarkdownCode(args.Name))
+			return
+		}
+		ce.Meta.protectedRoomsLock.RLock()
+		evtContent := ce.Meta.protectedRoomsEvent
+		if evtContent == nil {
+			evtContent = &config.ProtectedRoomsEventContent{Rooms: []id.RoomID{}}
+		}
+		contentCopy := *evtContent
+		contentCopy.Protections = maps.Clone(contentCopy.Protections)
+		ce.Meta.protectedRoomsLock.RUnlock()
+		_, enabled := contentCopy.Protections[args.Name]
+		if enabled {
+			delete(contentCopy.Protections, args.Name)
+		} else {
+			if contentCopy.Protections == nil {
+				contentCopy.Protections = make(map[string]json.RawMessage)
+			}
+			contentCopy.Protections[args.Name] = json.RawMessage("{}")
+		}
+		_, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateProtectedRooms, "", &contentCopy)
+		if err != nil {
+			ce.Reply("Failed to update protected rooms: %v", err)
+			return
+		}
+		ce.React(SuccessReaction)
+	}),
+}
+
 type HelpParams struct {
 	Command string `json:"command"`
 }
@@ -1716,7 +1897,7 @@ var cmdHelp = &CommandHandler{
 				"* `!leave <rooms...>` - Leave a room\n" +
 				"* `!powerlevel <room|all> <key> <level>` - Set a power level\n" +
 				"* `!redact <event link or user ID> [reason]` - Redact all messages from a user\n" +
-				"* `!redact-recent <room> <since duration> [reason]` - Redact all recent messages in a room\n" +
+				"* `!redact-recent <room> <since duration or event link> [reason]` - Redact all recent messages in a room\n" +
 				"* `!kick [--force] [--room <room ID>] <user ID> [reason]` - Kick a user from all rooms\n" +
 				"* `!ban [--hash] <list shortcode> <entity> [reason]` - Add a ban policy\n" +
 				"* `!takedown [--hash] <list shortcode> <entity>` - Add a takedown policy\n" +
@@ -1860,4 +2041,5 @@ func init() {
 	cmdRoomBlock.CopyFrom(cmdRoomDelete)
 	cmdUnprotectRoom.CopyFrom(cmdProtectRoom)
 	cmdUnsuspend.CopyFrom(cmdSuspend)
+	cmdPolicyServerDisable.CopyFrom(cmdPolicyServerEnable)
 }

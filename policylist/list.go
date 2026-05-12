@@ -2,6 +2,7 @@ package policylist
 
 import (
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,7 +84,7 @@ func deletePolicyFromStaticMap[T comparable](m map[T][]*Policy, key T, policy *P
 
 func (l *List) removeFromStaticMaps(policy *Policy) {
 	if policy.Entity != "" {
-		deletePolicyFromStaticMap(l.byEntity, policy.Entity, policy)
+		deletePolicyFromStaticMap(l.byEntity, strings.ToLower(policy.Entity), policy)
 	}
 	if policy.EntityHash != nil {
 		deletePolicyFromStaticMap(l.byEntityHash, *policy.EntityHash, policy)
@@ -112,7 +113,8 @@ func (l *List) Add(value *Policy) (*Policy, bool) {
 	l.byStateKey[value.StateKey] = node
 	if !value.Ignored {
 		if value.Entity != "" {
-			l.byEntity[value.Entity] = append(l.byEntity[value.Entity], value)
+			lowerEntity := strings.ToLower(value.Entity)
+			l.byEntity[lowerEntity] = append(l.byEntity[lowerEntity], value)
 		}
 		if value.EntityHash != nil {
 			l.byEntityHash[*value.EntityHash] = append(l.byEntityHash[*value.EntityHash], value)
@@ -154,14 +156,14 @@ var matchDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	},
 }, []string{"policy_list", "entity_type"})
 
-func (l *List) Match(entity string) (output Match) {
+func (l *List) Match(entity, entityLower string) (output Match) {
 	if entity == "" {
 		return
 	}
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 	start := time.Now()
-	exactMatch, ok := l.byEntity[entity]
+	exactMatch, ok := l.byEntity[entityLower]
 	if ok {
 		output = append(output, exactMatch...)
 	}
@@ -177,14 +179,18 @@ func (l *List) Match(entity string) (output Match) {
 	return
 }
 
-func (l *List) MatchExact(entity string) (output Match) {
+func (l *List) MatchExact(entity, entityLower string) (output Match) {
 	if entity == "" {
 		return
 	}
 	l.lock.RLock()
 	defer l.lock.RUnlock()
-	if value, ok := l.byEntity[entity]; ok {
-		output = append(output, value...)
+	if value, ok := l.byEntity[entityLower]; ok {
+		for _, item := range value {
+			if item.Entity == entity {
+				output = append(output, item)
+			}
+		}
 	}
 	if value, ok := l.byEntityHash[util.SHA256String(entity)]; ok {
 		output = append(output, value...)

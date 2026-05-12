@@ -53,6 +53,7 @@ type PolicyEvaluator struct {
 	watchedListsNA      []id.RoomID
 	watchedListsForACLs []id.RoomID
 	watchedListsLock    sync.RWMutex
+	protections         map[string]Protection
 
 	configLock sync.Mutex
 	aclLock    sync.Mutex
@@ -85,8 +86,7 @@ func NewPolicyEvaluator(
 	bot *bot.Bot,
 	store *policylist.Store,
 	managementRoom id.RoomID,
-	requireEncryption bool,
-	untrusted bool,
+	requireEncryption, untrusted bool,
 	provisionM4A func(context.Context, id.UserID) (id.UserID, id.RoomID, error),
 	db *database.Database,
 	synapseDB *synapsedb.SynapseDB,
@@ -112,6 +112,7 @@ func NewPolicyEvaluator(
 		protectedRoomMembers: make(map[id.UserID][]id.RoomID),
 		memberHashes:         make(map[[32]byte]id.UserID),
 		watchedListsMap:      make(map[id.RoomID]*config.WatchedPolicyList),
+		protections:          make(map[string]Protection),
 		protectedRooms:       make(map[id.RoomID]*protectedRoomMeta),
 		wantToProtect:        make(map[id.RoomID]struct{}),
 		isJoining:            make(map[id.RoomID]struct{}),
@@ -166,6 +167,8 @@ func NewPolicyEvaluator(
 		cmdLists,
 		cmdListsSubscribe,
 		cmdListsUnsubscribe,
+		cmdPolicyServer,
+		cmdToggleProtection,
 		cmdVersion,
 		cmdHelp,
 	)
@@ -254,9 +257,6 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 			"Protecting %d rooms with %d users (%d all time) using %d lists.",
 			initDuration, evalDuration, protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
 	}
-	if pe.policyServer.SigningKey != nil {
-		msg += fmt.Sprintf("\n\nPolicy server signatures are enabled with the public key `%s`.", pe.policyServer.SigningKey.Pub)
-	}
 	if pe.DryRun {
 		msg += "\n\n**Dry run mode is enabled, no actions will be taken.**"
 	}
@@ -340,4 +340,15 @@ func (pe *PolicyEvaluator) handlePowerLevels(ctx context.Context, evt *event.Eve
 	}
 	pe.Admins.ReplaceAll(admins)
 	return content, ""
+}
+
+func (pe *PolicyEvaluator) getPowerLevels(ctx context.Context, roomID id.RoomID) (*event.PowerLevelsEventContent, error) {
+	pl, err := pe.Bot.StateStore.GetPowerLevels(ctx, roomID)
+	if err != nil || pl == nil {
+		// Fallback to fetching from server
+		if err = pe.Bot.StateEvent(ctx, roomID, event.StatePowerLevels, "", &pl); err != nil {
+			return nil, err
+		}
+	}
+	return pl, err
 }
