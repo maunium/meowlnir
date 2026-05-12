@@ -91,6 +91,8 @@ func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParam
 		for _, uid := range content.Mentions.UserIDs {
 			uniqueMentions[uid] = struct{}{}
 		}
+		delete(uniqueMentions, p.Evt.Sender)
+		delete(uniqueMentions, p.Eval.Bot.UserID)
 		if reply := content.RelatesTo.GetReplyTo(); reply != "" {
 			prev, err := p.Eval.Bot.GetEvent(ctx, p.Evt.RoomID, reply)
 			if err != nil {
