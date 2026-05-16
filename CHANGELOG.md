@@ -1,3 +1,7 @@
+# v26.05
+
+* Changed policy matching to be case-insensitive.
+
 # v26.04
 
 * Added cache for signatures to prevent the database from being overloaded.
