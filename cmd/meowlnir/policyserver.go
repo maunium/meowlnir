@@ -141,7 +141,12 @@ func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, 
 	if ok {
 		//sigs[m.PolicyServer.Federation.ServerName] = map[id.KeyID]string{policyeval.PolicyServerKeyID: sig}
 		// Return all signatures to work around a synapse bug where it only does a shallow merge
-		// https://github.com/element-hq/synapse/blob/v1.148.0/synapse/handlers/room_policy.py#L177
+		// https://github.com/element-hq/synapse/blob/v1.153.0/synapse/handlers/room_policy.py#L264
+		// See https://github.com/element-hq/synapse/issues/19796
+		//
+		// Since the bug is on all the receiving servers instead of the sending server,
+		// this hack probably can't be removed until Synapse gets support for asking
+		// its own server name for outgoing event signatures.
 		sigs[m.PolicyServer.Federation.ServerName] = parsedPDU.Signatures[m.PolicyServer.Federation.ServerName]
 	} else if !legacy {
 		mautrix.MForbidden.
