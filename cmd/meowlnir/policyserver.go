@@ -155,5 +155,5 @@ func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, 
 			Write(w)
 		return
 	}
-	exhttp.WriteJSONResponse(w, http.StatusOK, parsedPDU.Signatures)
+	exhttp.WriteJSONResponse(w, http.StatusOK, sigs)
 }
