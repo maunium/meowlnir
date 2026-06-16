@@ -9,7 +9,7 @@ import (
 	"go.mau.fi/meowlnir/policyeval"
 )
 
-const version = "26.05"
+const version = "26.06"
 
 var (
 	BuildTime string

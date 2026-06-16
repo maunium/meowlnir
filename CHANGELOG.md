@@ -1,3 +1,8 @@
+# v26.06
+
+* Fixed policy server accidentally returning all signatures on the event instead
+  of only signatures for the policy server name.
+
 # v26.05
 
 * Changed policy matching to be case-insensitive.
