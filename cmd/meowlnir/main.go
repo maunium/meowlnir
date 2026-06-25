@@ -105,7 +105,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
 	// This is not technically necessary as policyeval/serveracl.go already ignores the local server,
 	// but it makes it more explicit in logs that the policy is ignored.
-	if !slices.Contains(policylist.HackyRuleFilter, m.Config.Homeserver.Domain) {
+	if policylist.HackyRuleFilter != nil && !slices.Contains(policylist.HackyRuleFilter, m.Config.Homeserver.Domain) {
 		policylist.HackyRuleFilter = append(policylist.HackyRuleFilter, m.Config.Homeserver.Domain)
 	}
 	policylist.HackyRuleFilterHashes = exslices.CastFunc(policylist.HackyRuleFilter, func(s string) [32]byte {

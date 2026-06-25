@@ -39,7 +39,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str|up.Null, "meowlnir", "report_room")
 	helper.Copy(up.Str|up.Null, "meowlnir", "room_ban_room")
 	helper.Copy(up.Bool, "meowlnir", "load_all_room_hashes")
-	helper.Copy(up.List, "meowlnir", "hacky_rule_filter")
+	helper.Copy(up.List|up.Null, "meowlnir", "hacky_rule_filter")
 	helper.Copy(up.List, "meowlnir", "hacky_redact_patterns")
 	helper.Copy(up.Map, "meowlnir", "admin_tokens")
 
