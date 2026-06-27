@@ -178,7 +178,7 @@ var cmdPowerLevel = &CommandHandler{
 		Key: "room",
 		Schema: cmdschema.Union(
 			cmdschema.Literal("all"),
-			cmdschema.PrimitiveTypeRoomID.Schema(),
+			cmdschema.ParameterSchemaJoinableRoom,
 		),
 	}, {
 		Key: "key",
