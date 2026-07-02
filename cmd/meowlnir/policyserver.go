@@ -52,6 +52,7 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 		mautrix.MNotJSON.WithMessage("Request body is not valid JSON").Write(w)
 		return
 	}
+	_, _ = <-m.startupComplete
 	var ok bool
 	m.MapLock.RLock()
 	eval, ok := m.EvaluatorByProtectedRoom[parsedPDU.RoomID]
@@ -112,6 +113,7 @@ func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, 
 		mautrix.MNotJSON.WithMessage("Request body is not valid JSON").Write(w)
 		return
 	}
+	_, _ = <-m.startupComplete
 	var ok bool
 	m.MapLock.RLock()
 	eval, ok := m.EvaluatorByProtectedRoom[parsedPDU.RoomID]

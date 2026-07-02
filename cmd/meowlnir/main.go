@@ -73,6 +73,7 @@ type Meowlnir struct {
 	HackyAutoRedactPatterns   []glob.Glob
 
 	appservicePingOnce sync.Once
+	startupComplete    chan struct{}
 
 	RoomHashes *roomhash.Map
 }
@@ -138,6 +139,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		}
 	}
 
+	m.startupComplete = make(chan struct{})
 	m.RoomHashes = roomhash.NewMap()
 	m.DB = database.New(mainDB)
 	m.StateStore = sqlstatestore.NewSQLStateStore(mainDB, dbutil.ZeroLogger(m.Log.With().Str("db_section", "matrix_state").Logger()), false)
@@ -384,6 +386,7 @@ func (m *Meowlnir) Run(ctx context.Context) {
 
 	m.Log.Info().Msg("Startup complete")
 	m.AS.Ready = true
+	close(m.startupComplete)
 
 	<-ctx.Done()
 	err = m.DB.Close()
