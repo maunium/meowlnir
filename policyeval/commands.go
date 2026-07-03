@@ -1390,6 +1390,7 @@ type ListsSubscribeParams struct {
 	DisableNotifications bool                     `json:"disable-notifications"`
 	DontAutoUnban        bool                     `json:"dont-auto-unban"`
 	AutoSuspend          bool                     `json:"auto-suspend"`
+	InsertBefore         string                   `json:"insert-before"`
 }
 
 var cmdListsSubscribe = &CommandHandler{
@@ -1428,6 +1429,11 @@ var cmdListsSubscribe = &CommandHandler{
 		{
 			Key:      "auto-suspend",
 			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "insert-before",
+			Schema:   cmdschema.PrimitiveTypeString.Schema(),
 			Optional: true,
 		},
 	},
@@ -1507,7 +1513,19 @@ var cmdListsSubscribe = &CommandHandler{
 			AutoSuspend:        args.AutoSuspend,
 			AutoUnban:          !args.DontAutoUnban,
 		}
-		contentCopy.Lists = append(contentCopy.Lists, newList)
+		inserted := false
+		if args.InsertBefore != "" {
+			for i, item := range contentCopy.Lists {
+				if item.Shortcode == args.InsertBefore || item.RoomID.String() == args.InsertBefore || item.Name == args.InsertBefore {
+					contentCopy.Lists = slices.Insert(contentCopy.Lists, i, newList)
+					inserted = true
+					break
+				}
+			}
+		}
+		if !inserted {
+			contentCopy.Lists = append(contentCopy.Lists, newList)
+		}
 		_, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateWatchedLists, "", &contentCopy)
 		if err != nil {
 			ce.Reply("Failed to update watched lists: %v", err)

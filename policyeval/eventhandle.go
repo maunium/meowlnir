@@ -224,6 +224,7 @@ func (pe *PolicyEvaluator) HandleTombstone(ctx context.Context, evt *event.Event
 							DisableNotifications: watchedList.DontNotifyOnChange,
 							DontAutoUnban:        !watchedList.AutoUnban,
 							AutoSuspend:          watchedList.AutoSuspend,
+							InsertBefore:         evt.RoomID.String(),
 						},
 					},
 					"/ignore": "",
