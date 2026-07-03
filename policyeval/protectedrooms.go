@@ -34,11 +34,16 @@ func (pe *PolicyEvaluator) IsProtectedRoom(roomID id.RoomID) bool {
 	return protected
 }
 
-func (pe *PolicyEvaluator) GetProtectedRoomCreateEvent(roomID id.RoomID) *event.CreateEventContent {
+func (pe *PolicyEvaluator) getProtectedRoomMeta(roomID id.RoomID) *protectedRoomMeta {
 	pe.protectedRoomsLock.RLock()
-	meta, ok := pe.protectedRooms[roomID]
+	meta := pe.protectedRooms[roomID]
 	pe.protectedRoomsLock.RUnlock()
-	if !ok {
+	return meta
+}
+
+func (pe *PolicyEvaluator) GetProtectedRoomCreateEvent(roomID id.RoomID) *event.CreateEventContent {
+	meta := pe.getProtectedRoomMeta(roomID)
+	if meta == nil {
 		return nil
 	}
 	return meta.Create
