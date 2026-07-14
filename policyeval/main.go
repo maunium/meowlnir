@@ -139,6 +139,7 @@ func NewPolicyEvaluator(
 	}
 	pe.commandProcessor.ReactionCommandPrefix = "/"
 	pe.commandProcessor.Register(
+		cmdMeow,
 		cmdJoin,
 		cmdKnock,
 		cmdLeave,

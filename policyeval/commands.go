@@ -81,6 +81,19 @@ func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event,
 	}
 }
 
+var cmdMeow = &CommandHandler{
+	Name:        "meow",
+	Description: event.MakeExtensibleText("Meow"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:      "meow",
+		Schema:   cmdschema.PrimitiveTypeString.Schema(),
+		Optional: true,
+	}},
+	Func: func(ce *commands.Event[*PolicyEvaluator]) {
+		ce.Reply("Meow " + strings.Join(ce.Args, " "))
+	},
+}
+
 type JoinArgs struct {
 	Rooms []cmdschema.RoomIDOrString `json:"rooms"`
 }
