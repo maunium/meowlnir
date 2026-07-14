@@ -81,6 +81,10 @@ func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event,
 	}
 }
 
+type MeowArgs struct {
+	Meow string `json:"meow"`
+}
+
 var cmdMeow = &CommandHandler{
 	Name:        "meow",
 	Description: event.MakeExtensibleText("Meow"),
@@ -89,9 +93,10 @@ var cmdMeow = &CommandHandler{
 		Schema:   cmdschema.PrimitiveTypeString.Schema(),
 		Optional: true,
 	}},
-	Func: func(ce *commands.Event[*PolicyEvaluator]) {
-		ce.Reply("Meow " + strings.Join(ce.Args, " "))
-	},
+	TailParam: "meow",
+	Func: commands.WithParsedArgs(func(ce *commands.Event[*PolicyEvaluator], args *MeowArgs) {
+		ce.Reply("Meow " + args.Meow)
+	}),
 }
 
 type JoinArgs struct {
