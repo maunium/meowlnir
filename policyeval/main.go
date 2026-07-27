@@ -235,35 +235,37 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 		errors = append(errors, errorMsgs...)
 	}
 	initDuration := time.Since(start)
-	start = time.Now()
-	pe.EvaluateAll(ctx)
-	evalDuration := time.Since(start)
-	pe.protectedRoomsLock.Lock()
-	userCount := len(pe.protectedRoomMembers)
-	var joinedUserCount int
-	for _, rooms := range pe.protectedRoomMembers {
-		if len(rooms) > 0 {
-			joinedUserCount++
+	go func() {
+		start = time.Now()
+		pe.EvaluateAll(ctx)
+		evalDuration := time.Since(start)
+		pe.protectedRoomsLock.Lock()
+		userCount := len(pe.protectedRoomMembers)
+		var joinedUserCount int
+		for _, rooms := range pe.protectedRoomMembers {
+			if len(rooms) > 0 {
+				joinedUserCount++
+			}
 		}
-	}
-	protectedRoomsCount := len(pe.protectedRooms)
-	pe.protectedRoomsLock.Unlock()
-	var msg string
-	if len(errors) > 0 {
-		msg = fmt.Sprintf("Errors occurred during initialization:\n\n%s\n\nProtecting %d rooms with %d users (%d all time) using %d lists.",
-			strings.Join(errors, "\n"), protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
-	} else {
-		msg = fmt.Sprintf("Initialization completed successfully (took %s to load data and %s to evaluate rules). "+
-			"Protecting %d rooms with %d users (%d all time) using %d lists.",
-			initDuration, evalDuration, protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
-	}
-	if pe.DryRun {
-		msg += "\n\n**Dry run mode is enabled, no actions will be taken.**"
-	}
-	pe.sendNotice(ctx, msg)
-	if pls.GetUserLevel(pe.Bot.UserID) >= pls.GetEventLevel(event.StateMSC4391BotCommand) {
-		pe.syncCommandDescriptions(ctx, state[event.StateMSC4391BotCommand])
-	}
+		protectedRoomsCount := len(pe.protectedRooms)
+		pe.protectedRoomsLock.Unlock()
+		var msg string
+		if len(errors) > 0 {
+			msg = fmt.Sprintf("Errors occurred during initialization:\n\n%s\n\nProtecting %d rooms with %d users (%d all time) using %d lists.",
+				strings.Join(errors, "\n"), protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
+		} else {
+			msg = fmt.Sprintf("Initialization completed successfully (took %s to load data and %s to evaluate rules). "+
+				"Protecting %d rooms with %d users (%d all time) using %d lists.",
+				initDuration, evalDuration, protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
+		}
+		if pe.DryRun {
+			msg += "\n\n**Dry run mode is enabled, no actions will be taken.**"
+		}
+		pe.sendNotice(ctx, msg)
+		if pls.GetUserLevel(pe.Bot.UserID) >= pls.GetEventLevel(event.StateMSC4391BotCommand) {
+			pe.syncCommandDescriptions(ctx, state[event.StateMSC4391BotCommand])
+		}
+	}()
 	return nil
 }
 
