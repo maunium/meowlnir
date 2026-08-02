@@ -24,19 +24,24 @@ var GalleryAllowedItemTypes = []event.MessageType{
 
 // NoMedia is a protection that redacts messages containing media of disallowed types.
 type NoMedia struct {
-	AllowImages         bool        `json:"allow_images"`           // allow m.image
-	AllowVideos         bool        `json:"allow_videos"`           // allow m.video
-	AllowAudio          bool        `json:"allow_audio"`            // allow m.audio
-	AllowFiles          bool        `json:"allow_files"`            // allow m.file
-	AllowStickers       bool        `json:"allow_stickers"`         // allow m.sticker event type
-	DenyCustomReactions bool        `json:"deny_custom_reactions"`  // deny m.reaction events with mxc://-prefixed keys
-	DenyInlineImages    bool        `json:"deny_inline_images"`     // deny text with mxc:// in the formatted_body
-	IgnoreUsers         []id.UserID `json:"ignore_users,omitempty"` // users to ignore for this protection
+	AllowImages         bool                `json:"allow_images"`           // allow m.image
+	AllowVideos         bool                `json:"allow_videos"`           // allow m.video
+	AllowAudio          bool                `json:"allow_audio"`            // allow m.audio
+	AllowFiles          bool                `json:"allow_files"`            // allow m.file
+	AllowStickers       bool                `json:"allow_stickers"`         // allow m.sticker event type
+	DenyCustomReactions bool                `json:"deny_custom_reactions"`  // deny m.reaction events with mxc://-prefixed keys
+	DenyInlineImages    bool                `json:"deny_inline_images"`     // deny text with mxc:// in the formatted_body
+	DenyMsgTypes        []event.MessageType `json:"deny_msg_types"`         // additional msgtypes to always forbid
+	IgnoreUsers         []id.UserID         `json:"ignore_users,omitempty"` // users to ignore for this protection
 }
 
 func (nm *NoMedia) msgForbidden(content *event.MessageEventContent) (forbidden bool) {
 	if content == nil {
 		return false
+	}
+
+	if slices.Contains(nm.DenyMsgTypes, content.MsgType) {
+		return true
 	}
 
 	switch content.MsgType {
