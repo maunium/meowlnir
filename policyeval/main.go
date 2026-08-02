@@ -58,7 +58,8 @@ type PolicyEvaluator struct {
 	configLock sync.Mutex
 	aclLock    sync.Mutex
 
-	aclDeferChan chan struct{}
+	aclDeferChan    chan struct{}
+	startupFinished chan struct{}
 
 	claimProtected       func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator
 	protectedRoomsEvent  *config.ProtectedRoomsEventContent
@@ -117,6 +118,7 @@ func NewPolicyEvaluator(
 		wantToProtect:        make(map[id.RoomID]struct{}),
 		isJoining:            make(map[id.RoomID]struct{}),
 		aclDeferChan:         make(chan struct{}, 1),
+		startupFinished:      make(chan struct{}),
 		claimProtected:       claimProtected,
 		pendingInvites:       make(map[pendingInvite]struct{}),
 		createPuppetClient:   createPuppetClient,
@@ -234,38 +236,37 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 		_, errorMsgs := pe.handleProtectedRooms(ctx, evt, true)
 		errors = append(errors, errorMsgs...)
 	}
+	close(pe.startupFinished)
 	initDuration := time.Since(start)
-	go func() {
-		start = time.Now()
-		pe.EvaluateAll(ctx)
-		evalDuration := time.Since(start)
-		pe.protectedRoomsLock.Lock()
-		userCount := len(pe.protectedRoomMembers)
-		var joinedUserCount int
-		for _, rooms := range pe.protectedRoomMembers {
-			if len(rooms) > 0 {
-				joinedUserCount++
-			}
+	start = time.Now()
+	pe.EvaluateAll(ctx)
+	evalDuration := time.Since(start)
+	pe.protectedRoomsLock.Lock()
+	userCount := len(pe.protectedRoomMembers)
+	var joinedUserCount int
+	for _, rooms := range pe.protectedRoomMembers {
+		if len(rooms) > 0 {
+			joinedUserCount++
 		}
-		protectedRoomsCount := len(pe.protectedRooms)
-		pe.protectedRoomsLock.Unlock()
-		var msg string
-		if len(errors) > 0 {
-			msg = fmt.Sprintf("Errors occurred during initialization:\n\n%s\n\nProtecting %d rooms with %d users (%d all time) using %d lists.",
-				strings.Join(errors, "\n"), protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
-		} else {
-			msg = fmt.Sprintf("Initialization completed successfully (took %s to load data and %s to evaluate rules). "+
-				"Protecting %d rooms with %d users (%d all time) using %d lists.",
-				initDuration, evalDuration, protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
-		}
-		if pe.DryRun {
-			msg += "\n\n**Dry run mode is enabled, no actions will be taken.**"
-		}
-		pe.sendNotice(ctx, msg)
-		if pls.GetUserLevel(pe.Bot.UserID) >= pls.GetEventLevel(event.StateMSC4391BotCommand) {
-			pe.syncCommandDescriptions(ctx, state[event.StateMSC4391BotCommand])
-		}
-	}()
+	}
+	protectedRoomsCount := len(pe.protectedRooms)
+	pe.protectedRoomsLock.Unlock()
+	var msg string
+	if len(errors) > 0 {
+		msg = fmt.Sprintf("Errors occurred during initialization:\n\n%s\n\nProtecting %d rooms with %d users (%d all time) using %d lists.",
+			strings.Join(errors, "\n"), protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
+	} else {
+		msg = fmt.Sprintf("Initialization completed successfully (took %s to load data and %s to evaluate rules). "+
+			"Protecting %d rooms with %d users (%d all time) using %d lists.",
+			initDuration, evalDuration, protectedRoomsCount, joinedUserCount, userCount, len(pe.GetWatchedLists()))
+	}
+	if pe.DryRun {
+		msg += "\n\n**Dry run mode is enabled, no actions will be taken.**"
+	}
+	pe.sendNotice(ctx, msg)
+	if pls.GetUserLevel(pe.Bot.UserID) >= pls.GetEventLevel(event.StateMSC4391BotCommand) {
+		pe.syncCommandDescriptions(ctx, state[event.StateMSC4391BotCommand])
+	}
 	return nil
 }
 
