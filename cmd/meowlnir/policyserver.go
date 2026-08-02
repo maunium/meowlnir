@@ -3,7 +3,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json/v2"
+	"errors"
 	"io"
 	"net/http"
 	"regexp"
@@ -52,7 +54,6 @@ func (m *Meowlnir) PostMSC4284LegacyEventCheck(w http.ResponseWriter, r *http.Re
 		mautrix.MNotJSON.WithMessage("Request body is not valid JSON").Write(w)
 		return
 	}
-	<-m.startupComplete
 	var ok bool
 	m.MapLock.RLock()
 	eval, ok := m.EvaluatorByProtectedRoom[parsedPDU.RoomID]
@@ -117,7 +118,6 @@ func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, 
 		mautrix.MNotJSON.WithMessage("Request body is not valid JSON").Write(w)
 		return
 	}
-	<-m.startupComplete
 	var ok bool
 	m.MapLock.RLock()
 	eval, ok := m.EvaluatorByProtectedRoom[parsedPDU.RoomID]
@@ -134,6 +134,10 @@ func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, 
 
 	err = m.PolicyServer.HandleSign(r.Context(), createEvt.RoomVersion, parsedPDU, eval, federation.OriginServerNameFromRequest(r))
 	if err != nil {
+		if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
+			w.WriteHeader(499)
+			return
+		}
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
 		mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
 		return

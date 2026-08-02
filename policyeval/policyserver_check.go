@@ -29,27 +29,31 @@ func (ps *PolicyServer) getRecommendation(
 	roomVersion id.RoomVersion,
 	evaluator *PolicyEvaluator,
 	isOrigin, isLegacyCheck bool,
-) (string, *BlockRecommendation) {
+) (string, *BlockRecommendation, error) {
 	if pdu.Sender == evaluator.Bot.UserID || evaluator.Admins.Has(pdu.Sender) {
-		return "admin", nil
+		return "admin", nil, nil
+	}
+	err := evaluator.loadingComplete.Wait(ctx)
+	if err != nil {
+		return "", nil, err
 	}
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {
 		rec := match.Recommendations().BanOrUnban
 		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
-			return "", &BlockRecommendation{Match: match}
+			return "", &BlockRecommendation{Match: match}, nil
 		}
 	}
 	match = evaluator.Store.MatchServer(watchedLists, pdu.Sender.Homeserver())
 	if match != nil {
 		rec := match.Recommendations().BanOrUnban
 		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
-			return "", &BlockRecommendation{Match: match}
+			return "", &BlockRecommendation{Match: match}, nil
 		}
 	}
 	if pdu.StateKey == nil && !pdu.VerifyContentHash() {
-		return "", &BlockRecommendation{Error: fmt.Errorf("mismatching content hash")}
+		return "", &BlockRecommendation{Error: fmt.Errorf("mismatching content hash")}, nil
 	}
 	if evaluator.protections != nil {
 		clientEvt, err := pdu.ToClientEvent(roomVersion)
@@ -57,7 +61,7 @@ func (ps *PolicyServer) getRecommendation(
 			zerolog.Ctx(ctx).Err(err).
 				Stringer("room_id", pdu.RoomID).
 				Msg("Failed to convert PDU to client event")
-			return "", &BlockRecommendation{Error: fmt.Errorf("failed to convert PDU to client event: %w", err)}
+			return "", &BlockRecommendation{Error: fmt.Errorf("failed to convert PDU to client event: %w", err)}, nil
 		}
 		if parseErr := clientEvt.Content.ParseRaw(clientEvt.Type); parseErr != nil {
 			evaluator.Bot.Log.Err(parseErr).
@@ -89,12 +93,12 @@ func (ps *PolicyServer) getRecommendation(
 				}
 				zerolog.Ctx(ctx).Trace().Bool("spam", rec).Str("protection", name).Msg("Evaluated protection")
 				if rec {
-					return "", &BlockRecommendation{Error: fmt.Errorf("protections rejected event")}
+					return "", &BlockRecommendation{Error: fmt.Errorf("protections rejected event")}, nil
 				}
 			}
 		}
 	}
-	return "no reason to disallow", nil
+	return "no reason to disallow", nil, nil
 }
 
 const PolicyServerKeyID id.KeyID = "ed25519:policy_server"
@@ -131,7 +135,7 @@ func (ps *PolicyServer) HandleSign(
 	}
 
 	log.Trace().Any("event", evt).Msg("Checking event received by policy server")
-	allowReason, blockRec := ps.getRecommendation(
+	allowReason, blockRec, err := ps.getRecommendation(
 		ctx,
 		evt,
 		roomVersion,
@@ -139,6 +143,9 @@ func (ps *PolicyServer) HandleSign(
 		originServer == evt.Sender.Homeserver(),
 		originServer == fakeLegacyCheckServerName,
 	)
+	if err != nil {
+		return err
+	}
 	if blockRec != nil {
 		// Don't sign spam events
 		log.Debug().Any("recommendation", blockRec).Msg("Event rejected for spam")
