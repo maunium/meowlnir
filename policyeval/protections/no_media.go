@@ -15,6 +15,13 @@ import (
 	"go.mau.fi/meowlnir/policyeval"
 )
 
+var GalleryAllowedItemTypes = []event.MessageType{
+	event.MsgImage,
+	event.MsgVideo,
+	event.MsgAudio,
+	event.MsgFile,
+}
+
 // NoMedia is a protection that redacts messages containing media of disallowed types.
 type NoMedia struct {
 	AllowImages         bool        `json:"allow_images"`           // allow m.image
@@ -27,6 +34,39 @@ type NoMedia struct {
 	IgnoreUsers         []id.UserID `json:"ignore_users,omitempty"` // users to ignore for this protection
 }
 
+func (nm *NoMedia) msgForbidden(content *event.MessageEventContent) (forbidden bool) {
+	if content == nil {
+		return false
+	}
+
+	switch content.MsgType {
+	case event.MsgImage:
+		return !nm.AllowImages
+	case event.MsgVideo:
+		return !nm.AllowVideos
+	case event.MsgAudio:
+		return !nm.AllowAudio
+	case event.MsgFile:
+		return !nm.AllowFiles
+	case event.MsgUnstableGallery:
+		for _, subContent := range content.MSC4274InlineMedia {
+			if !slices.Contains(GalleryAllowedItemTypes, subContent.MsgType) {
+				return true
+			}
+			if nm.msgForbidden(subContent) {
+				return true
+			}
+		}
+	}
+
+	if content.FormattedBody != "" && nm.DenyInlineImages {
+		return strings.Contains(content.FormattedBody, "mxc://") &&
+			strings.Contains(content.FormattedBody, "<img")
+	}
+
+	return false
+}
+
 func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (hit bool, err error) {
 	if p.Evt.Type != event.EventMessage && p.Evt.Type != event.EventSticker && p.Evt.Type != event.EventReaction {
 		return false, nil // no-op
@@ -37,21 +77,7 @@ func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (
 
 	switch p.Evt.Type {
 	case event.EventMessage:
-		content := p.Evt.Content.AsMessage()
-		switch content.MsgType {
-		case event.MsgImage:
-			hit = !nm.AllowImages
-		case event.MsgVideo:
-			hit = !nm.AllowVideos
-		case event.MsgAudio:
-			hit = !nm.AllowAudio
-		case event.MsgFile:
-			hit = !nm.AllowFiles
-		}
-		if content.FormattedBody != "" && nm.DenyInlineImages {
-			hit = hit || (strings.Contains(content.FormattedBody, "mxc://") &&
-				strings.Contains(content.FormattedBody, "<img"))
-		}
+		hit = nm.msgForbidden(p.Evt.Content.AsMessage())
 	case event.EventSticker:
 		hit = !nm.AllowStickers
 	case event.EventReaction:
