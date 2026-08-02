@@ -33,7 +33,7 @@ func (ps *PolicyServer) getRecommendation(
 	if pdu.Sender == evaluator.Bot.UserID || evaluator.Admins.Has(pdu.Sender) {
 		return "admin", nil
 	}
-	<-evaluator.startupFinished
+	<-evaluator.finishedLoadingChan
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {

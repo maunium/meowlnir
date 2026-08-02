@@ -58,8 +58,9 @@ type PolicyEvaluator struct {
 	configLock sync.Mutex
 	aclLock    sync.Mutex
 
-	aclDeferChan    chan struct{}
-	startupFinished chan struct{}
+	aclDeferChan        chan struct{}
+	finishedLoadingChan chan struct{}
+	finishLoading       func()
 
 	claimProtected       func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator
 	protectedRoomsEvent  *config.ProtectedRoomsEventContent
@@ -118,7 +119,7 @@ func NewPolicyEvaluator(
 		wantToProtect:        make(map[id.RoomID]struct{}),
 		isJoining:            make(map[id.RoomID]struct{}),
 		aclDeferChan:         make(chan struct{}, 1),
-		startupFinished:      make(chan struct{}),
+		finishedLoadingChan:  make(chan struct{}),
 		claimProtected:       claimProtected,
 		pendingInvites:       make(map[pendingInvite]struct{}),
 		createPuppetClient:   createPuppetClient,
@@ -132,6 +133,9 @@ func NewPolicyEvaluator(
 		policyServer:         policyServer,
 		RoomHashes:           roomHashes,
 	}
+	pe.finishLoading = sync.OnceFunc(func() {
+		close(pe.finishedLoadingChan)
+	})
 	pe.commandProcessor.LogArgs = true
 	pe.commandProcessor.Meta = pe
 	pe.commandProcessor.PreValidator = commands.AnyPreValidator[*PolicyEvaluator]{
@@ -236,7 +240,7 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 		_, errorMsgs := pe.handleProtectedRooms(ctx, evt, true)
 		errors = append(errors, errorMsgs...)
 	}
-	close(pe.startupFinished)
+	pe.finishLoading()
 	initDuration := time.Since(start)
 	start = time.Now()
 	pe.EvaluateAll(ctx)
