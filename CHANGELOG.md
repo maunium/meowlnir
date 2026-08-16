@@ -1,3 +1,16 @@
+# v26.08
+
+* Added notification when a protected room or watched list is tombstoned.
+* Added option to disable hacky rule filter by setting it to null.
+* Added !meow command (thanks to [@timedoutuk] in [#65]).
+* Changed policy server to not accept requests before initialization is complete
+  (thanks to [@timedoutuk] in [#63]).
+* Fixed `!powerlevel` command not accepting room aliases.
+
+[@timedoutuk]: https://github.com/timedoutuk
+[#63]: https://github.com/maunium/meowlnir/pull/63
+[#65]: https://github.com/maunium/meowlnir/pull/65
+
 # v26.06
 
 * Fixed policy server accidentally returning all signatures on the event instead
@@ -211,7 +224,7 @@
 [MSC4194]: https://github.com/matrix-org/matrix-spec-proposals/pull/4194
 [MSC4204]: https://github.com/matrix-org/matrix-spec-proposals/pull/4204
 [MSC4205]: https://github.com/matrix-org/matrix-spec-proposals/pull/4205
-[@nexy7574]: https://github.com/nexy7574
+[@nexy7574]: https://github.com/timedoutuk
 [#3]: https://github.com/maunium/meowlnir/pull/3
 
 # v0.2.0 (2024-10-16)
