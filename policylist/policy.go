@@ -42,7 +42,12 @@ func (r Recommendations) String() string {
 func (m Match) Recommendations() (output Recommendations) {
 	for _, policy := range m {
 		switch policy.Recommendation {
-		case event.PolicyRecommendationBan, event.PolicyRecommendationUnban, event.PolicyRecommendationUnstableTakedown:
+		case event.PolicyRecommendationUnban:
+			if output.BanOrUnban == nil || output.BanOrUnban.RoomID == policy.RoomID {
+				output.BanOrUnban = policy
+			}
+			return
+		case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 			if output.BanOrUnban == nil {
 				output.BanOrUnban = policy
 			}
