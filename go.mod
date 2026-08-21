@@ -1,8 +1,8 @@
 module go.mau.fi/meowlnir
 
-go 1.25.0
+go 1.26.0
 
-toolchain go1.26.6
+toolchain go1.27.0
 
 require (
 	github.com/google/uuid v1.6.0
@@ -11,12 +11,12 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/rs/zerolog v1.35.1
 	github.com/tidwall/gjson v1.19.0
-	go.mau.fi/util v0.10.0
+	go.mau.fi/util v0.10.1-0.20260820140024-eb612d936fde
 	go.mau.fi/zeroconfig v0.2.0
 	golang.org/x/sync v0.22.0
 	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mauflag v1.0.0
-	maunium.net/go/mautrix v0.30.0
+	maunium.net/go/mautrix v0.30.1-0.20260820142923-ae00f2c62e1e
 )
 
 require (
