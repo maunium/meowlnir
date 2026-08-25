@@ -1,4 +1,4 @@
--- v0 -> v3 (compatible with v1+): Latest schema
+-- v0 -> v4 (compatible with v1+): Latest schema
 CREATE TABLE bot (
     username     TEXT PRIMARY KEY NOT NULL,
     displayname  TEXT NOT NULL,

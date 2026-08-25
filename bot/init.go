@@ -142,6 +142,10 @@ func (bot *Bot) Init(ctx context.Context) {
 	bot.Mach.SendKeysMinTrust = id.TrustStateCrossSignedTOFU
 	bot.Mach.ShareKeysMinTrust = id.TrustStateCrossSignedTOFU
 	bot.eventProcessor.OnDeviceList(bot.Mach.HandleDeviceLists)
+	err = bot.repairOTKsIfNeeded(ctx)
+	if err != nil {
+		bot.Log.Err(err).Msg("Failed to repair OTKs")
+	}
 
 	hasKeys, isVerified, err := bot.Mach.GetOwnVerificationStatus(ctx)
 	if err != nil {
@@ -170,4 +174,18 @@ func (bot *Bot) ensureRegistered(ctx context.Context) {
 		bot.Log.WithLevel(zerolog.FatalLevel).Err(err).Msg("Failed to register")
 	}
 	os.Exit(30)
+}
+
+func (bot *Bot) repairOTKsIfNeeded(ctx context.Context) error {
+	var needReset bool
+	err := bot.CryptoStore.DB.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM otks_need_reset WHERE user_id = $1)", bot.UserID).Scan(&needReset)
+	if err != nil || !needReset {
+		return err
+	}
+	err = bot.Mach.RepairOneTimeKeys(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = bot.CryptoStore.DB.Exec(ctx, "DELETE FROM otks_need_reset WHERE user_id = $1", bot.UserID)
+	return err
 }
