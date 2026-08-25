@@ -1913,6 +1913,8 @@ var cmdHelp = &CommandHandler{
 				"* `!send-as-bot <room> <message>` - Send a message as the bot\n" +
 				"* `![un]suspend <user ID>` - Suspend or unsuspend a user\n" +
 				"* `!deactivate <user ID> [--erase]` - Deactivate a user\n" +
+				"* `!policyserver [enable/disable] [rooms...]` - View or manage the policy server\n" +
+				"* `!toggleprotection <name>` - Enable or disable a protection\n" +
 				"* `!bot-profile <displayname/avatar> <new value>` - Update the bot profile\n" +
 				"* `!rooms <...>` - Manage rooms\n" +
 				"* `!version` - Check the running Meowlnir version\n" +
