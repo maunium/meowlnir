@@ -1,6 +1,7 @@
 package policyeval
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -25,6 +26,8 @@ import (
 	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 	"maunium.net/go/mautrix/synapseadmin"
+
+	"go.mau.fi/meowlnir/bot"
 
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/policylist"
@@ -1369,6 +1372,59 @@ var cmdProtectRoom = &CommandHandler{
 				}
 				contentCopy.Rooms = append(contentCopy.Rooms, roomID)
 				changed = true
+				go func() {
+					ctx := context.WithoutCancel(ce.Ctx)
+					var createContent event.CreateEventContent
+					err := ce.Meta.Bot.StateEvent(ctx, roomID, event.StateCreate, "", &createContent)
+					if err != nil {
+						ce.Log.Err(err).Msg("Failed to get protected room's create event")
+						return
+					}
+					if createContent.Type != event.RoomTypeSpace {
+						return
+					}
+					// Using hierarchy also includes things like room names, making display easier.
+					// It might not reveal everything inspecting the state would, but good enough
+					// as a convenience.
+					hierarchy, err := ce.Meta.Bot.Hierarchy(ctx, roomID, &mautrix.ReqHierarchy{Limit: 50, MaxDepth: new(1)})
+					if err != nil {
+						ce.Log.Err(err).Msg("Failed to get protected space's hierachy while discovering children")
+						return
+					}
+					discoveredChildren := make([]*mautrix.ChildRoomsChunk, 0, len(hierarchy.Rooms))
+					for _, child := range hierarchy.Rooms {
+						if slices.Contains(contentCopy.Rooms, child.RoomID) {
+							ce.Log.Trace().
+								Stringer("room_id", child.RoomID).
+								Msg("Discovered child of space that is already protected")
+							continue
+						}
+						discoveredChildren = append(discoveredChildren, child)
+					}
+					if len(discoveredChildren) == 0 {
+						ce.Log.Debug().Msg("Space revealed no unprotected children")
+						return
+					}
+					var content strings.Builder
+					content.WriteString(fmt.Sprintf(
+						"Which children of the space %s would you like to protect?\n\n",
+						format.MarkdownMentionRoomID("", roomID, ce.Sender.Homeserver()),
+					))
+					keys := make(map[string]string, len(discoveredChildren))
+					for idx, child := range discoveredChildren {
+						content.WriteString(fmt.Sprintf(
+							"%d. %s",
+							idx, format.MarkdownMentionRoomID(child.Name, child.RoomID, ce.Sender.Homeserver())))
+						target := cmp.Or(child.CanonicalAlias.String(), child.RoomID.URI(ce.Sender.Homeserver()).String())
+						key := cmp.Or(child.Name, child.CanonicalAlias.String(), child.RoomID.String())
+						keys[key] = "/protect " + target
+					}
+					ce.Meta.Bot.SendNoticeOpts(ctx, roomID, content.String(), &bot.SendNoticeOpts{
+						Extra: map[string]any{
+							commands.ReactionCommandsKey: keys,
+						},
+					})
+				}()
 			} else {
 				if itemIdx < 0 {
 					ce.Reply("%s is not protected", format.SafeMarkdownCode(roomID))
