@@ -1334,6 +1334,7 @@ var cmdProvision = &CommandHandler{
 }
 
 type ProtectRoomParams struct {
+	Join  bool                       `json:"join"`
 	Rooms []cmdschema.RoomIDOrString `json:"room"`
 }
 
@@ -1346,6 +1347,10 @@ var cmdProtectRoom = &CommandHandler{
 	Name:        "protect",
 	Description: event.MakeExtensibleText("Add rooms to the protected rooms list"),
 	Parameters: []*cmdschema.Parameter{{
+		Key:      "join",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
+	}, {
 		Key:    "room",
 		Schema: cmdschema.Array(cmdschema.ParameterSchemaJoinableRoom),
 	}},
@@ -1369,6 +1374,17 @@ var cmdProtectRoom = &CommandHandler{
 				if itemIdx >= 0 {
 					ce.Reply("%s is already protected", format.SafeMarkdownCode(roomID))
 					continue
+				}
+				if args.Join {
+					_, err := ce.Meta.Bot.JoinRoom(
+						ce.Ctx,
+						string(room),
+						&mautrix.ReqJoinRoom{Via: []string{ce.Sender.Homeserver()}},
+					)
+					if err != nil {
+						ce.Reply("Failed to join %s (%v), skipping (try inviting me)", format.SafeMarkdownCode(roomID), err)
+						continue
+					}
 				}
 				contentCopy.Rooms = append(contentCopy.Rooms, roomID)
 				changed = true
@@ -1417,7 +1433,7 @@ var cmdProtectRoom = &CommandHandler{
 							idx, format.MarkdownMentionRoomID(child.Name, child.RoomID, ce.Sender.Homeserver())))
 						target := cmp.Or(child.CanonicalAlias.String(), child.RoomID.URI(ce.Sender.Homeserver()).String())
 						key := cmp.Or(child.Name, child.CanonicalAlias.String(), child.RoomID.String())
-						keys[key] = "/protect " + target
+						keys[key] = "/protect --join " + target
 					}
 					ce.Meta.Bot.SendNoticeOpts(ctx, roomID, content.String(), &bot.SendNoticeOpts{
 						Extra: map[string]any{
