@@ -37,3 +37,5 @@ CREATE TABLE policy_server_signature (
 
     PRIMARY KEY (event_id)
 );
+
+CREATE TABLE otks_need_reset(user_id TEXT PRIMARY KEY);
