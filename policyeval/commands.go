@@ -1397,11 +1397,13 @@ var cmdProtectRoom = &CommandHandler{
 						return
 					}
 					if createContent.Type != event.RoomTypeSpace {
+						ce.Log.Trace().Stringer("room_id", roomID).Msg("Room is not a space, not discovering children")
 						return
 					}
 					// Using hierarchy also includes things like room names, making display easier.
 					// It might not reveal everything inspecting the state would, but good enough
 					// as a convenience.
+					ce.Log.Debug().Stringer("space_room_id", roomID).Msg("Discovering room children")
 					hierarchy, err := ce.Meta.Bot.Hierarchy(ctx, roomID, &mautrix.ReqHierarchy{Limit: 50, MaxDepth: new(1)})
 					if err != nil {
 						ce.Log.Err(err).Msg("Failed to get protected space's hierachy while discovering children")
@@ -1411,10 +1413,15 @@ var cmdProtectRoom = &CommandHandler{
 					for _, child := range hierarchy.Rooms {
 						if slices.Contains(contentCopy.Rooms, child.RoomID) {
 							ce.Log.Trace().
+								Stringer("space_room_id", child.RoomID).
 								Stringer("room_id", child.RoomID).
 								Msg("Discovered child of space that is already protected")
 							continue
 						}
+						ce.Log.Trace().
+							Stringer("space_room_id", roomID).
+							Stringer("child_room_id", child.RoomID).
+							Msg("Discovered unprotected child")
 						discoveredChildren = append(discoveredChildren, child)
 					}
 					if len(discoveredChildren) == 0 {
@@ -1429,17 +1436,19 @@ var cmdProtectRoom = &CommandHandler{
 					keys := make(map[string]string, len(discoveredChildren))
 					for idx, child := range discoveredChildren {
 						content.WriteString(fmt.Sprintf(
-							"%d. %s",
+							"%d. %s\n",
 							idx, format.MarkdownMentionRoomID(child.Name, child.RoomID, ce.Sender.Homeserver())))
 						target := cmp.Or(child.CanonicalAlias.String(), child.RoomID.URI(ce.Sender.Homeserver()).String())
 						key := cmp.Or(child.Name, child.CanonicalAlias.String(), child.RoomID.String())
-						keys[key] = "/protect --join " + target
+						keys["/"+key] = "!protect --join " + target
 					}
-					ce.Meta.Bot.SendNoticeOpts(ctx, roomID, content.String(), &bot.SendNoticeOpts{
+					menuID := ce.Meta.Bot.SendNoticeOpts(ctx, ce.RoomID, content.String(), &bot.SendNoticeOpts{
 						Extra: map[string]any{
 							commands.ReactionCommandsKey: keys,
+							commands.ReactionMultiUseKey: true,
 						},
 					})
+					ce.Meta.sendReactions(ctx, menuID, slices.Collect(maps.Keys(keys))...)
 				}()
 			} else {
 				if itemIdx < 0 {
