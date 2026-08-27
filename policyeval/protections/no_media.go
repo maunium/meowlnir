@@ -48,7 +48,7 @@ func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (
 			hit = !nm.AllowAudio
 		case event.MsgFile:
 			hit = !nm.AllowFiles
-		case event.MsgText, event.MsgNotice, event.MsgEmote:
+		case event.MsgText, event.MsgNotice, event.MsgEmote, event.MsgLocation:
 			// text messages aren't media unless they have inline images (checked below)
 		case "":
 			// blank msgtypes might be a redacted message or something, but unlikely to render as media anywhere
