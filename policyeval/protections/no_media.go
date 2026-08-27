@@ -17,14 +17,15 @@ import (
 
 // NoMedia is a protection that redacts messages containing media of disallowed types.
 type NoMedia struct {
-	AllowImages         bool        `json:"allow_images"`           // allow m.image
-	AllowVideos         bool        `json:"allow_videos"`           // allow m.video
-	AllowAudio          bool        `json:"allow_audio"`            // allow m.audio
-	AllowFiles          bool        `json:"allow_files"`            // allow m.file
-	AllowStickers       bool        `json:"allow_stickers"`         // allow m.sticker event type
-	DenyCustomReactions bool        `json:"deny_custom_reactions"`  // deny m.reaction events with mxc://-prefixed keys
-	DenyInlineImages    bool        `json:"deny_inline_images"`     // deny text with mxc:// in the formatted_body
-	IgnoreUsers         []id.UserID `json:"ignore_users,omitempty"` // users to ignore for this protection
+	AllowImages          bool        `json:"allow_images"`           // allow m.image
+	AllowVideos          bool        `json:"allow_videos"`           // allow m.video
+	AllowAudio           bool        `json:"allow_audio"`            // allow m.audio
+	AllowFiles           bool        `json:"allow_files"`            // allow m.file
+	AllowStickers        bool        `json:"allow_stickers"`         // allow m.sticker event type
+	AllowUnknownMsgTypes bool        `json:"allow_unknown_msgtypes"` // allow unknown message types
+	DenyCustomReactions  bool        `json:"deny_custom_reactions"`  // deny m.reaction events with mxc://-prefixed keys
+	DenyInlineImages     bool        `json:"deny_inline_images"`     // deny text with mxc:// in the formatted_body
+	IgnoreUsers          []id.UserID `json:"ignore_users,omitempty"` // users to ignore for this protection
 }
 
 func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (hit bool, err error) {
@@ -47,6 +48,12 @@ func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (
 			hit = !nm.AllowAudio
 		case event.MsgFile:
 			hit = !nm.AllowFiles
+		case event.MsgText, event.MsgNotice, event.MsgEmote:
+			// text messages aren't media unless they have inline images (checked below)
+		case "":
+			// blank msgtypes might be a redacted message or something, but unlikely to render as media anywhere
+		default:
+			hit = !nm.AllowUnknownMsgTypes
 		}
 		if content.FormattedBody != "" && nm.DenyInlineImages {
 			hit = hit || (strings.Contains(content.FormattedBody, "mxc://") &&
