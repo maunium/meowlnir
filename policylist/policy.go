@@ -29,11 +29,15 @@ type Match []*Policy
 
 type Recommendations struct {
 	BanOrUnban *Policy
+	Mute       *Policy
 }
 
 func (r Recommendations) String() string {
 	if r.BanOrUnban != nil {
 		return string(r.BanOrUnban.Recommendation)
+	}
+	if r.Mute != nil {
+		return string(r.Mute.Recommendation)
 	}
 	return ""
 }
@@ -46,10 +50,17 @@ func (m Match) Recommendations() (output Recommendations) {
 			if output.BanOrUnban == nil || output.BanOrUnban.RoomID == policy.RoomID {
 				output.BanOrUnban = policy
 			}
+			if output.Mute != nil && output.Mute.RoomID == policy.RoomID {
+				output.Mute = nil
+			}
 			return
 		case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 			if output.BanOrUnban == nil {
 				output.BanOrUnban = policy
+			}
+		case event.PolicyRecommendationMute:
+			if output.Mute == nil && (output.BanOrUnban == nil || output.BanOrUnban.Recommendation != event.PolicyRecommendationUnban) {
+				output.Mute = policy
 			}
 		}
 	}

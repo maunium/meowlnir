@@ -94,6 +94,8 @@ func addActionString(rec event.PolicyRecommendation) string {
 	switch rec {
 	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "banned"
+	case event.PolicyRecommendationMute:
+		return "muted"
 	case event.PolicyRecommendationUnban:
 		return "added a ban exclusion for"
 	default:
@@ -105,6 +107,8 @@ func changeActionString(rec event.PolicyRecommendation) string {
 	switch rec {
 	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "ban"
+	case event.PolicyRecommendationMute:
+		return "mute"
 	case event.PolicyRecommendationUnban:
 		return "ban exclusion"
 	default:
@@ -116,6 +120,8 @@ func removeActionString(rec event.PolicyRecommendation) string {
 	switch rec {
 	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "unbanned"
+	case event.PolicyRecommendationMute:
+		return "unmuted"
 	case event.PolicyRecommendationUnban:
 		return "removed a ban exclusion for"
 	default:

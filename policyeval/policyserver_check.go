@@ -40,15 +40,19 @@ func (ps *PolicyServer) getRecommendation(
 	watchedLists := evaluator.GetWatchedLists()
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {
-		rec := match.Recommendations().BanOrUnban
-		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+		recs := match.Recommendations()
+		if recs.BanOrUnban != nil && recs.BanOrUnban.Recommendation != event.PolicyRecommendationUnban {
+			return "", &BlockRecommendation{Match: match}, nil
+		} else if recs.Mute != nil {
 			return "", &BlockRecommendation{Match: match}, nil
 		}
 	}
 	match = evaluator.Store.MatchServer(watchedLists, pdu.Sender.Homeserver())
 	if match != nil {
-		rec := match.Recommendations().BanOrUnban
-		if rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+		recs := match.Recommendations()
+		if recs.BanOrUnban != nil && recs.BanOrUnban.Recommendation != event.PolicyRecommendationUnban {
+			return "", &BlockRecommendation{Match: match}, nil
+		} else if recs.Mute != nil {
 			return "", &BlockRecommendation{Match: match}, nil
 		}
 	}
