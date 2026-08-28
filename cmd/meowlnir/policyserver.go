@@ -3,6 +3,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -132,7 +133,7 @@ func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	err = m.PolicyServer.HandleSign(r.Context(), createEvt.RoomVersion, parsedPDU, eval, federation.OriginServerNameFromRequest(r))
+	errorMessage, err := m.PolicyServer.HandleSign(r.Context(), createEvt.RoomVersion, parsedPDU, eval, federation.OriginServerNameFromRequest(r))
 	if err != nil {
 		if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
 			w.WriteHeader(499)
@@ -156,7 +157,7 @@ func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, 
 		sigs[m.PolicyServer.Federation.ServerName] = parsedPDU.Signatures[m.PolicyServer.Federation.ServerName]
 	} else if !legacy {
 		mautrix.MForbidden.
-			WithMessage("This message has been rejected as probable spam").
+			WithMessage(cmp.Or(errorMessage, "This message has been rejected as probable spam")).
 			WithStatus(http.StatusBadRequest).
 			Write(w)
 		return
