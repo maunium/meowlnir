@@ -82,7 +82,9 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		}
 	}()
 
-	if rec = pe.Store.MatchUser(lists, inviter).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+	inviteBlockOverridden := pe.BlockInvitesOverride.Pop(inviter)
+
+	if rec = pe.Store.MatchUser(lists, inviter).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban && !inviteBlockOverridden {
 		log.Debug().
 			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
@@ -90,7 +92,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		return ptr.Ptr(mautrix.MForbidden.WithMessage("You're not allowed to send invites"))
 	}
 
-	if rec = pe.Store.MatchRoom(lists, roomID).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+	if rec = pe.Store.MatchRoom(lists, roomID).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban && !inviteBlockOverridden {
 		log.Debug().
 			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
@@ -98,7 +100,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		return ptr.Ptr(mautrix.MForbidden.WithMessage("Inviting users to this room is not allowed"))
 	}
 
-	if rec = pe.Store.MatchServer(lists, inviterServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+	if rec = pe.Store.MatchServer(lists, inviterServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban && !inviteBlockOverridden {
 		log.Debug().
 			Str("policy_entity", rec.EntityOrHash()).
 			Str("policy_reason", rec.Reason).
@@ -114,7 +116,7 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		roomServer = roomCreator.Homeserver()
 	}
 	if roomServer != "" {
-		if rec = pe.Store.MatchServer(lists, roomServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban {
+		if rec = pe.Store.MatchServer(lists, roomServer).Recommendations().BanOrUnban; rec != nil && rec.Recommendation != event.PolicyRecommendationUnban && !inviteBlockOverridden {
 			log.Debug().
 				Str("policy_entity", rec.EntityOrHash()).
 				Str("policy_reason", rec.Reason).
@@ -123,10 +125,10 @@ func (pe *PolicyEvaluator) HandleUserMayInvite(ctx context.Context, inviter, inv
 		}
 	}
 	rec = nil
-	if slices.Contains(pe.BlockInvitesTo, invitee) {
+	if slices.Contains(pe.BlockInvitesTo, invitee) || inviteBlockOverridden {
 		msg := "Blocked %s from inviting %s to %s due to recipient block list (use `!allow-invite` to allow)"
 		block := true
-		if pe.BlockInvitesOverride.Pop(inviter) {
+		if inviteBlockOverridden {
 			msg = "Allowed %s to invite %s to %s due to override"
 			block = false
 		}
