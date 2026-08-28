@@ -60,6 +60,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Bool, "antispam", "notify_management_room")
 	helper.Copy(up.List, "antispam", "block_invites_to")
 
+	helper.Copy(up.Str|up.Null, "policy_server", "server_name")
 	helper.Copy(up.Bool, "policy_server", "always_redact")
 	if sk, ok := helper.Get(up.Str, "policy_server", "signing_key"); ok && sk != "generate" {
 		helper.Set(up.Str, sk, "policy_server", "signing_key")
@@ -97,6 +98,7 @@ var SpacedBlocks = [][]string{
 	{"meowlnir", "management_secret"},
 	{"meowlnir", "report_room"},
 	{"meowlnir", "admin_tokens"},
+	{"meowlnir4all"},
 	{"antispam"},
 	{"policy_server"},
 	{"encryption"},

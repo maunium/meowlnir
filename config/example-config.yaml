@@ -116,6 +116,10 @@ antispam:
 
 # Configuration for the policy server.
 policy_server:
+    # Server name for the policy server. If null, the server name of the homeserver will be used.
+    # Note that there must be a user from the specified server in each room you want to use the policy server in.
+    # You should NOT set this if you don't know what you're doing.
+    server_name: null
     # If enabled, always issue redactions for events that are blocked by the policy server.
     # This is useful to prevent failed events from reaching servers that do not yet respect policy servers.
     always_redact: true

@@ -107,6 +107,7 @@ func (mac *Meowlnir4AllConfig) UnmarshalYAML(node *yaml.Node) error {
 }
 
 type PolicyServerConfig struct {
+	ServerName   string `yaml:"server_name"`
 	AlwaysRedact bool   `yaml:"always_redact"`
 	SigningKey   string `yaml:"signing_key"`
 }

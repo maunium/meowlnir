@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -182,7 +183,8 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		}
 	}
 	inMemCache := federation.NewInMemoryCache()
-	m.Federation = federation.NewClient(m.Config.Homeserver.Domain, nil, inMemCache, exhttp.SensibleClientSettings)
+	psName := cmp.Or(m.Config.PolicyServer.ServerName, m.Config.Homeserver.Domain)
+	m.Federation = federation.NewClient(psName, nil, inMemCache, exhttp.SensibleClientSettings)
 	serverAuth := federation.NewServerAuth(m.Federation, inMemCache, func(auth federation.XMatrixAuth) string {
 		return auth.Destination
 	})
