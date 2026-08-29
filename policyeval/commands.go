@@ -1918,7 +1918,7 @@ var cmdHelp = &CommandHandler{
 	Description: event.MakeExtensibleText("Show help for commands"),
 	Parameters: []*cmdschema.Parameter{{
 		Key:      "command",
-		Schema:   cmdschema.Enum("rooms"),
+		Schema:   cmdschema.PrimitiveTypeString.Schema(),
 		Optional: true,
 	}},
 	TailParam: "command",
