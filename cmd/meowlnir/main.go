@@ -185,6 +185,9 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	inMemCache := federation.NewInMemoryCache()
 	psName := cmp.Or(m.Config.PolicyServer.ServerName, m.Config.Homeserver.Domain)
 	m.Federation = federation.NewClient(psName, nil, inMemCache, exhttp.SensibleClientSettings)
+	if m.Config.PolicyServer.IPFilter.Enable() {
+		m.Federation.AllowIP = m.Config.PolicyServer.IPFilter.Allow
+	}
 	serverAuth := federation.NewServerAuth(m.Federation, inMemCache, func(auth federation.XMatrixAuth) string {
 		return auth.Destination
 	})

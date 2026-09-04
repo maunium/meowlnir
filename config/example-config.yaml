@@ -129,6 +129,14 @@ policy_server:
     always_redact: true
     # The Synapse-style private signing key for the policy server. If set to generate, a new random key will be generated.
     signing_key: generate
+    # IP filtering for outgoing federation requests.
+    ip_filter:
+        # List of CIDRs to deny. If empty, defaults to denying all private IPs.
+        # Anything not on this list is allowed.
+        deny: []
+        # List of CIDRs to allow. This overrides the deny list and can be used
+        # to allow individual IPs from subnets that are otherwise denied.
+        allow: []
 
 # Encryption settings.
 encryption:

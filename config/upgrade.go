@@ -68,6 +68,8 @@ func upgradeConfig(helper up.Helper) {
 	} else {
 		helper.Set(up.Str, federation.GenerateSigningKey().SynapseString(), "policy_server", "signing_key")
 	}
+	helper.Copy(up.List, "policy_server", "ip_filter", "deny")
+	helper.Copy(up.List, "policy_server", "ip_filter", "allow")
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "pickle_key"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "encryption", "pickle_key")
