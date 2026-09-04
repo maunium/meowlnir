@@ -109,6 +109,10 @@ antispam:
     auto_reject_invites_token:
     # Should the management room receive a notice about blocked invites?
     notify_management_room: false
+    # Should accept_make_join callbacks be always routed to the management room that protects the target room
+    # instead of the room specified in the callback URL? The path can still set the room ID to `auto` even if
+    # this is disabled.
+    auto_route_join_gate: false
     # Inviting any of the users listed here will be blocked by default,
     # unless separately allowed with the !allow-invite command
     block_invites_to:

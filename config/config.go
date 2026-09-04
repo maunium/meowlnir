@@ -117,6 +117,7 @@ type AntispamConfig struct {
 	FilterLocalInvites     bool        `yaml:"filter_local_invites"`
 	AutoRejectInvitesToken string      `yaml:"auto_reject_invites_token"`
 	NotifyManagementRoom   bool        `yaml:"notify_management_room"`
+	AutoRouteJoinGate      bool        `yaml:"auto_route_join_gate"`
 	BlockInvitesTo         []id.UserID `yaml:"block_invites_to"`
 }
 
