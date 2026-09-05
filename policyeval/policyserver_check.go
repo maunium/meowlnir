@@ -134,8 +134,7 @@ func (ps *PolicyServer) sendNotification(ctx context.Context, eval *PolicyEvalua
 	if notifyRoom == "" || eval.Untrusted && !eval.IsProtectedRoom(notifyRoom) {
 		return
 	}
-	var roomName event.RoomNameEventContent
-	_ = eval.Bot.StateEvent(ctx, evt.RoomID, event.StateRoomName, "", &roomName)
+	srcMeta := eval.getProtectedRoomMeta(evt.RoomID)
 
 	marshalled, err := json.Marshal(evt, jsontext.WithIndent("  "))
 	if err != nil {
@@ -161,7 +160,7 @@ func (ps *PolicyServer) sendNotification(ctx context.Context, eval *PolicyEvalua
 		"Event %s by %s blocked in %s: %s\n<details><summary>Event JSON</summary>\n\n```json\n%s\n```\n</details>",
 		format.SafeMarkdownCode(evt.Type),
 		format.MarkdownMention(evt.Sender),
-		format.MarkdownMentionRoomID(roomName.Name, evt.RoomID, ps.Federation.ServerName),
+		format.MarkdownMentionRoomID(srcMeta.Name, evt.RoomID, ps.Federation.ServerName),
 		errMsg,
 		marshalled,
 	)
