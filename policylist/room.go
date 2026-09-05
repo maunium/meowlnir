@@ -192,7 +192,9 @@ func (r *Room) updatePolicyList(evt *event.Event, entityType EntityType, rules *
 	if entityHash != nil {
 		added.Pattern = (*hashGlob)(entityHash)
 	}
-	if added.Recommendation == event.PolicyRecommendationBan {
+	if added.Recommendation == event.PolicyRecommendationBan ||
+		added.Recommendation == event.PolicyRecommendationUnstableTakedown ||
+		added.Recommendation == event.PolicyRecommendationMute {
 		if added.EntityHash != nil {
 			added.Ignored = slices.Contains(HackyRuleFilterHashes, *added.EntityHash)
 		} else {
