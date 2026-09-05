@@ -164,7 +164,7 @@ func (ps *PolicyServer) sendNotification(ctx context.Context, eval *PolicyEvalua
 		format.MarkdownMention(evt.Sender),
 		format.MarkdownMentionRoomID(roomName.Name, evt.RoomID, ps.Federation.ServerName),
 		errMsg,
-		string(marshalled),
+		marshalled,
 	)
 	eval.Bot.SendNoticeOpts(
 		ctx,
