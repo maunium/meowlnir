@@ -17,6 +17,8 @@ import (
 	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
+	"go.mau.fi/meowlnir/bot"
+
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
 )
@@ -144,15 +146,19 @@ func (ps *PolicyServer) sendNotification(ctx context.Context, eval *PolicyEvalua
 	} else {
 		errMsg = rec.DisplayError
 	}
-	eval.Bot.SendNotice(
-		ctx,
-		notifyRoom,
+	content := fmt.Sprintf(
 		"Event %s by %s blocked in %s: %s\n<details><summary>Event JSON</summary>\n\n```json\n%s\n```\n</details>",
 		format.SafeMarkdownCode(evt.Type),
 		format.MarkdownMention(evt.Sender),
 		format.MarkdownMentionRoomID(roomName.Name, evt.RoomID, ps.Federation.ServerName),
 		errMsg,
 		string(marshalled),
+	)
+	eval.Bot.SendNoticeOpts(
+		ctx,
+		notifyRoom,
+		content,
+		&bot.SendNoticeOpts{AllowHTML: true},
 	)
 }
 
