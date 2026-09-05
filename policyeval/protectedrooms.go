@@ -265,6 +265,10 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 	if len(unsafeProtections) > 0 {
 		output = append(output, fmt.Sprintf("* Warning: the following protections are marked as unsafe and may cause issues: %s", strings.Join(unsafeProtections, ", ")))
 	}
+	psNotifyRoom := content.PolicyServerNotificationRoom
+	if pe.Untrusted && psNotifyRoom != "" && !pe.IsProtectedRoom(psNotifyRoom) {
+		output = append(output, fmt.Sprintf("* Policy server notifications will not be sent to %s as it is not a protected room.", psNotifyRoom))
+	}
 	pe.protectedRoomsLock.Unlock()
 	joinedRooms, err := pe.Bot.JoinedRooms(ctx)
 	if err != nil {
