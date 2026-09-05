@@ -727,6 +727,7 @@ var cmdAddUnban = &CommandHandler{
 	Name:        "add-unban",
 	Description: event.MakeExtensibleText("Add an unban policy to a policy list"),
 	Parameters:  cmdBan.Parameters[:3],
+	TailParam:   "reason",
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *BanParams) {
 		list := ce.Meta.FindListByShortcode(args.List)
 		if list == nil {
