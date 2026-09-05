@@ -1276,7 +1276,11 @@ var cmdDeactivate = &CommandHandler{
 				case "failed", "cancelled":
 					ce.Reply("User redaction task failed.")
 				case "active":
-					time.Sleep(time.Second)
+					select {
+					case <-time.After(5 * time.Second):
+					case <-ce.Ctx.Done():
+						return
+					}
 					continue
 				}
 				break
