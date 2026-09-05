@@ -131,7 +131,7 @@ func (ps *PolicyServer) sendNotification(ctx context.Context, eval *PolicyEvalua
 		return
 	}
 	notifyRoom := eval.protectedRoomsEvent.PolicyServerNotificationRoom
-	if notifyRoom == "" || eval.Untrusted && !eval.IsProtectedRoom(notifyRoom) {
+	if notifyRoom == "" || (eval.Untrusted && !eval.canReceiveNotifications(notifyRoom)) {
 		return
 	}
 	srcMeta := eval.getProtectedRoomMeta(evt.RoomID)
