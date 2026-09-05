@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/exerrors"
 	"go.mau.fi/util/jsontime"
+	"maunium.net/go/mautrix/crypto/canonicaljson"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/federation/pdu"
 	"maunium.net/go/mautrix/format"
@@ -139,6 +141,16 @@ func (ps *PolicyServer) sendNotification(ctx context.Context, eval *PolicyEvalua
 	marshalled, err := json.Marshal(evt, jsontext.WithIndent("  "))
 	if err != nil {
 		marshalled = fmt.Appendf([]byte{}, "\"non JSON object: %v\"", err)
+	} else if len(marshalled) > 30000 {
+		marshalled = exerrors.Must(canonicaljson.Marshal(evt))
+	}
+	if len(marshalled) > 30000 {
+		marshalled = fmt.Appendf(
+			[]byte{},
+			"%s[%.2f KiB trimmed]",
+			marshalled[:30000],
+			float64(len(marshalled)-30000)/1024.0,
+		)
 	}
 	var errMsg string
 	if rec.Error != nil {
