@@ -388,5 +388,8 @@ func (pe *PolicyEvaluator) unlockedUpdateUser(userID id.UserID, roomID id.RoomID
 }
 
 func (pe *PolicyEvaluator) canReceiveNotifications(roomID id.RoomID) bool {
+	if !pe.Untrusted {
+		return true
+	}
 	return roomID == pe.ManagementRoom || pe.IsProtectedRoom(roomID)
 }
