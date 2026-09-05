@@ -4,6 +4,8 @@ package policyeval
 
 import (
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"go.mau.fi/util/jsontime"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/federation/pdu"
+	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/database"
@@ -30,11 +33,16 @@ func (ps *PolicyServer) getRecommendation(
 	roomVersion id.RoomVersion,
 	evaluator *PolicyEvaluator,
 	isOrigin, isLegacyCheck bool,
-) (string, *BlockRecommendation, error) {
+) (allowReason string, rec *BlockRecommendation, err error) {
+	defer func() {
+		if allowReason == "" && err == nil {
+			go ps.sendNotification(context.WithoutCancel(ctx), evaluator, pdu, rec)
+		}
+	}()
 	if pdu.Sender == evaluator.Bot.UserID || evaluator.Admins.Has(pdu.Sender) {
 		return "admin", nil, nil
 	}
-	err := evaluator.loadingComplete.Wait(ctx)
+	err = evaluator.loadingComplete.Wait(ctx)
 	if err != nil {
 		return "", nil, err
 	}
@@ -105,7 +113,7 @@ func (ps *PolicyServer) getRecommendation(
 				zerolog.Ctx(ctx).Trace().Bool("spam", rec).Str("protection", name).Msg("Evaluated protection")
 				if rec {
 					return "", &BlockRecommendation{
-						Error:        fmt.Errorf("protections rejected event"),
+						Error:        fmt.Errorf("protection %q rejected event", name),
 						DisplayError: "This message has been rejected as probable spam",
 					}, nil
 				}
@@ -113,6 +121,39 @@ func (ps *PolicyServer) getRecommendation(
 		}
 	}
 	return "no reason to disallow", nil, nil
+}
+
+func (ps *PolicyServer) sendNotification(ctx context.Context, eval *PolicyEvaluator, evt *pdu.PDU, rec *BlockRecommendation) {
+	if rec == nil {
+		return
+	}
+	notifyRoom := eval.protectedRoomsEvent.PolicyServerNotificationRoom
+	if notifyRoom == "" {
+		return
+	}
+	var roomName event.RoomNameEventContent
+	_ = eval.Bot.StateEvent(ctx, evt.RoomID, event.StateRoomName, "", &roomName)
+
+	marshalled, err := json.Marshal(evt, jsontext.WithIndent("  "))
+	if err != nil {
+		marshalled = fmt.Appendf([]byte{}, "\"non JSON object: %v\"", err)
+	}
+	var errMsg string
+	if rec.Error != nil {
+		errMsg = rec.Error.Error()
+	} else {
+		errMsg = rec.DisplayError
+	}
+	eval.Bot.SendNotice(
+		ctx,
+		notifyRoom,
+		"Event %s by %s blocked in %s: %s\n<details><summary>Event JSON</summary>\n\n```json\n%s\n```\n</details>",
+		format.SafeMarkdownCode(evt.Type),
+		format.MarkdownMention(evt.Sender),
+		format.MarkdownMentionRoomID(roomName.Name, evt.RoomID, ps.Federation.ServerName),
+		errMsg,
+		string(marshalled),
+	)
 }
 
 const PolicyServerKeyID id.KeyID = "ed25519:policy_server"

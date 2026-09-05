@@ -36,8 +36,9 @@ type ProtectedRoomsEventContent struct {
 	Protections map[string]json.RawMessage `json:"protections,omitempty"`
 
 	// TODO make this less hacky
-	SkipACL       []id.RoomID `json:"skip_acl"`
-	ObfuscateBans bool        `json:"obfuscate_bans,omitempty"`
+	SkipACL                      []id.RoomID `json:"skip_acl"`
+	ObfuscateBans                bool        `json:"obfuscate_bans,omitempty"`
+	PolicyServerNotificationRoom id.RoomID   `json:"policy_server_notification_room,omitempty"`
 }
 
 func init() {
