@@ -170,7 +170,19 @@ func (ps *PolicyServer) sendNotification(ctx context.Context, eval *PolicyEvalua
 		ctx,
 		notifyRoom,
 		content,
-		&bot.SendNoticeOpts{AllowHTML: true},
+		&bot.SendNoticeOpts{
+			AllowHTML: true,
+			Extra: map[string]any{
+				"fi.mau.meowlnir.notification_metadata": map[string]any{
+					"room_id":          evt.RoomID,
+					"sender":           evt.Sender,
+					"event_type":       evt.Type,
+					"state_key":        evt.StateKey,
+					"origin_server_ts": evt.OriginServerTS,
+					"recommendation":   rec,
+				},
+			},
+		},
 	)
 }
 
