@@ -58,7 +58,8 @@ type PolicyEvaluator struct {
 	configLock sync.Mutex
 	aclLock    sync.Mutex
 
-	aclDeferChan chan struct{}
+	aclDeferChan    chan struct{}
+	loadingComplete *exsync.Event
 
 	claimProtected       func(roomID id.RoomID, eval *PolicyEvaluator, claim bool) *PolicyEvaluator
 	protectedRoomsEvent  *config.ProtectedRoomsEventContent
@@ -117,6 +118,7 @@ func NewPolicyEvaluator(
 		wantToProtect:        make(map[id.RoomID]struct{}),
 		isJoining:            make(map[id.RoomID]struct{}),
 		aclDeferChan:         make(chan struct{}, 1),
+		loadingComplete:      exsync.NewEvent(),
 		claimProtected:       claimProtected,
 		pendingInvites:       make(map[pendingInvite]struct{}),
 		createPuppetClient:   createPuppetClient,
@@ -139,6 +141,7 @@ func NewPolicyEvaluator(
 	}
 	pe.commandProcessor.ReactionCommandPrefix = "/"
 	pe.commandProcessor.Register(
+		cmdMeow,
 		cmdJoin,
 		cmdKnock,
 		cmdLeave,
@@ -234,6 +237,7 @@ func (pe *PolicyEvaluator) tryLoad(ctx context.Context) error {
 		_, errorMsgs := pe.handleProtectedRooms(ctx, evt, true)
 		errors = append(errors, errorMsgs...)
 	}
+	pe.loadingComplete.Set()
 	initDuration := time.Since(start)
 	start = time.Now()
 	pe.EvaluateAll(ctx)

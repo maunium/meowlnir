@@ -8,10 +8,13 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/exfmt"
+	"maunium.net/go/mautrix/commands"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/event/cmdschema"
 	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
 
+	"go.mau.fi/meowlnir/bot"
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/policylist"
 )
@@ -91,6 +94,8 @@ func addActionString(rec event.PolicyRecommendation) string {
 	switch rec {
 	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "banned"
+	case event.PolicyRecommendationMute:
+		return "muted"
 	case event.PolicyRecommendationUnban:
 		return "added a ban exclusion for"
 	default:
@@ -102,6 +107,8 @@ func changeActionString(rec event.PolicyRecommendation) string {
 	switch rec {
 	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "ban"
+	case event.PolicyRecommendationMute:
+		return "mute"
 	case event.PolicyRecommendationUnban:
 		return "ban exclusion"
 	default:
@@ -113,6 +120,8 @@ func removeActionString(rec event.PolicyRecommendation) string {
 	switch rec {
 	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown:
 		return "unbanned"
+	case event.PolicyRecommendationMute:
+		return "unmuted"
 	case event.PolicyRecommendationUnban:
 		return "removed a ban exclusion for"
 	default:
@@ -188,5 +197,73 @@ func (pe *PolicyEvaluator) HandlePolicyListChange(ctx context.Context, policyRoo
 				pe.EvaluateAddedRule(ctx, added)
 			}
 		}
+	}
+}
+
+func (pe *PolicyEvaluator) HandleTombstone(ctx context.Context, evt *event.Event) {
+	replacement := evt.Content.AsTombstone().ReplacementRoom
+	if replacement == "" {
+		return
+	}
+	watchedList := pe.GetWatchedListMeta(evt.RoomID)
+	if watchedList != nil {
+		msg := fmt.Sprintf(
+			"Watched list %s was upgraded into `%s` by %s. ",
+			format.MarkdownMentionRoomID(watchedList.Name, evt.RoomID),
+			replacement,
+			format.MarkdownMention(evt.Sender),
+		)
+		if pe.IsWatchingList(replacement) {
+			pe.sendNotice(ctx, msg+"The replacement is already watched.")
+			return
+		}
+		eventID := pe.Bot.SendNoticeOpts(
+			ctx, pe.ManagementRoom, msg+"Subscribe to the replacement?", &bot.SendNoticeOpts{Extra: map[string]any{
+				commands.ReactionCommandsKey: map[string]any{
+					"/subscribe": event.MSC4391BotCommandInputCustom[*ListsSubscribeParams]{
+						Command: "lists subscribe",
+						Arguments: &ListsSubscribeParams{
+							Room:                 cmdschema.RoomIDOrString(replacement.URI(evt.Sender.Homeserver()).MatrixToURL()),
+							Shortcode:            watchedList.Shortcode + "-new",
+							DontApply:            watchedList.DontApply,
+							DontApplyAcls:        watchedList.DontApplyACL,
+							DisableNotifications: watchedList.DontNotifyOnChange,
+							DontAutoUnban:        !watchedList.AutoUnban,
+							AutoSuspend:          watchedList.AutoSuspend,
+							InsertBefore:         evt.RoomID.String(),
+						},
+					},
+					"/ignore": "",
+				},
+			}},
+		)
+		pe.sendReactions(ctx, eventID, "/subscribe", "/ignore")
+	}
+	protectedRoom := pe.getProtectedRoomMeta(evt.RoomID)
+	if protectedRoom != nil {
+		msg := fmt.Sprintf(
+			"Protected room %s was upgraded into `%s` by %s. ",
+			format.MarkdownMentionRoomID(protectedRoom.Name, evt.RoomID),
+			replacement,
+			format.MarkdownMention(evt.Sender),
+		)
+		if pe.IsProtectedRoom(replacement) {
+			pe.sendNotice(ctx, msg+"The replacement is already protected.")
+			return
+		}
+		eventID := pe.Bot.SendNoticeOpts(
+			ctx, pe.ManagementRoom, msg+"Protect the replacement?", &bot.SendNoticeOpts{Extra: map[string]any{
+				commands.ReactionCommandsKey: map[string]any{
+					"/protect": event.MSC4391BotCommandInputCustom[*ProtectRoomParams]{
+						Command: "rooms protect",
+						Arguments: &ProtectRoomParams{
+							Rooms: []cmdschema.RoomIDOrString{cmdschema.RoomIDOrString(replacement.URI(evt.Sender.Homeserver()).MatrixToURL())},
+						},
+					},
+					"/ignore": "",
+				},
+			}},
+		)
+		pe.sendReactions(ctx, eventID, "/protect", "/ignore")
 	}
 }

@@ -27,7 +27,7 @@ func (pe *PolicyEvaluator) CompileACL() (*event.ServerACLEventContent, time.Dura
 		if policy.Pattern.Match(pe.Bot.ServerName) {
 			continue
 		}
-		if policy.Recommendation != event.PolicyRecommendationUnban {
+		if policy.Recommendation.IsBanOrTakedown() {
 			acl.Deny = append(acl.Deny, entity)
 		}
 	}

@@ -81,6 +81,24 @@ func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event,
 	}
 }
 
+type MeowArgs struct {
+	Meow string `json:"meow"`
+}
+
+var cmdMeow = &CommandHandler{
+	Name:        "meow",
+	Description: event.MakeExtensibleText("Meow"),
+	Parameters: []*cmdschema.Parameter{{
+		Key:      "meow",
+		Schema:   cmdschema.PrimitiveTypeString.Schema(),
+		Optional: true,
+	}},
+	TailParam: "meow",
+	Func: commands.WithParsedArgs(func(ce *commands.Event[*PolicyEvaluator], args *MeowArgs) {
+		ce.Reply("Meow " + args.Meow)
+	}),
+}
+
 type JoinArgs struct {
 	Rooms []cmdschema.RoomIDOrString `json:"rooms"`
 }
@@ -178,7 +196,7 @@ var cmdPowerLevel = &CommandHandler{
 		Key: "room",
 		Schema: cmdschema.Union(
 			cmdschema.Literal("all"),
-			cmdschema.PrimitiveTypeRoomID.Schema(),
+			cmdschema.ParameterSchemaJoinableRoom,
 		),
 	}, {
 		Key: "key",
@@ -503,7 +521,16 @@ func (pe *PolicyEvaluator) deduplicatePolicy(
 	entityType policylist.EntityType,
 ) (existingStateKey string, ok bool) {
 	match := ce.Meta.Store.MatchExact([]id.RoomID{list.RoomID}, entityType, policy.Entity)
-	rec := match.Recommendations().BanOrUnban
+	recs := match.Recommendations()
+	var rec *policylist.Policy
+	switch policy.Recommendation {
+	case event.PolicyRecommendationBan, event.PolicyRecommendationUnstableTakedown, event.PolicyRecommendationUnban:
+		rec = recs.BanOrUnban
+	case event.PolicyRecommendationMute:
+		rec = recs.Mute
+	default:
+		return "", false
+	}
 	if rec == nil {
 		return "", true
 	} else if rec.Recommendation == policy.Recommendation && rec.EntityOrHash() == policy.EntityOrHash() {
@@ -547,6 +574,10 @@ type BanParams struct {
 var cmdTakedown = &CommandHandler{
 	Name:        "takedown",
 	Description: event.MakeExtensibleText("Send a takedown policy to a policy list"),
+}
+var cmdPSMute = &CommandHandler{
+	Name:        "mute",
+	Description: event.MakeExtensibleText("Send a mute policy to a policy list (to be enforced by the policy server)"),
 }
 var cmdBan = &CommandHandler{
 	Name:        "ban",
@@ -594,6 +625,8 @@ var cmdBan = &CommandHandler{
 		}
 		if ce.Handler == cmdTakedown {
 			policy.Recommendation = event.PolicyRecommendationUnstableTakedown
+		} else if ce.Handler == cmdPSMute {
+			policy.Recommendation = event.PolicyRecommendationMute
 		}
 		existingStateKey, ok := ce.Meta.deduplicatePolicy(ce, list, policy, entityType)
 		if !ok {
@@ -625,6 +658,12 @@ var cmdRemoveUnban = &CommandHandler{
 	Name:        "remove-unban",
 	Description: event.MakeExtensibleText("Remove an unban policy from a policy list"),
 }
+var cmdPSUnmute = &CommandHandler{
+	Name:        "remove-mute",
+	Description: event.MakeExtensibleText("Remove a mute policy from a policy list"),
+	Aliases:     []string{"unmute"},
+}
+var cmdRemovePolicyAlias *CommandHandler
 var cmdRemovePolicy = &CommandHandler{
 	Name:        "remove-policy",
 	Description: event.MakeExtensibleText("Remove a policy from a policy list"),
@@ -639,7 +678,6 @@ var cmdRemovePolicy = &CommandHandler{
 		if !ok {
 			return
 		}
-		var existingStateKey string
 		var match policylist.Match
 		if hashEntity, ok := util.DecodeBase64Hash(target); ok {
 			match = ce.Meta.Store.MatchHash([]id.RoomID{list.RoomID}, entityType, *hashEntity)
@@ -650,26 +688,37 @@ var cmdRemovePolicy = &CommandHandler{
 			ce.Reply("No rule banning %s found in %s", format.SafeMarkdownCode(target), format.MarkdownMentionRoomID(list.Name, list.RoomID))
 			return
 		}
-		if rec := match.Recommendations().BanOrUnban; rec != nil {
-			existingStateKey = rec.StateKey
-			// TODO: handle wildcards and multiple matches, etc
-			if ce.Handler == cmdRemoveUnban && rec.Recommendation != event.PolicyRecommendationUnban {
-				ce.Reply("%s does not have an unban recommendation", format.SafeMarkdownCode(target))
-				return
-			} else if ce.Handler == cmdRemoveBan && rec.Recommendation != event.PolicyRecommendationBan {
-				ce.Reply("%s does not have a ban recommendation", format.SafeMarkdownCode(target))
-				return
+		var keysToRemove []string
+		recs := match.Recommendations()
+		// TODO: handle wildcards and multiple matches, etc
+		if rec := recs.BanOrUnban; rec != nil {
+			if (ce.Handler == cmdRemoveUnban && rec.Recommendation == event.PolicyRecommendationUnban) ||
+				(ce.Handler == cmdRemoveBan && rec.Recommendation == event.PolicyRecommendationBan) ||
+				(ce.Handler == cmdRemovePolicyAlias) {
+				keysToRemove = append(keysToRemove, rec.StateKey)
 			}
 		}
-		resp, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, list.RoomID, entityType.EventType(), existingStateKey, json.RawMessage("{}"))
-		if err != nil {
-			ce.Reply("Failed to remove policy: %v", err)
+		if rec := recs.Mute; rec != nil {
+			if (ce.Handler == cmdPSUnmute && rec.Recommendation == event.PolicyRecommendationMute) ||
+				(ce.Handler == cmdRemovePolicyAlias) {
+				keysToRemove = append(keysToRemove, rec.StateKey)
+			}
+		}
+		if len(keysToRemove) == 0 {
+			ce.Reply("No policies found to remove")
 			return
 		}
-		ce.Log.Info().
-			Stringer("policy_list", list.RoomID).
-			Stringer("policy_event_id", resp.EventID).
-			Msg("Removed policy from command")
+		for _, key := range keysToRemove {
+			resp, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, list.RoomID, entityType.EventType(), key, json.RawMessage("{}"))
+			if err != nil {
+				ce.Reply("Failed to remove policy: %v", err)
+				return
+			}
+			ce.Log.Info().
+				Stringer("policy_list", list.RoomID).
+				Stringer("policy_event_id", resp.EventID).
+				Msg("Removed policy from command")
+		}
 		ce.React(SuccessReaction)
 	}),
 }
@@ -1423,6 +1472,7 @@ type ListsSubscribeParams struct {
 	DisableNotifications bool                     `json:"disable-notifications"`
 	DontAutoUnban        bool                     `json:"dont-auto-unban"`
 	AutoSuspend          bool                     `json:"auto-suspend"`
+	InsertBefore         string                   `json:"insert-before"`
 }
 
 var cmdListsSubscribe = &CommandHandler{
@@ -1461,6 +1511,11 @@ var cmdListsSubscribe = &CommandHandler{
 		{
 			Key:      "auto-suspend",
 			Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+			Optional: true,
+		},
+		{
+			Key:      "insert-before",
+			Schema:   cmdschema.PrimitiveTypeString.Schema(),
 			Optional: true,
 		},
 	},
@@ -1540,7 +1595,19 @@ var cmdListsSubscribe = &CommandHandler{
 			AutoSuspend:        args.AutoSuspend,
 			AutoUnban:          !args.DontAutoUnban,
 		}
-		contentCopy.Lists = append(contentCopy.Lists, newList)
+		inserted := false
+		if args.InsertBefore != "" {
+			for i, item := range contentCopy.Lists {
+				if item.Shortcode == args.InsertBefore || item.RoomID.String() == args.InsertBefore || item.Name == args.InsertBefore {
+					contentCopy.Lists = slices.Insert(contentCopy.Lists, i, newList)
+					inserted = true
+					break
+				}
+			}
+		}
+		if !inserted {
+			contentCopy.Lists = append(contentCopy.Lists, newList)
+		}
 		_, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, ce.Meta.ManagementRoom, config.StateWatchedLists, "", &contentCopy)
 		if err != nil {
 			ce.Reply("Failed to update watched lists: %v", err)
@@ -1817,6 +1884,8 @@ var cmdPolicyServer = &CommandHandler{
 	Subcommands: []*CommandHandler{
 		cmdPolicyServerEnable,
 		cmdPolicyServerDisable,
+		cmdPSMute,
+		cmdPSUnmute,
 	},
 	Aliases:     []string{"ps"},
 	Parameters:  make([]*cmdschema.Parameter, 0),
@@ -1882,7 +1951,7 @@ var cmdHelp = &CommandHandler{
 	Description: event.MakeExtensibleText("Show help for commands"),
 	Parameters: []*cmdschema.Parameter{{
 		Key:      "command",
-		Schema:   cmdschema.Enum("rooms"),
+		Schema:   cmdschema.PrimitiveTypeString.Schema(),
 		Optional: true,
 	}},
 	TailParam: "command",
@@ -1910,6 +1979,8 @@ var cmdHelp = &CommandHandler{
 				"* `!send-as-bot <room> <message>` - Send a message as the bot\n" +
 				"* `![un]suspend <user ID>` - Suspend or unsuspend a user\n" +
 				"* `!deactivate <user ID> [--erase]` - Deactivate a user\n" +
+				"* `!policyserver [enable/disable] [rooms...]` - View or manage the policy server\n" +
+				"* `!toggleprotection <name>` - Enable or disable a protection\n" +
 				"* `!bot-profile <displayname/avatar> <new value>` - Update the bot profile\n" +
 				"* `!rooms <...>` - Manage rooms\n" +
 				"* `!version` - Check the running Meowlnir version\n" +
@@ -2039,7 +2110,10 @@ func (pe *PolicyEvaluator) SendPolicy(ctx context.Context, policyList id.RoomID,
 func init() {
 	cmdRemoveBan.CopyFrom(cmdRemovePolicy)
 	cmdRemoveUnban.CopyFrom(cmdRemovePolicy)
+	cmdPSUnmute.CopyFrom(cmdRemovePolicy)
+	cmdRemovePolicyAlias = cmdRemovePolicy
 	cmdTakedown.CopyFrom(cmdBan)
+	cmdPSMute.CopyFrom(cmdBan)
 	cmdRoomBlock.CopyFrom(cmdRoomDelete)
 	cmdUnprotectRoom.CopyFrom(cmdProtectRoom)
 	cmdUnsuspend.CopyFrom(cmdSuspend)

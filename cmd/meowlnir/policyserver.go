@@ -1,9 +1,12 @@
-//go:build goexperiment.jsonv2
+//go:build goexperiment.jsonv2 || go1.27
 
 package main
 
 import (
+	"cmp"
+	"context"
 	"encoding/json/v2"
+	"errors"
 	"io"
 	"net/http"
 	"regexp"
@@ -130,8 +133,12 @@ func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	err = m.PolicyServer.HandleSign(r.Context(), createEvt.RoomVersion, parsedPDU, eval, federation.OriginServerNameFromRequest(r))
+	errorMessage, err := m.PolicyServer.HandleSign(r.Context(), createEvt.RoomVersion, parsedPDU, eval, federation.OriginServerNameFromRequest(r))
 	if err != nil {
+		if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
+			w.WriteHeader(499)
+			return
+		}
 		hlog.FromRequest(r).Err(err).Msg("Failed to handle check")
 		mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
 		return
@@ -141,14 +148,19 @@ func (m *Meowlnir) postPolicyServerSign(w http.ResponseWriter, r *http.Request, 
 	if ok {
 		//sigs[m.PolicyServer.Federation.ServerName] = map[id.KeyID]string{policyeval.PolicyServerKeyID: sig}
 		// Return all signatures to work around a synapse bug where it only does a shallow merge
-		// https://github.com/element-hq/synapse/blob/v1.148.0/synapse/handlers/room_policy.py#L177
+		// https://github.com/element-hq/synapse/blob/v1.153.0/synapse/handlers/room_policy.py#L264
+		// See https://github.com/element-hq/synapse/issues/19796
+		//
+		// Since the bug is on all the receiving servers instead of the sending server,
+		// this hack probably can't be removed until Synapse gets support for asking
+		// its own server name for outgoing event signatures.
 		sigs[m.PolicyServer.Federation.ServerName] = parsedPDU.Signatures[m.PolicyServer.Federation.ServerName]
 	} else if !legacy {
 		mautrix.MForbidden.
-			WithMessage("This message has been rejected as probable spam").
+			WithMessage(cmp.Or(errorMessage, "This message has been rejected as probable spam")).
 			WithStatus(http.StatusBadRequest).
 			Write(w)
 		return
 	}
-	exhttp.WriteJSONResponse(w, http.StatusOK, parsedPDU.Signatures)
+	exhttp.WriteJSONResponse(w, http.StatusOK, sigs)
 }

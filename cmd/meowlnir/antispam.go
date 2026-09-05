@@ -165,17 +165,18 @@ func (m *Meowlnir) PostAcceptMakeJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pathID := r.PathValue("policyListID")
+	autoRoute := pathID == "auto" || m.Config.Antispam.AutoRouteJoinGate
 	var mgmtRoom *policyeval.PolicyEvaluator
 	var ok bool
 	m.MapLock.RLock()
-	if pathID == "auto" {
+	if autoRoute {
 		mgmtRoom, ok = m.EvaluatorByProtectedRoom[req.RoomID]
 	} else {
 		mgmtRoom, ok = m.EvaluatorByManagementRoom[id.RoomID(pathID)]
 	}
 	m.MapLock.RUnlock()
 	if !ok {
-		if pathID == "auto" {
+		if autoRoute {
 			mautrix.MNotFound.WithMessage("Antispam configured to auto-route accept_make_join, but the room is not protected").Write(w)
 		} else {
 			mautrix.MNotFound.WithMessage("Antispam configuration issue: policy list not found").Write(w)

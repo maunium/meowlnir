@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -105,7 +106,7 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 	policylist.HackyRuleFilter = m.Config.Meowlnir.HackyRuleFilter
 	// This is not technically necessary as policyeval/serveracl.go already ignores the local server,
 	// but it makes it more explicit in logs that the policy is ignored.
-	if !slices.Contains(policylist.HackyRuleFilter, m.Config.Homeserver.Domain) {
+	if policylist.HackyRuleFilter != nil && !slices.Contains(policylist.HackyRuleFilter, m.Config.Homeserver.Domain) {
 		policylist.HackyRuleFilter = append(policylist.HackyRuleFilter, m.Config.Homeserver.Domain)
 	}
 	policylist.HackyRuleFilterHashes = exslices.CastFunc(policylist.HackyRuleFilter, func(s string) [32]byte {
@@ -182,7 +183,11 @@ func (m *Meowlnir) Init(configPath string, noSaveConfig bool) {
 		}
 	}
 	inMemCache := federation.NewInMemoryCache()
-	m.Federation = federation.NewClient(m.Config.Homeserver.Domain, nil, inMemCache, exhttp.SensibleClientSettings)
+	psName := cmp.Or(m.Config.PolicyServer.ServerName, m.Config.Homeserver.Domain)
+	m.Federation = federation.NewClient(psName, nil, inMemCache, exhttp.SensibleClientSettings)
+	if m.Config.PolicyServer.IPFilter.Enable() {
+		m.Federation.AllowIP = m.Config.PolicyServer.IPFilter.Allow
+	}
 	serverAuth := federation.NewServerAuth(m.Federation, inMemCache, func(auth federation.XMatrixAuth) string {
 		return auth.Destination
 	})

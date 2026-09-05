@@ -3,6 +3,7 @@ package config
 import (
 	_ "embed"
 	"fmt"
+	"net"
 	"strings"
 	"text/template"
 
@@ -11,6 +12,7 @@ import (
 	"go.mau.fi/util/random"
 	"go.mau.fi/zeroconfig"
 	"gopkg.in/yaml.v3"
+	"maunium.net/go/mautrix/federation"
 	"maunium.net/go/mautrix/id"
 )
 
@@ -106,9 +108,66 @@ func (mac *Meowlnir4AllConfig) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
+type IPFilter struct {
+	RawDeny  []string `yaml:"deny"`
+	RawAllow []string `yaml:"allow"`
+
+	parsedDeny  []*net.IPNet
+	parsedAllow []*net.IPNet
+}
+
+type serializableIPFilter IPFilter
+
+func (f *IPFilter) UnmarshalYAML(node *yaml.Node) error {
+	var sf serializableIPFilter
+	err := node.Decode(&sf)
+	if err != nil {
+		return err
+	}
+	*f = IPFilter(sf)
+	f.parsedDeny = make([]*net.IPNet, len(f.RawDeny))
+	for i, cidr := range f.RawDeny {
+		_, f.parsedDeny[i], err = net.ParseCIDR(cidr)
+		if err != nil {
+			return fmt.Errorf("failed to parse deny CIDR %q: %w", cidr, err)
+		}
+	}
+	f.parsedAllow = make([]*net.IPNet, len(f.RawAllow))
+	for i, cidr := range f.RawAllow {
+		_, f.parsedAllow[i], err = net.ParseCIDR(cidr)
+		if err != nil {
+			return fmt.Errorf("failed to parse allow CIDR %q: %w", cidr, err)
+		}
+	}
+	return nil
+}
+
+func (f *IPFilter) Enable() bool {
+	return len(f.parsedAllow) > 0 || len(f.parsedDeny) > 0
+}
+
+func (f *IPFilter) Allow(ip net.IP) bool {
+	for _, allow := range f.parsedAllow {
+		if allow.Contains(ip) {
+			return true
+		}
+	}
+	if len(f.parsedDeny) > 0 {
+		for _, deny := range f.parsedDeny {
+			if deny.Contains(ip) {
+				return false
+			}
+		}
+		return true
+	}
+	return federation.DefaultAllowIP(ip)
+}
+
 type PolicyServerConfig struct {
-	AlwaysRedact bool   `yaml:"always_redact"`
-	SigningKey   string `yaml:"signing_key"`
+	ServerName   string    `yaml:"server_name"`
+	AlwaysRedact bool      `yaml:"always_redact"`
+	SigningKey   string    `yaml:"signing_key"`
+	IPFilter     *IPFilter `yaml:"ip_filter"`
 }
 
 type AntispamConfig struct {
@@ -116,6 +175,7 @@ type AntispamConfig struct {
 	FilterLocalInvites     bool        `yaml:"filter_local_invites"`
 	AutoRejectInvitesToken string      `yaml:"auto_reject_invites_token"`
 	NotifyManagementRoom   bool        `yaml:"notify_management_room"`
+	AutoRouteJoinGate      bool        `yaml:"auto_route_join_gate"`
 	BlockInvitesTo         []id.UserID `yaml:"block_invites_to"`
 }
 

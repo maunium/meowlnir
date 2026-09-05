@@ -51,6 +51,7 @@ func (m *Meowlnir) AddEventHandlers() {
 	m.EventProcessor.On(event.EventReaction, m.HandleReaction)
 	m.EventProcessor.On(event.EventSticker, m.HandleMessage)
 	m.EventProcessor.On(event.EventEncrypted, m.HandleEncrypted)
+	m.EventProcessor.On(event.StateTombstone, m.HandleTombstone)
 }
 
 func (m *Meowlnir) HandleToDeviceEvent(ctx context.Context, evt *event.Event) {
@@ -131,6 +132,12 @@ func (m *Meowlnir) HandleMember(ctx context.Context, evt *event.Event) {
 	}
 	if protectedOK {
 		roomProtector.HandleMember(ctx, evt)
+	}
+}
+
+func (m *Meowlnir) HandleTombstone(ctx context.Context, evt *event.Event) {
+	for _, eval := range m.EvaluatorByManagementRoom {
+		eval.HandleTombstone(ctx, evt)
 	}
 }
 

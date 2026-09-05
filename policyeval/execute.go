@@ -32,7 +32,7 @@ func (pe *PolicyEvaluator) getRoomsUserIsIn(userID id.UserID) []id.RoomID {
 }
 
 func (pe *PolicyEvaluator) ApplyPolicy(ctx context.Context, userID id.UserID, policy policylist.Match, isNew bool) {
-	if userID == pe.Bot.UserID {
+	if userID == pe.Bot.UserID || pe.Admins.Has(userID) {
 		return
 	}
 	recs := policy.Recommendations()

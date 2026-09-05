@@ -39,7 +39,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str|up.Null, "meowlnir", "report_room")
 	helper.Copy(up.Str|up.Null, "meowlnir", "room_ban_room")
 	helper.Copy(up.Bool, "meowlnir", "load_all_room_hashes")
-	helper.Copy(up.List, "meowlnir", "hacky_rule_filter")
+	helper.Copy(up.List|up.Null, "meowlnir", "hacky_rule_filter")
 	helper.Copy(up.List, "meowlnir", "hacky_redact_patterns")
 	helper.Copy(up.Map, "meowlnir", "admin_tokens")
 
@@ -58,14 +58,18 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str|up.Null, "antispam", "auto_reject_invites_token")
 	helper.Copy(up.Bool, "antispam", "filter_local_invites")
 	helper.Copy(up.Bool, "antispam", "notify_management_room")
+	helper.Copy(up.Bool, "antispam", "auto_route_join_gate")
 	helper.Copy(up.List, "antispam", "block_invites_to")
 
+	helper.Copy(up.Str|up.Null, "policy_server", "server_name")
 	helper.Copy(up.Bool, "policy_server", "always_redact")
 	if sk, ok := helper.Get(up.Str, "policy_server", "signing_key"); ok && sk != "generate" {
 		helper.Set(up.Str, sk, "policy_server", "signing_key")
 	} else {
 		helper.Set(up.Str, federation.GenerateSigningKey().SynapseString(), "policy_server", "signing_key")
 	}
+	helper.Copy(up.List, "policy_server", "ip_filter", "deny")
+	helper.Copy(up.List, "policy_server", "ip_filter", "allow")
 
 	if secret, ok := helper.Get(up.Str, "meowlnir", "pickle_key"); ok && secret != "generate" {
 		helper.Set(up.Str, secret, "encryption", "pickle_key")
@@ -97,6 +101,7 @@ var SpacedBlocks = [][]string{
 	{"meowlnir", "management_secret"},
 	{"meowlnir", "report_room"},
 	{"meowlnir", "admin_tokens"},
+	{"meowlnir4all"},
 	{"antispam"},
 	{"policy_server"},
 	{"encryption"},
