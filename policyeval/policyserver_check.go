@@ -45,7 +45,7 @@ func (ps *PolicyServer) getRecommendation(
 		if recs.BanOrUnban != nil && recs.BanOrUnban.Recommendation != event.PolicyRecommendationUnban {
 			return "", &BlockRecommendation{Match: match, DisplayError: "You are banned in this room"}, nil
 		} else if recs.Mute != nil {
-			return "", &BlockRecommendation{Match: match, DisplayError: "You are muted in this room"}, nil
+			return "", &BlockRecommendation{Match: match, DisplayError: fmt.Sprintf("You are muted in this room: %s", recs.Mute.Reason)}, nil
 		}
 	}
 	match = evaluator.Store.MatchServer(watchedLists, pdu.Sender.Homeserver())
@@ -54,7 +54,7 @@ func (ps *PolicyServer) getRecommendation(
 		if recs.BanOrUnban != nil && recs.BanOrUnban.Recommendation != event.PolicyRecommendationUnban {
 			return "", &BlockRecommendation{Match: match, DisplayError: "You are banned in this room"}, nil
 		} else if recs.Mute != nil {
-			return "", &BlockRecommendation{Match: match, DisplayError: "You are muted in this room"}, nil
+			return "", &BlockRecommendation{Match: match, DisplayError: fmt.Sprintf("You are muted in this room: %s", recs.Mute.Reason)}, nil
 		}
 	}
 	if pdu.StateKey == nil && !pdu.VerifyContentHash() {
