@@ -39,12 +39,16 @@ func (ps *PolicyServer) getRecommendation(
 		return "", nil, err
 	}
 	watchedLists := evaluator.GetWatchedLists()
+	evtType := event.Type{Type: pdu.Type, Class: event.MessageEventType}
+	if pdu.StateKey != nil {
+		evtType.Class = event.StateEventType
+	}
 	match := evaluator.Store.MatchUser(watchedLists, pdu.Sender)
 	if match != nil {
 		recs := match.Recommendations()
 		if recs.BanOrUnban != nil && recs.BanOrUnban.Recommendation != event.PolicyRecommendationUnban {
 			return "", &BlockRecommendation{Match: match, DisplayError: "You are banned in this room"}, nil
-		} else if recs.Mute != nil {
+		} else if recs.Mute != nil && evtType != event.StateMember {
 			return "", &BlockRecommendation{Match: match, DisplayError: fmt.Sprintf("You are muted in this room: %s", recs.Mute.Reason)}, nil
 		}
 	}
@@ -53,7 +57,7 @@ func (ps *PolicyServer) getRecommendation(
 		recs := match.Recommendations()
 		if recs.BanOrUnban != nil && recs.BanOrUnban.Recommendation != event.PolicyRecommendationUnban {
 			return "", &BlockRecommendation{Match: match, DisplayError: "You are banned in this room"}, nil
-		} else if recs.Mute != nil {
+		} else if recs.Mute != nil && evtType != event.StateMember {
 			return "", &BlockRecommendation{Match: match, DisplayError: fmt.Sprintf("You are muted in this room: %s", recs.Mute.Reason)}, nil
 		}
 	}
