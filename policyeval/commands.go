@@ -1197,8 +1197,9 @@ var cmdDeactivate = &CommandHandler{
 		Key:    "user",
 		Schema: cmdschema.PrimitiveTypeUserID.Schema(),
 	}, {
-		Key:    "redact",
-		Schema: cmdschema.PrimitiveTypeBoolean.Schema(),
+		Key:      "redact",
+		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
+		Optional: true,
 	}, {
 		Key:      "erase",
 		Schema:   cmdschema.PrimitiveTypeBoolean.Schema(),
@@ -1209,6 +1210,7 @@ var cmdDeactivate = &CommandHandler{
 			task, err := ce.Meta.Bot.SynapseAdmin.RedactUser(ce.Ctx, args.UserID, synapseadmin.ReqRedactUser{})
 			if err != nil {
 				ce.Reply("Failed to start user redaction task: %v", err)
+				return
 			}
 			r := ce.React(ActionPendingReaction)
 			for {
@@ -1224,7 +1226,7 @@ var cmdDeactivate = &CommandHandler{
 					}
 				case "failed", "cancelled":
 					ce.Reply("User redaction task failed.")
-				default:
+				case "active":
 					time.Sleep(time.Second)
 					continue
 				}
