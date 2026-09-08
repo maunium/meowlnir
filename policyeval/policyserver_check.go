@@ -217,18 +217,23 @@ func (ps *PolicyServer) HandleSign(
 			Time("cached_at", sig.CreatedAt.Time).
 			Str("signature", sig.Signature).
 			Msg("Using cached result for sign request")
+		if sig.Signature == "" {
+			return "This message was already rejected previously", nil
+		}
 		evt.AddSignature(ps.Federation.ServerName, PolicyServerKeyID, sig.Signature)
 		return "", nil
 	}
 
 	log.Trace().Any("event", evt).Msg("Checking event received by policy server")
+	isFromOrigin := originServer == evt.Sender.Homeserver()
+	isLegacyCheck := originServer == fakeLegacyCheckServerName
 	allowReason, blockRec, err := ps.getRecommendation(
 		ctx,
 		evt,
 		roomVersion,
 		evaluator,
-		originServer == evt.Sender.Homeserver(),
-		originServer == fakeLegacyCheckServerName,
+		isFromOrigin,
+		isLegacyCheck,
 	)
 	if err != nil {
 		return "", err
@@ -236,6 +241,16 @@ func (ps *PolicyServer) HandleSign(
 	if blockRec != nil {
 		// Don't sign spam events
 		log.Debug().Any("recommendation", blockRec).Msg("Event rejected for spam")
+		if !isFromOrigin && !isLegacyCheck {
+			err = ps.DB.PSSignature.Put(ctx, &database.PSSignature{
+				EventID:   evtID,
+				Signature: "",
+				CreatedAt: jsontime.UnixMilliNow(),
+			})
+			if err != nil {
+				log.Warn().Err(err).Msg("Failed to store event rejection in database")
+			}
+		}
 		return blockRec.DisplayError, nil
 	}
 	log.Trace().Str("allow_reason", allowReason).Msg("Event accepted")

@@ -17,7 +17,7 @@ const (
 		INSERT INTO policy_server_signature (event_id, signature, created_at) VALUES ($1, $2, $3)
 		ON CONFLICT (event_id) DO UPDATE
 			SET signature=excluded.signature, created_at=excluded.created_at
-			WHERE policy_server_signature.signature IS NULL
+			WHERE policy_server_signature.signature=''
 	`
 )
 
