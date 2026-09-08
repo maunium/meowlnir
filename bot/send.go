@@ -23,6 +23,7 @@ type SendNoticeOpts struct {
 	Mentions         *event.Mentions
 	SendAsText       bool
 	Extra            map[string]any
+	Edit             id.EventID
 }
 
 func (bot *Bot) SendNoticeOpts(ctx context.Context, roomID id.RoomID, message string, opts *SendNoticeOpts) id.EventID {
@@ -35,6 +36,9 @@ func (bot *Bot) SendNoticeOpts(ctx context.Context, roomID id.RoomID, message st
 	}
 	if opts.Mentions != nil {
 		content.Mentions = opts.Mentions
+	}
+	if opts.Edit != "" {
+		content.SetEdit(opts.Edit)
 	}
 	var wrappedContent any = &content
 	if opts.Extra != nil {

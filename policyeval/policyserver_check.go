@@ -19,6 +19,7 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/meowlnir/bot"
+	"go.mau.fi/meowlnir/synapsedb"
 
 	"go.mau.fi/meowlnir/database"
 	"go.mau.fi/meowlnir/policylist"
@@ -323,4 +324,41 @@ func (ps *PolicyServer) HandleCachedLegacyCheck(ctx context.Context, evtID id.Ev
 		log.Trace().Msg("Event not found in database, rejecting legacy check")
 	}
 	return false, nil
+}
+
+func (ps *PolicyServer) PreSignEvents(ctx context.Context, createEvt *event.CreateEventContent, events map[id.EventID]*synapsedb.OldEvent) (signed, failed int, err error) {
+	serverName := ps.Federation.ServerName
+	signatures := make([]*database.PSSignature, 0, len(events))
+	log := zerolog.Ctx(ctx)
+	for _, evt := range events {
+		if evt.Reject {
+			signatures = append(signatures, &database.PSSignature{EventID: evt.EventID})
+			signed++
+			continue
+		}
+		var p *pdu.PDU
+		err = json.Unmarshal(evt.PDU, &p)
+		if err != nil {
+			log.Err(err).Stringer("pdu_id", evt.EventID).Msg("Failed to parse event")
+		} else if canonEventID, err := p.GetEventID(createEvt.RoomVersion); err != nil {
+			log.Err(err).Stringer("pdu_id", evt.EventID).Msg("Failed to calculate event ID")
+		} else if canonEventID != evt.EventID {
+			log.Err(err).
+				Stringer("pdu_id", evt.EventID).
+				Stringer("calculated_pdu_id", canonEventID).
+				Msg("Event ID mismatch")
+		} else if err = p.Sign(createEvt.RoomVersion, serverName, PolicyServerKeyID, ps.SigningKey.Priv); err != nil {
+			log.Err(err).Stringer("pdu_id", evt.EventID).Msg("Failed to sign event")
+		} else {
+			signatures = append(signatures, &database.PSSignature{
+				EventID:   canonEventID,
+				Signature: p.Signatures[serverName][PolicyServerKeyID],
+			})
+			signed++
+			continue
+		}
+		failed++
+	}
+	err = ps.DB.PSSignature.PutMany(ctx, signatures)
+	return
 }

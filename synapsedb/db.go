@@ -2,6 +2,7 @@ package synapsedb
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"time"
 
 	"github.com/lib/pq"
@@ -99,6 +100,49 @@ func (s *SynapseDB) GetEvent(ctx context.Context, eventID id.EventID) (*event.Ev
 		evt.Type.Class = event.StateEventType
 	}
 	return &evt, nil
+}
+
+type OldEvent struct {
+	StreamOrder int64
+	EventID     id.EventID
+	PDU         jsontext.Value
+	Reject      bool
+}
+
+var scanOldEvent = dbutil.ConvertRowFn[*OldEvent](func(row dbutil.Scannable) (e *OldEvent, err error) {
+	e = &OldEvent{}
+	err = row.Scan(&e.StreamOrder, &e.EventID, &e.PDU, &e.Reject)
+	return
+})
+
+const getOldEventsQuery = `
+	SELECT events.stream_ordering, events.event_id, event_json.json,
+	       (events.rejection_reason<>'' OR (event_json.internal_metadata::json->>'soft_failed')::boolean IS TRUE)
+	FROM events
+	JOIN event_json ON events.event_id=event_json.event_id
+	WHERE events.room_id = $1 AND events.stream_ordering > $2
+	ORDER BY events.stream_ordering
+	LIMIT $3
+`
+
+func (s *SynapseDB) GetEventsToPreSign(ctx context.Context, roomID id.RoomID, sinceRowID int64, limit int) (map[id.EventID]*OldEvent, int64, error) {
+	out := make(map[id.EventID]*OldEvent, limit)
+	var maxRowID int64
+	err := scanOldEvent.NewRowIter(s.DB.Query(ctx, getOldEventsQuery, roomID, sinceRowID, limit)).Iter(func(evt *OldEvent) (bool, error) {
+		out[evt.EventID] = evt
+		maxRowID = evt.StreamOrder
+		return true, nil
+	})
+	return out, maxRowID, err
+}
+
+const getEventCountQuery = `
+	SELECT COUNT(*), MIN(stream_ordering) FROM events WHERE room_id = $1
+`
+
+func (s *SynapseDB) GetEventCount(ctx context.Context, roomID id.RoomID) (eventCount, minRowID int64, err error) {
+	err = s.DB.QueryRow(ctx, getEventCountQuery, roomID).Scan(&eventCount, &minRowID)
+	return
 }
 
 var roomIDScanner = dbutil.ConvertRowFn[id.RoomID](dbutil.ScanSingleColumn[id.RoomID])

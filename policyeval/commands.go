@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/exfmt"
 	"go.mau.fi/util/glob"
 	"go.mau.fi/util/progver"
 	"go.mau.fi/util/ptr"
@@ -26,8 +28,10 @@ import (
 	"maunium.net/go/mautrix/id"
 	"maunium.net/go/mautrix/synapseadmin"
 
+	"go.mau.fi/meowlnir/bot"
 	"go.mau.fi/meowlnir/config"
 	"go.mau.fi/meowlnir/policylist"
+	"go.mau.fi/meowlnir/synapsedb"
 	"go.mau.fi/meowlnir/util"
 )
 
@@ -1882,6 +1886,125 @@ var cmdPolicyServerEnable = &CommandHandler{
 	}),
 }
 
+type PolicyServerPreSignParams struct {
+	Room cmdschema.RoomIDOrString `json:"room"`
+}
+
+const clock1 rune = 0x1f550
+
+func makeClock(hour int) string {
+	return string([]rune{clock1 + rune(hour+11)%12, 0xfe0f})
+}
+
+var cmdPolicyServerPreSign = &CommandHandler{
+	Name:        "presign",
+	Description: event.MakeExtensibleText("Pre-sign all existing events in the Synapse database."),
+	Parameters: []*cmdschema.Parameter{{
+		Key:         "room",
+		Schema:      cmdschema.ParameterSchemaJoinableRoom,
+		Description: event.MakeExtensibleText("The room to process"),
+	}},
+	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *PolicyServerPreSignParams) {
+		roomID := resolveRoom(ce, args.Room)
+		if roomID == "" {
+			ce.Reply("Failed to resolve room %s", format.SafeMarkdownCode(args.Room))
+			return
+		} else if !ce.Meta.IsProtectedRoom(roomID) {
+			ce.Reply("%s is not a protected room", format.SafeMarkdownCode(args.Room))
+			return
+		}
+		createEvt := ce.Meta.GetProtectedRoomCreateEvent(roomID)
+		if createEvt == nil {
+			ce.Reply("Create event not found")
+			return
+		}
+		pendingReact := ce.React(ActionPendingReaction)
+		defer func() {
+			if pendingReact != "" {
+				_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, pendingReact)
+			}
+		}()
+		totalEventCount, minRowID, err := ce.Meta.SynapseDB.GetEventCount(ce.Ctx, roomID)
+		if err != nil {
+			ce.Log.Err(err).Msg("Failed to get event count")
+			ce.Reply("Failed to get number of events in room")
+			return
+		}
+		const chunkSize = 500
+		start := time.Now()
+		totalChunkCount := int(math.Ceil(float64(totalEventCount) / chunkSize))
+		processedChunkCount := 0
+		signedEventCount := 0
+		failedEventCount := 0
+		progressUpdateCount := 0
+		makeMessage := func() string {
+			duration := "estimating duration..."
+			if processedChunkCount > 10 {
+				remainingTime := time.Since(start) / time.Duration(processedChunkCount) * time.Duration(totalChunkCount-processedChunkCount)
+				duration = exfmt.Duration(remainingTime) + " remaining"
+			}
+			return fmt.Sprintf(
+				"%s Signed %d out of %d events with %d errors (%s)",
+				makeClock(progressUpdateCount), signedEventCount, totalEventCount, failedEventCount, duration,
+			)
+		}
+		lastUpdate := time.Now()
+		progressEvtID := ce.Reply(makeMessage())
+		updateProgress := func() {
+			if progressEvtID == "" || time.Since(lastUpdate) < 5*time.Second {
+				return
+			}
+			progressUpdateCount++
+			ce.Meta.Bot.SendNoticeOpts(ce.Ctx, ce.RoomID, makeMessage(), &bot.SendNoticeOpts{Edit: progressEvtID})
+			lastUpdate = time.Now()
+		}
+		sendFinishEvent := func(msg string) {
+			prefix := fmt.Sprintf(
+				"Signed %d out of %d events with %d errors",
+				signedEventCount, totalEventCount, failedEventCount,
+			)
+			if msg != "" {
+				prefix += "\n\n"
+			}
+			if progressEvtID == "" {
+				ce.Reply(prefix + msg)
+			} else {
+				ce.Meta.Bot.SendNoticeOpts(ce.Ctx, ce.RoomID, prefix+msg, &bot.SendNoticeOpts{Edit: progressEvtID})
+			}
+		}
+		for {
+			updateProgress()
+			var events map[id.EventID]*synapsedb.OldEvent
+			events, minRowID, err = ce.Meta.SynapseDB.GetEventsToPreSign(ce.Ctx, roomID, minRowID, chunkSize)
+			if err != nil {
+				ce.Log.Err(err).Msg("Failed to get chunk of events")
+				sendFinishEvent("Failed to get events from synapse database")
+				return
+			}
+			if len(events) == 0 {
+				break
+			}
+			origCount := 0
+			err := ce.Meta.DB.PSSignature.FilterEventsToPreSign(ce.Ctx, events)
+			if err != nil {
+				ce.Log.Err(err).Msg("Failed to filter events to pre-sign")
+				sendFinishEvent("Failed to filter events to pre-sign")
+				return
+			}
+			newSigned, newFailed, err := ce.Meta.policyServer.PreSignEvents(ce.Ctx, createEvt, events)
+			failedEventCount += newFailed
+			signedEventCount += newSigned + (origCount - len(events))
+			if err != nil {
+				ce.Log.Err(err).Msg("Failed to store signatures in database")
+				sendFinishEvent("Failed to store signatures in database")
+				return
+			}
+			processedChunkCount++
+		}
+		sendFinishEvent("")
+	}),
+}
+
 var cmdPolicyServer = &CommandHandler{
 	Name: "policyserver",
 	Subcommands: []*CommandHandler{
@@ -1889,6 +2012,7 @@ var cmdPolicyServer = &CommandHandler{
 		cmdPolicyServerDisable,
 		cmdPSMute,
 		cmdPSUnmute,
+		cmdPolicyServerPreSign,
 	},
 	Aliases:     []string{"ps"},
 	Parameters:  make([]*cmdschema.Parameter, 0),
