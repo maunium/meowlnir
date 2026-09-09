@@ -2003,6 +2003,10 @@ var cmdPolicyServerPreSign = &CommandHandler{
 				sendFinishEvent("Failed to store signatures in database")
 				return
 			}
+			ce.Log.Debug().
+				Int("signed", newSigned).
+				Int("failed", newFailed).
+				Msg("Signed chunk of events")
 			processedChunkCount++
 		}
 		sendFinishEvent("")
