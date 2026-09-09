@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"maps"
@@ -1873,7 +1872,7 @@ var cmdPolicyServerEnable = &CommandHandler{
 				output = append(output, fmt.Sprintf("* Skipped %s as it is not a protected room", format.MarkdownMentionRoomID("", roomID)))
 			} else if _, err := ce.Meta.Bot.SendStateEvent(ce.Ctx, roomID, event.StateRoomPolicy, "", content); err != nil {
 				output = append(output, fmt.Sprintf("* Failed to set `m.room.policy` in %s: %v", format.MarkdownMentionRoomID("", roomID), err))
-			} else if _, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, roomID, event.StateUnstableRoomPolicy, "", jsontext.Value("{}")); err != nil {
+			} else if _, err = ce.Meta.Bot.SendStateEvent(ce.Ctx, roomID, event.StateUnstableRoomPolicy, "", json.RawMessage("{}")); err != nil {
 				output = append(output, fmt.Sprintf("* Failed to set `org.matrix.msc4284.policy` in %s: %v", format.MarkdownMentionRoomID("", roomID), err))
 			} else {
 				output = append(output, fmt.Sprintf("* Successfully updated %s", format.MarkdownMentionRoomID("", roomID)))
