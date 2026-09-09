@@ -2,7 +2,7 @@ package synapsedb
 
 import (
 	"context"
-	"encoding/json/jsontext"
+	"encoding/json"
 	"time"
 
 	"github.com/lib/pq"
@@ -105,7 +105,7 @@ func (s *SynapseDB) GetEvent(ctx context.Context, eventID id.EventID) (*event.Ev
 type OldEvent struct {
 	StreamOrder int64
 	EventID     id.EventID
-	PDU         jsontext.Value
+	PDU         json.RawMessage
 	Reject      bool
 }
 
