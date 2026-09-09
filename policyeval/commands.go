@@ -1905,6 +1905,10 @@ var cmdPolicyServerPreSign = &CommandHandler{
 		Description: event.MakeExtensibleText("The room to process"),
 	}},
 	Func: commands.WithParsedArgs(func(ce *CommandEvent, args *PolicyServerPreSignParams) {
+		if !policyServerSupported || ce.Meta.policyServer.SigningKey == nil {
+			ce.Reply("Policy server is not available")
+			return
+		}
 		roomID := resolveRoom(ce, args.Room)
 		if roomID == "" {
 			ce.Reply("Failed to resolve room %s", format.SafeMarkdownCode(args.Room))

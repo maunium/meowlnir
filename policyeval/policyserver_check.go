@@ -326,6 +326,8 @@ func (ps *PolicyServer) HandleCachedLegacyCheck(ctx context.Context, evtID id.Ev
 	return false, nil
 }
 
+const policyServerSupported = true
+
 func (ps *PolicyServer) PreSignEvents(ctx context.Context, createEvt *event.CreateEventContent, events map[id.EventID]*synapsedb.OldEvent) (signed, failed int, err error) {
 	serverName := ps.Federation.ServerName
 	signatures := make([]*database.PSSignature, 0, len(events))
