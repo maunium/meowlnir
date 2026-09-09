@@ -103,10 +103,10 @@ func (s *SynapseDB) GetEvent(ctx context.Context, eventID id.EventID) (*event.Ev
 }
 
 type OldEvent struct {
-	StreamOrder int64
-	EventID     id.EventID
-	PDU         json.RawMessage
-	Reject      bool
+	StreamOrder int64           `json:"stream_order"`
+	EventID     id.EventID      `json:"event_id"`
+	PDU         json.RawMessage `json:"pdu"`
+	Reject      bool            `json:"reject"`
 }
 
 var scanOldEvent = dbutil.ConvertRowFn[*OldEvent](func(row dbutil.Scannable) (e *OldEvent, err error) {

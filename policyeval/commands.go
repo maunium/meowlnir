@@ -1928,7 +1928,14 @@ var cmdPolicyServerPreSign = &CommandHandler{
 				_, _ = ce.Meta.Bot.RedactEvent(ce.Ctx, ce.RoomID, pendingReact)
 			}
 		}()
-		totalEventCount, minRowID, err := ce.Meta.SynapseDB.GetEventCount(ce.Ctx, roomID)
+		var totalEventCount, minRowID int64
+		var err error
+		if ce.Meta.SynapseDB != nil {
+			totalEventCount, minRowID, err = ce.Meta.SynapseDB.GetEventCount(ce.Ctx, roomID)
+		} else {
+			ce.Reply("No supported methods for fetching all events")
+			return
+		}
 		if err != nil {
 			ce.Log.Err(err).Msg("Failed to get event count")
 			ce.Reply("Failed to get number of events in room")
@@ -1943,7 +1950,10 @@ var cmdPolicyServerPreSign = &CommandHandler{
 		progressUpdateCount := 0
 		makeMessage := func() string {
 			duration := "estimating duration..."
-			if processedChunkCount > 10 {
+			if totalEventCount <= 0 || processedChunkCount > totalChunkCount {
+				chunkSpeed := time.Since(start) / time.Duration(processedChunkCount)
+				duration = exfmt.Duration(chunkSpeed) + " per chunk"
+			} else if processedChunkCount > 10 {
 				remainingTime := time.Since(start) / time.Duration(processedChunkCount) * time.Duration(totalChunkCount-processedChunkCount)
 				duration = exfmt.Duration(remainingTime) + " remaining"
 			}
@@ -1979,7 +1989,11 @@ var cmdPolicyServerPreSign = &CommandHandler{
 		for {
 			updateProgress()
 			var events map[id.EventID]*synapsedb.OldEvent
-			events, minRowID, err = ce.Meta.SynapseDB.GetEventsToPreSign(ce.Ctx, roomID, minRowID, chunkSize)
+			if ce.Meta.SynapseDB != nil {
+				events, minRowID, err = ce.Meta.SynapseDB.GetEventsToPreSign(ce.Ctx, roomID, minRowID, chunkSize)
+			} else {
+				panic(fmt.Errorf("impossible case"))
+			}
 			if err != nil {
 				ce.Log.Err(err).Msg("Failed to get chunk of events")
 				sendFinishEvent("Failed to get events from synapse database")
@@ -2006,6 +2020,7 @@ var cmdPolicyServerPreSign = &CommandHandler{
 			ce.Log.Debug().
 				Int("signed", newSigned).
 				Int("failed", newFailed).
+				Int("filtered", origCount-len(events)).
 				Msg("Signed chunk of events")
 			processedChunkCount++
 		}
