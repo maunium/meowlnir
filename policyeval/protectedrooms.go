@@ -266,7 +266,7 @@ func (pe *PolicyEvaluator) handleProtectedRooms(ctx context.Context, evt *event.
 		output = append(output, fmt.Sprintf("* Warning: the following protections are marked as unsafe and may cause issues: %s", strings.Join(unsafeProtections, ", ")))
 	}
 	psNotifyRoom := content.PolicyServerNotificationRoom
-	if pe.Untrusted && psNotifyRoom != "" && !pe.canReceiveNotifications(psNotifyRoom) {
+	if pe.Untrusted && psNotifyRoom != "" && !pe.canReceiveNotificationsUnlocked(psNotifyRoom) {
 		output = append(output, fmt.Sprintf("* Policy server notifications will not be sent to %s as it is not a protected room.", psNotifyRoom))
 	}
 	pe.protectedRoomsLock.Unlock()
@@ -387,9 +387,10 @@ func (pe *PolicyEvaluator) unlockedUpdateUser(userID id.UserID, roomID id.RoomID
 	return false
 }
 
-func (pe *PolicyEvaluator) canReceiveNotifications(roomID id.RoomID) bool {
+func (pe *PolicyEvaluator) canReceiveNotificationsUnlocked(roomID id.RoomID) bool {
 	if !pe.Untrusted {
 		return true
 	}
-	return roomID == pe.ManagementRoom || pe.IsProtectedRoom(roomID)
+	_, protected := pe.protectedRooms[roomID]
+	return roomID == pe.ManagementRoom || protected
 }
