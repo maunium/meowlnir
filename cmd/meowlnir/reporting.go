@@ -42,8 +42,7 @@ func (m *Meowlnir) PostReport(w http.ResponseWriter, r *http.Request) {
 	err = mgmtRoom.HandleReport(ctx, userClient, reportedUserID, roomID, eventID, req.Reason)
 	if err != nil {
 		log.Err(err).Msg("Failed to handle report")
-		var respErr mautrix.RespError
-		if errors.As(err, &respErr) {
+		if respErr, ok := errors.AsType[mautrix.RespError](err); ok {
 			respErr.Write(w)
 		} else {
 			mautrix.MUnknown.WithMessage(err.Error()).Write(w)
