@@ -188,6 +188,7 @@ func (pe *PolicyEvaluator) ApplyBan(
 				Displayname:         "Banned User " + random.String(8),
 				AvatarURL:           "mxc://matrix.org/NZGChxcCXbBvgkCNZTLXlpux",
 				MSC4293RedactEvents: shouldRedact,
+				Reason:              filterReason(policy.Reason),
 			}
 			_, err = pe.Bot.SendStateEvent(ctx, roomID, event.StateMember, userID.String(), profile)
 		} else {
