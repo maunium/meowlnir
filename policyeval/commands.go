@@ -2002,12 +2002,20 @@ var cmdPolicyServerPreSign = &CommandHandler{
 			if len(events) == 0 {
 				break
 			}
-			origCount := 0
-			err := ce.Meta.DB.PSSignature.FilterEventsToPreSign(ce.Ctx, events)
+			origCount := len(events)
+			err = ce.Meta.DB.PSSignature.FilterEventsToPreSign(ce.Ctx, events)
 			if err != nil {
 				ce.Log.Err(err).Msg("Failed to filter events to pre-sign")
 				sendFinishEvent("Failed to filter events to pre-sign")
 				return
+			}
+			if len(events) == 0 {
+				ce.Log.Debug().
+					Int("filtered", origCount).
+					Msg("All events in chunk were filtered")
+				processedChunkCount++
+				signedEventCount += origCount
+				continue
 			}
 			newSigned, newFailed, err := ce.Meta.policyServer.PreSignEvents(ce.Ctx, createEvt, events)
 			failedEventCount += newFailed
