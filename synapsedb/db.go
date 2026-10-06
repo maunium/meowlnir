@@ -119,7 +119,7 @@ var scanOldEvent = dbutil.ConvertRowFn[*OldEvent](func(row dbutil.Scannable) (e 
 
 const getOldEventsQuery = `
 	SELECT events.stream_ordering, events.event_id, event_json.json,
-	       (events.rejection_reason<>'' OR (event_json.internal_metadata::json->>'soft_failed')::boolean IS TRUE)
+	       COALESCE(events.rejection_reason<>'' OR (event_json.internal_metadata::json->>'soft_failed')::boolean IS TRUE, false)
 	FROM events
 	JOIN event_json ON events.event_id=event_json.event_id
 	WHERE events.room_id = $1 AND events.stream_ordering > $2
