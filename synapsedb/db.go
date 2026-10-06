@@ -111,7 +111,9 @@ type OldEvent struct {
 
 var scanOldEvent = dbutil.ConvertRowFn[*OldEvent](func(row dbutil.Scannable) (e *OldEvent, err error) {
 	e = &OldEvent{}
-	err = row.Scan(&e.StreamOrder, &e.EventID, &e.PDU, &e.Reject)
+	var pdu []byte
+	err = row.Scan(&e.StreamOrder, &e.EventID, &pdu, &e.Reject)
+	e.PDU = json.RawMessage(pdu)
 	return
 })
 
