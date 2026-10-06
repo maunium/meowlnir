@@ -200,8 +200,7 @@ func (pe *PolicyEvaluator) ApplyBan(
 		}
 	}
 	if err != nil {
-		var respErr mautrix.HTTPError
-		if errors.As(err, &respErr) {
+		if respErr, ok := errors.AsType[mautrix.HTTPError](err); ok {
 			err = respErr
 		}
 		zerolog.Ctx(ctx).Err(err).Any("attempted_action", ta).Msg("Failed to ban user")
@@ -231,8 +230,7 @@ func (pe *PolicyEvaluator) UndoBan(ctx context.Context, userID id.UserID, roomID
 		})
 	}
 	if err != nil {
-		var respErr mautrix.HTTPError
-		if errors.As(err, &respErr) {
+		if respErr, ok := errors.AsType[mautrix.HTTPError](err); ok {
 			err = respErr
 		}
 		zerolog.Ctx(ctx).Err(err).Msg("Failed to unban user")

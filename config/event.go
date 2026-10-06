@@ -42,6 +42,6 @@ type ProtectedRoomsEventContent struct {
 }
 
 func init() {
-	event.TypeMap[StateWatchedLists] = reflect.TypeOf(WatchedListsEventContent{})
-	event.TypeMap[StateProtectedRooms] = reflect.TypeOf(ProtectedRoomsEventContent{})
+	event.TypeMap[StateWatchedLists] = reflect.TypeFor[WatchedListsEventContent]()
+	event.TypeMap[StateProtectedRooms] = reflect.TypeFor[ProtectedRoomsEventContent]()
 }

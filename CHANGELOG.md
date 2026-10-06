@@ -1,3 +1,21 @@
+# v26.09
+
+* Bumped minimum Go version to 1.26.
+* Added support for muting users via the policy server.
+* Added config options for federation IP filtering.
+* Added optional notifications for events blocked by policy server
+  (thanks to [@timedoutuk] in [#75] and [#76]).
+* Added support for redacting all of a user's events via the Synapse admin API
+  while deactivating them (thanks to [@timedoutuk] in [#56]).
+* Changed `!allow-invite` command to also allow bypassing ban policies once.
+* Changed policy evaluator to never apply policies to bot admins.
+* Changed `no_media` protection to disallow unknown message types by default.
+* Stopped sending the unstable form of policy server configuration events.
+
+[#56]: https://github.com/maunium/meowlnir/pull/56
+[#75]: https://github.com/maunium/meowlnir/pull/75
+[#76]: https://github.com/maunium/meowlnir/pull/76
+
 # v26.08
 
 * Added notification when a protected room or watched list is tombstoned.

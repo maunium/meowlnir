@@ -379,11 +379,9 @@ func (m *Meowlnir) Run(ctx context.Context) {
 	}
 	m.MapLock.Unlock()
 	if m.Config.Meowlnir.RoomBanRoom != "" && m.Config.Meowlnir.LoadAllRoomHashes {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			m.LoadAllRoomHashes(ctx)
-		}()
+		})
 	}
 	wg.Wait()
 
