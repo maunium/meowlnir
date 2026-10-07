@@ -169,9 +169,14 @@ func (ps *PolicyServer) sendNotification(ctx context.Context, eval *PolicyEvalua
 	} else {
 		errMsg = rec.DisplayError
 	}
+	var ageDisclaimer string
+	if age := time.Duration(time.Now().UnixMilli() - evt.OriginServerTS); age > 24*time.Hour {
+		ageDisclaimer = fmt.Sprintf(" (ℹ️ event was created %s ago)", age.String())
+	}
 	content := fmt.Sprintf(
-		"Event %s by %s blocked in %s: %s\n<details><summary>Event JSON</summary>\n\n```json\n%s\n```\n</details>",
+		"Event %s%s by %s blocked in %s: %s\n<details><summary>Event JSON</summary>\n\n```json\n%s\n```\n</details>",
 		format.SafeMarkdownCode(evt.Type),
+		ageDisclaimer,
 		format.MarkdownMention(evt.Sender),
 		format.MarkdownMentionRoomID(srcMeta.Name, evt.RoomID, ps.Federation.ServerName),
 		errMsg,
