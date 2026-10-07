@@ -55,6 +55,9 @@ var signatureMassInsertBuilder = dbutil.NewMassInsertBuilder[*PSSignature, [1]an
 `, "($%d, $%d, $1)")
 
 func (psq *PSSignatureQuery) PutMany(ctx context.Context, sigs []*PSSignature) error {
+	if len(sigs) == 0 {
+		return nil
+	}
 	query, values := signatureMassInsertBuilder.Build([1]any{jsontime.UnixMilliNow()}, sigs)
 	return psq.Exec(ctx, query, values...)
 }
