@@ -66,11 +66,11 @@ func (pe *PolicyEvaluator) ShouldExecuteProtections(ctx context.Context, evt *ev
 }
 
 type ProtectionParams struct {
-	Eval     *PolicyEvaluator
-	Evt      *event.Event
-	Policy   bool
-	IsOrigin bool
-	IsLegacy bool
+	Eval        *PolicyEvaluator
+	Evt         *event.Event
+	Policy      bool
+	IsOrigin    bool
+	ParseFailed bool
 }
 
 func (p *ProtectionParams) SendNotice(ctx context.Context, message string, args ...any) id.EventID {
