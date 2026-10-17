@@ -90,7 +90,10 @@ func (ps *PolicyServer) getRecommendation(
 				DisplayError: "Event is malformed",
 			}, nil
 		}
+		var parseFailed bool
 		if parseErr := clientEvt.Content.ParseRaw(clientEvt.Type); parseErr != nil {
+			parseFailed = !errors.Is(parseErr, event.ErrContentAlreadyParsed) &&
+				!errors.Is(parseErr, event.ErrUnsupportedContentType)
 			evaluator.Bot.Log.Err(parseErr).
 				Stringer("room_id", pdu.RoomID).
 				Stringer("event_id", clientEvt.ID).
@@ -104,10 +107,11 @@ func (ps *PolicyServer) getRecommendation(
 			for name, prot := range evaluator.protections {
 				zerolog.Ctx(ctx).Trace().Str("protection", name).Msg("Evaluating protection")
 				rec, err := prot.Execute(ctx, ProtectionParams{
-					Eval:     evaluator,
-					Evt:      clientEvt,
-					Policy:   true,
-					IsOrigin: isOrigin,
+					Eval:        evaluator,
+					Evt:         clientEvt,
+					Policy:      true,
+					IsOrigin:    isOrigin,
+					ParseFailed: parseFailed,
 				})
 				if err != nil {
 					zerolog.Ctx(ctx).Err(err).

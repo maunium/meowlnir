@@ -10,7 +10,7 @@ import (
 )
 
 var protectionsRegistry = map[string]func() any{}
-var safeProtections = []string{"no_media"}
+var safeProtections = []string{"no_media", "well_formed_event"}
 
 func RegisterProtection[T any](name string) {
 	checkType[T]()
