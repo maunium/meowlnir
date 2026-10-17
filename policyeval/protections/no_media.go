@@ -26,16 +26,15 @@ type NoMedia struct {
 	DenyCustomReactions  bool        `json:"deny_custom_reactions"`  // deny m.reaction events with mxc://-prefixed keys
 	DenyInlineImages     bool        `json:"deny_inline_images"`     // deny text with mxc:// in the formatted_body
 	IgnoreUsers          []id.UserID `json:"ignore_users,omitempty"` // users to ignore for this protection
+	IgnoreUnsafe         bool        `json:"ignore_users_allow_unsafe,omitempty"`
 }
 
 func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (hit bool, err error) {
 	if p.Evt.Type != event.EventMessage && p.Evt.Type != event.EventSticker && p.Evt.Type != event.EventReaction {
 		return false, nil // no-op
 	}
-	if slices.Contains(nm.IgnoreUsers, p.Evt.Sender) {
-		return false, nil // ignored user
-	}
 
+	var unsafe bool
 	switch p.Evt.Type {
 	case event.EventMessage:
 		content := p.Evt.Content.AsMessage()
@@ -54,6 +53,7 @@ func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (
 			// blank msgtypes might be a redacted message or something, but unlikely to render as media anywhere
 		default:
 			hit = !nm.AllowUnknownMsgTypes
+			unsafe = hit
 		}
 		if content.FormattedBody != "" && nm.DenyInlineImages {
 			hit = hit || (strings.Contains(content.FormattedBody, "mxc://") &&
@@ -64,6 +64,9 @@ func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (
 	case event.EventReaction:
 		content := p.Evt.Content.AsReaction()
 		hit = nm.DenyCustomReactions && strings.HasPrefix(content.RelatesTo.Key, "mxc://")
+	}
+	if slices.Contains(nm.IgnoreUsers, p.Evt.Sender) && (!unsafe || nm.IgnoreUnsafe) {
+		return false, nil // ignored user
 	}
 	if hit {
 		displayType := p.Evt.Type.Type
