@@ -66,6 +66,8 @@ func (l *List) removeFromLinkedList(node *dplNode) {
 	if node.next != nil {
 		node.next.prev = node.prev
 	}
+	node.prev = nil
+	node.next = nil
 }
 
 func deletePolicyFromStaticMap[T comparable](m map[T][]*Policy, key T, policy *Policy) {
@@ -82,12 +84,35 @@ func deletePolicyFromStaticMap[T comparable](m map[T][]*Policy, key T, policy *P
 	}
 }
 
-func (l *List) removeFromStaticMaps(policy *Policy) {
+func (l *List) removeFromCache(node *dplNode) {
+	l.removeFromLinkedList(node)
+	policy := node.Policy
 	if policy.Entity != "" {
 		deletePolicyFromStaticMap(l.byEntity, strings.ToLower(policy.Entity), policy)
 	}
 	if policy.EntityHash != nil {
 		deletePolicyFromStaticMap(l.byEntityHash, *policy.EntityHash, policy)
+	}
+}
+
+func (l *List) addToCache(node *dplNode) {
+	policy := node.Policy
+	if policy.Ignored {
+		return
+	}
+	if policy.Entity != "" {
+		lowerEntity := strings.ToLower(policy.Entity)
+		l.byEntity[lowerEntity] = append(l.byEntity[lowerEntity], policy)
+	}
+	if policy.EntityHash != nil {
+		l.byEntityHash[*policy.EntityHash] = append(l.byEntityHash[*policy.EntityHash], policy)
+	}
+	if _, isStatic := policy.Pattern.(glob.ExactGlob); policy.Entity != "" && !isStatic {
+		if l.dynamicHead != nil {
+			node.next = l.dynamicHead
+			l.dynamicHead.prev = node
+		}
+		l.dynamicHead = node
 	}
 }
 
@@ -99,34 +124,13 @@ func (l *List) Add(value *Policy) (*Policy, bool) {
 		if typeQuality(existing.Type) > typeQuality(value.Type) {
 			// There's an existing policy with the same state key, but a newer event type, ignore this one.
 			return nil, false
-		} else if existing.EntityOrHash() == value.EntityOrHash() {
-			oldPolicy := existing.Policy
-			// The entity in the policy didn't change, just update the policy.
-			existing.Policy = value
-			return oldPolicy, true
 		}
-		// There's an existing event with the same state key, but the entity changed, remove the old node.
-		l.removeFromLinkedList(existing)
-		l.removeFromStaticMaps(existing.Policy)
+		// There's an existing event with the same state key, remove the old node.
+		l.removeFromCache(existing)
 	}
 	node := &dplNode{Policy: value}
 	l.byStateKey[value.StateKey] = node
-	if !value.Ignored {
-		if value.Entity != "" {
-			lowerEntity := strings.ToLower(value.Entity)
-			l.byEntity[lowerEntity] = append(l.byEntity[lowerEntity], value)
-		}
-		if value.EntityHash != nil {
-			l.byEntityHash[*value.EntityHash] = append(l.byEntityHash[*value.EntityHash], value)
-		}
-	}
-	if _, isStatic := value.Pattern.(glob.ExactGlob); value.Entity != "" && !isStatic && !value.Ignored {
-		if l.dynamicHead != nil {
-			node.next = l.dynamicHead
-			l.dynamicHead.prev = node
-		}
-		l.dynamicHead = node
-	}
+	l.addToCache(node)
 	if existing != nil {
 		return existing.Policy, true
 	}
@@ -137,8 +141,7 @@ func (l *List) Remove(eventType event.Type, stateKey string) *Policy {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	if value, ok := l.byStateKey[stateKey]; ok && eventType == value.Type {
-		l.removeFromLinkedList(value)
-		l.removeFromStaticMaps(value.Policy)
+		l.removeFromCache(value)
 		delete(l.byStateKey, stateKey)
 		return value.Policy
 	}
