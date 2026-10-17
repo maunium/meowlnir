@@ -37,7 +37,7 @@ func (pe *PolicyEvaluator) HandleMessage(ctx context.Context, evt *event.Event) 
 		)
 	}
 	if pe.ShouldExecuteProtections(ctx, evt, false) {
-		for _, prot := range pe.protections {
+		for _, prot := range pe.orderedProtections {
 			hit, err := prot.Execute(ctx, ProtectionParams{Eval: pe, Evt: evt})
 			if err != nil {
 				pe.Bot.Log.Err(err).

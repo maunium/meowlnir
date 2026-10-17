@@ -143,5 +143,5 @@ func (af *AntiFlood) Execute(ctx context.Context, p policyeval.ProtectionParams)
 }
 
 func init() {
-	policyeval.RegisterProtection[AntiFlood]("anti_flood")
+	policyeval.RegisterProtection[AntiFlood]("anti_flood", false, 0)
 }

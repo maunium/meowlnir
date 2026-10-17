@@ -166,5 +166,5 @@ func (mm *MaxMentions) Execute(ctx context.Context, p policyeval.ProtectionParam
 }
 
 func init() {
-	policyeval.RegisterProtection[MaxMentions]("max_mentions")
+	policyeval.RegisterProtection[MaxMentions]("max_mentions", false, 0)
 }

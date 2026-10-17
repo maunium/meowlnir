@@ -1,21 +1,59 @@
 package policyeval
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"maps"
+	"slices"
+	"sync"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/exmaps"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
 
-var protectionsRegistry = map[string]func() any{}
-var safeProtections = []string{"no_media", "well_formed_event"}
-
-func RegisterProtection[T any](name string) {
-	checkType[T]()
-	protectionsRegistry[name] = protectionFactory[T]()
+type protectionRegistryItem struct {
+	name     string
+	safe     bool
+	priority int
+	factory  func() any
 }
+
+var protectionsRegistry = map[string]protectionRegistryItem{}
+
+func RegisterProtection[T any](name string, safe bool, priority int) {
+	checkType[T]()
+	protectionsRegistry[name] = protectionRegistryItem{
+		name:     name,
+		safe:     safe,
+		priority: priority,
+		factory:  protectionFactory[T](),
+	}
+}
+
+var getProtectionOrder = sync.OnceValue(func() (out []string) {
+	sortProtection := func(item protectionRegistryItem, item2 protectionRegistryItem) int {
+		return cmp.Or(cmp.Compare(item2.priority, item.priority), cmp.Compare(item.name, item2.name))
+	}
+	sortedProtections := slices.SortedFunc(maps.Values(protectionsRegistry), sortProtection)
+	out = make([]string, len(sortedProtections))
+	for i, item := range sortedProtections {
+		out[i] = item.name
+	}
+	return out
+})
+
+var getSafeProtections = sync.OnceValue(func() (out exmaps.Set[string]) {
+	out = make(exmaps.Set[string])
+	for name, item := range protectionsRegistry {
+		if item.safe {
+			out.Add(name)
+		}
+	}
+	return out
+})
 
 func checkType[T any]() {
 	var zero T
@@ -33,7 +71,7 @@ func protectionFactory[T any]() func() any {
 
 // ShouldExecuteProtections determines if protections should be executed for a given event.
 func (pe *PolicyEvaluator) ShouldExecuteProtections(ctx context.Context, evt *event.Event, isPolicyServer bool) bool {
-	if pe.protections == nil || evt.Sender == pe.Bot.UserID || pe.Admins.Has(evt.Sender) {
+	if pe.rawProtections == nil || evt.Sender == pe.Bot.UserID || pe.Admins.Has(evt.Sender) {
 		return false
 	}
 	if !isPolicyServer {
@@ -85,4 +123,16 @@ type Protection interface {
 	// argument should be true, after which the response will indicate true if an external action should be performed
 	// or the event blocked.
 	Execute(ctx context.Context, p ProtectionParams) (bool, error)
+}
+
+func (pe *PolicyEvaluator) orderedProtections(yield func(string, Protection) bool) {
+	for _, name := range getProtectionOrder() {
+		item, ok := pe.rawProtections[name]
+		if !ok {
+			continue
+		}
+		if !yield(name, item) {
+			return
+		}
+	}
 }

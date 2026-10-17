@@ -118,5 +118,5 @@ func (mj *MaxJoinRate) Execute(ctx context.Context, p policyeval.ProtectionParam
 }
 
 func init() {
-	policyeval.RegisterProtection[MaxJoinRate]("join_rate")
+	policyeval.RegisterProtection[MaxJoinRate]("join_rate", false, 0)
 }

@@ -79,7 +79,7 @@ func (ps *PolicyServer) getRecommendation(
 			DisplayError: "Event is malformed",
 		}, nil
 	}
-	if evaluator.protections != nil {
+	if evaluator.rawProtections != nil {
 		clientEvt, err := pdu.ToClientEvent(roomVersion)
 		if err != nil {
 			zerolog.Ctx(ctx).Err(err).
@@ -104,7 +104,7 @@ func (ps *PolicyServer) getRecommendation(
 			Stringer("event_id", clientEvt.ID).
 			Logger().WithContext(ctx)
 		if evaluator.ShouldExecuteProtections(ctx, clientEvt, true) {
-			for name, prot := range evaluator.protections {
+			for name, prot := range evaluator.orderedProtections {
 				zerolog.Ctx(ctx).Trace().Str("protection", name).Msg("Evaluating protection")
 				rec, err := prot.Execute(ctx, ProtectionParams{
 					Eval:        evaluator,

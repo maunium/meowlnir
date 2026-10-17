@@ -110,5 +110,5 @@ func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (
 }
 
 func init() {
-	policyeval.RegisterProtection[NoMedia]("no_media")
+	policyeval.RegisterProtection[NoMedia]("no_media", true, 0)
 }

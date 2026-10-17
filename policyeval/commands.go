@@ -70,7 +70,7 @@ func (pe *PolicyEvaluator) HandleCommand(ctx context.Context, evt *event.Event) 
 func (pe *PolicyEvaluator) HandleReaction(ctx context.Context, evt *event.Event, execProtections bool) {
 	pe.commandProcessor.Process(ctx, evt)
 	if execProtections && pe.ShouldExecuteProtections(ctx, evt, false) {
-		for _, prot := range pe.protections {
+		for _, prot := range pe.orderedProtections {
 			hit, err := prot.Execute(ctx, ProtectionParams{Eval: pe, Evt: evt})
 			if err != nil {
 				pe.Bot.Log.Err(err).

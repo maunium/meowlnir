@@ -72,5 +72,5 @@ func (b *BadDisplayNames) Execute(ctx context.Context, p policyeval.ProtectionPa
 }
 
 func init() {
-	policyeval.RegisterProtection[BadDisplayNames]("bad_displaynames")
+	policyeval.RegisterProtection[BadDisplayNames]("bad_displaynames", false, 0)
 }

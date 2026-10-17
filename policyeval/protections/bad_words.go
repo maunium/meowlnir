@@ -115,5 +115,5 @@ func (b *BadWords) Execute(ctx context.Context, p policyeval.ProtectionParams) (
 }
 
 func init() {
-	policyeval.RegisterProtection[BadWords]("bad_words")
+	policyeval.RegisterProtection[BadWords]("bad_words", false, 0)
 }

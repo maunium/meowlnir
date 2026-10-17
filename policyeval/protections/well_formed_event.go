@@ -70,5 +70,5 @@ func (wfe *WellFormedEvent) Execute(ctx context.Context, p policyeval.Protection
 }
 
 func init() {
-	policyeval.RegisterProtection[WellFormedEvent]("well_formed_event")
+	policyeval.RegisterProtection[WellFormedEvent]("well_formed_event", true, 1000)
 }

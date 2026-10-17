@@ -138,5 +138,5 @@ func (ir *InsecureRegistration) Execute(ctx context.Context, p policyeval.Protec
 }
 
 func init() {
-	policyeval.RegisterProtection[InsecureRegistration]("insecure_registration")
+	policyeval.RegisterProtection[InsecureRegistration]("insecure_registration", false, 0)
 }
