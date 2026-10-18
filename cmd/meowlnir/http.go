@@ -26,7 +26,10 @@ func (m *Meowlnir) AddHTTPEndpoints() {
 	m.AS.Middleware = append(m.AS.Middleware,
 		hlog.NewHandler(*m.Log),
 		hlog.RequestIDHandler("request_id", "X-Request-ID"),
-		requestlog.AccessLogger(requestlog.Options{TrustXForwardedFor: true}),
+		requestlog.AccessLogger(requestlog.Options{
+			TrustXForwardedFor: true,
+			OKLevel:            new(zerolog.DebugLevel),
+		}),
 		exhttp.HandleErrors(exhttp.ErrorBodies{
 			NotFound:         exerrors.Must(new(mautrix.MUnrecognized.WithMessage("Unrecognized endpoint")).MarshalJSON()),
 			MethodNotAllowed: exerrors.Must(new(mautrix.MUnrecognized.WithMessage("Invalid method for endpoint")).MarshalJSON()),

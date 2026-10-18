@@ -11,12 +11,12 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	github.com/rs/zerolog v1.35.1
 	github.com/tidwall/gjson v1.20.0
-	go.mau.fi/util v0.11.0
+	go.mau.fi/util v0.11.1-0.20261018213134-d07d19d51ef2
 	go.mau.fi/zeroconfig v0.2.0
 	golang.org/x/sync v0.24.0
 	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mauflag v1.0.0
-	maunium.net/go/mautrix v0.32.0
+	maunium.net/go/mautrix v0.32.1-0.20261018214324-5a17850de391
 )
 
 require (
