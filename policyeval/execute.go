@@ -338,7 +338,7 @@ func (pe *PolicyEvaluator) sendRedactResult(ctx context.Context, events, rooms i
 		// Skip sending a message if no events were redacted and there were no errors
 		return
 	}
-	output := fmt.Sprintf("Redacted %s across %s from %s",
+	output := fmt.Sprintf("Redacted %s across %s from ||%s||",
 		pluralize(events, "event"), pluralize(rooms, "room"),
 		format.MarkdownMention(userID))
 	if len(errorMessages) > 0 {
@@ -374,7 +374,7 @@ func (pe *PolicyEvaluator) RedactUser(ctx context.Context, userID id.UserID, rea
 				if redactedCount > 0 {
 					pe.sendNotice(
 						ctx,
-						"Redacted %d events from %s in %s",
+						"Redacted %d events from ||%s|| in %s",
 						redactedCount,
 						format.MarkdownMention(userID),
 						format.MarkdownMentionRoomID("", roomID),
