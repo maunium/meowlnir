@@ -102,7 +102,12 @@ func (bot *Bot) Init(ctx context.Context) {
 				continue
 			}
 			bot.Log.Err(err).Msg("Failed to connect to homeserver, retrying in 10 seconds...")
-			time.Sleep(10 * time.Second)
+			select {
+			case <-time.After(10 * time.Second):
+			case <-ctx.Done():
+				bot.Log.Err(err).Msg("Context canceled while waiting to retry")
+				return
+			}
 		} else if !resp.ContainsGreaterOrEqual(MinSpecVersion) {
 			bot.Log.WithLevel(zerolog.FatalLevel).
 				Stringer("minimum_required_spec", MinSpecVersion).
@@ -134,6 +139,9 @@ func (bot *Bot) Init(ctx context.Context) {
 
 	err := bot.CryptoHelper.Init(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		bot.Log.WithLevel(zerolog.FatalLevel).Err(err).
 			Msg("Failed to initialize crypto")
 		os.Exit(31)

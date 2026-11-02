@@ -254,6 +254,9 @@ func (m *Meowlnir) initBot(ctx context.Context, db *database.Bot) (*bot.Bot, err
 		m.Config.Meowlnir.AdminTokens[intent.UserID],
 	)
 	wrapped.Init(ctx)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if wrapped.CryptoHelper != nil {
 		wrapped.CryptoHelper.CustomPostDecrypt = m.HandleMessage
 	}
