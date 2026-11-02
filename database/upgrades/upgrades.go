@@ -8,7 +8,6 @@ import (
 
 var Table = dbutil.BuildUpgradeTable().
 	WithFS(rawUpgrades).
-	With(upgradeV04).
 	Finish()
 
 //go:embed *.sql

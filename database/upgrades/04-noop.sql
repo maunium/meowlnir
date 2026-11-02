@@ -1,0 +1,2 @@
+-- v3 -> v5 (compatible with v1+): no-op
+-- This used to be where the otks_need_reset table was added, but it's no longer used.
