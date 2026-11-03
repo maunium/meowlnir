@@ -2,6 +2,7 @@ package protections
 
 import (
 	"context"
+	"regexp"
 	"fmt"
 	"slices"
 	"strings"
@@ -25,9 +26,16 @@ type NoMedia struct {
 	AllowUnknownMsgTypes bool        `json:"allow_unknown_msgtypes"` // allow unknown message types
 	DenyCustomReactions  bool        `json:"deny_custom_reactions"`  // deny m.reaction events with mxc://-prefixed keys
 	DenyInlineImages     bool        `json:"deny_inline_images"`     // deny text with mxc:// in the formatted_body
+	AllowCustomReactions []string    `json:"allow_custom_reactions,omitempty"` // only allow these m.reaction events with mxc://-prefixed keys
+	AllowInlineImages    []string    `json:"allow_inline_images,omitempty"`    // only allow these inline images (texts with mxc://) in text
 	IgnoreUsers          []id.UserID `json:"ignore_users,omitempty"` // users to ignore for this protection
 	IgnoreUnsafe         bool        `json:"ignore_users_allow_unsafe,omitempty"`
 }
+
+// there has to be a better way to do this but i'm not reading all of mautrix
+// adapted from https://github.com/matrix-org/matrix-static/blob/d830d478936c8bf2bccb3c63f3432c421fd208e4/mxclient/mxc.go#L31
+// it's apache 2
+var mxcRegex = regexp.MustCompile(`mxc://(?:.+?)/(?:.+?)(?:#.+)?\b`)
 
 func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (hit bool, err error) {
 	if p.Evt.Type != event.EventMessage && p.Evt.Type != event.EventSticker && p.Evt.Type != event.EventReaction {
@@ -59,11 +67,30 @@ func (nm *NoMedia) Execute(ctx context.Context, p policyeval.ProtectionParams) (
 			hit = hit || (strings.Contains(content.FormattedBody, "mxc://") &&
 				strings.Contains(content.FormattedBody, "<img"))
 		}
+
+	    // idk go really i just copied https://zetcode.com/golang/regexp-findallstringindex/
+		if content.FormattedBody != "" && len(nm.AllowInlineImages) > 0 && strings.Contains(content.FormattedBody, "mxc://") && strings.Contains(content.FormattedBody, "<img") {
+		  var matches = mxcRegex.FindAllStringIndex(content.FormattedBody, -1)
+
+  		  var allMediaAllowed = true
+		  for _, match := range matches {
+		  	if !slices.Contains(nm.AllowInlineImages, content.FormattedBody[match[0]:match[1]]) {
+		  	  allMediaAllowed = false
+		  	}
+		  }
+		  hit = hit || !allMediaAllowed
+		}
+
 	case event.EventSticker:
 		hit = !nm.AllowStickers
 	case event.EventReaction:
 		content := p.Evt.Content.AsReaction()
+
 		hit = nm.DenyCustomReactions && strings.HasPrefix(content.RelatesTo.Key, "mxc://")
+		if len(nm.AllowCustomReactions) > 0 && strings.HasPrefix(content.RelatesTo.Key, "mxc://") {
+			var reactionAllowed = slices.Contains(nm.AllowCustomReactions, content.RelatesTo.Key)
+			hit = hit || !reactionAllowed
+		}
 	}
 	if slices.Contains(nm.IgnoreUsers, p.Evt.Sender) && (!unsafe || nm.IgnoreUnsafe) {
 		return false, nil // ignored user
