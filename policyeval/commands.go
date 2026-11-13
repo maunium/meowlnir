@@ -1437,7 +1437,7 @@ var cmdProtectRoom = &CommandHandler{
 					for idx, child := range discoveredChildren {
 						content.WriteString(fmt.Sprintf(
 							"%d. %s\n",
-							idx, format.MarkdownMentionRoomID(child.Name, child.RoomID, ce.Sender.Homeserver())))
+							idx+1, format.MarkdownMentionRoomID(child.Name, child.RoomID, ce.Sender.Homeserver())))
 						target := cmp.Or(child.CanonicalAlias.String(), child.RoomID.URI(ce.Sender.Homeserver()).String())
 						key := cmp.Or(child.Name, child.CanonicalAlias.String(), child.RoomID.String())
 						keys["/"+key] = "!protect --join " + target
