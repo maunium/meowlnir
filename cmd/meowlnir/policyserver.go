@@ -58,18 +58,10 @@ func (m *Meowlnir) PostPolicyServerSign(w http.ResponseWriter, r *http.Request) 
 		mautrix.MUnknown.WithMessage("Policy server error: internal server error").Write(w)
 		return
 	}
-	_, ok = parsedPDU.Signatures[m.PolicyServer.Federation.ServerName][policyeval.PolicyServerKeyID]
+	sig, ok := parsedPDU.Signatures[m.PolicyServer.Federation.ServerName][policyeval.PolicyServerKeyID]
 	sigs := map[string]map[id.KeyID]string{}
 	if ok {
-		//sigs[m.PolicyServer.Federation.ServerName] = map[id.KeyID]string{policyeval.PolicyServerKeyID: sig}
-		// Return all signatures to work around a synapse bug where it only does a shallow merge
-		// https://github.com/element-hq/synapse/blob/v1.153.0/synapse/handlers/room_policy.py#L264
-		// See https://github.com/element-hq/synapse/issues/19796
-		//
-		// Since the bug is on all the receiving servers instead of the sending server,
-		// this hack probably can't be removed until Synapse gets support for asking
-		// its own server name for outgoing event signatures.
-		sigs[m.PolicyServer.Federation.ServerName] = parsedPDU.Signatures[m.PolicyServer.Federation.ServerName]
+		sigs[m.PolicyServer.Federation.ServerName] = map[id.KeyID]string{policyeval.PolicyServerKeyID: sig}
 	} else {
 		mautrix.MForbidden.
 			WithMessage(cmp.Or(errorMessage, "This message has been rejected as probable spam")).
