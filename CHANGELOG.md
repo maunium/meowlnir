@@ -1,3 +1,19 @@
+# v26.11
+
+* Removed support for old unstable versions of the policy server MSC.
+  Only the stable specced endpoints are supported now.
+* Added command to pre-sign all events in the synapse database.
+  * This will be used for proper time-based policy server rules in the future:
+    if all events are signed, it means any newly encountered events with an old
+    timestamp are faked.
+* Added `well_formed_event` protection to deny events that fail to parse.
+* Changed `no_media` protection to deny unknown msgtypes by default even for
+  users on the `ignore_users` list.
+* Fixed policy cache not being updated correctly if an existing policy state
+  event is modified to point at a different entity.
+* Fixed infinite request loop if a bot create request is cancelled before
+  completing.
+
 # v26.09
 
 * Bumped minimum Go version to 1.26.
