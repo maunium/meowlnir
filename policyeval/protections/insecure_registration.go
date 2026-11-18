@@ -20,6 +20,7 @@ import (
 // InsecureRegistration checks server legacy registration requirements when a user joins a room,
 // kicking them if they allow registration without email nor captcha, and alerting the management room.
 type InsecureRegistration struct {
+	FailClosed bool `json:"fail_closed"`
 	// map of servername:insecure
 	cache  map[string]bool
 	expire map[string]time.Time
@@ -83,10 +84,6 @@ func (ir *InsecureRegistration) Execute(ctx context.Context, p policyeval.Protec
 		// If the result is true (insecure) and less than 5 minutes old, it is fresh.
 		// Secure results are cached for longer since they're less likely to be invalid.
 		if (result && time.Since(cached) < 5*time.Minute) || (!result && time.Since(cached) < time.Hour) {
-			if result {
-				// Kick user and alert the management room
-				go ir.Kick(ctx, p, target)
-			}
 			return result, nil // recently checked, skip
 		}
 		ir.lock.Lock()
@@ -98,6 +95,10 @@ func (ir *InsecureRegistration) Execute(ctx context.Context, p policyeval.Protec
 	// Not recently checked, do a lookup
 	ir.lock.Lock()
 	defer func() {
+		if hit {
+			// Kick user and alert the management room
+			go ir.Kick(ctx, p, target)
+		}
 		// Cache the result
 		if err == nil {
 			ir.cache[hs] = hit
@@ -110,7 +111,7 @@ func (ir *InsecureRegistration) Execute(ctx context.Context, p policyeval.Protec
 	client, err := mautrix.NewClient(baseUrl, "", "")
 	if err != nil {
 		zerolog.Ctx(ctx).Err(err).Str("homeserver", hs).Msg("failed to create client for insecure registration check")
-		return false, err
+		return ir.FailClosed, fmt.Errorf("could not resolve client base URL: %w", err)
 	}
 	_, flows, err := client.Register(ctx, &mautrix.ReqRegister[any]{})
 	zerolog.Ctx(ctx).Trace().Stringer("user_id", target).Err(err).Msg("finished insecure registration check")
@@ -121,7 +122,7 @@ func (ir *InsecureRegistration) Execute(ctx context.Context, p policyeval.Protec
 			return false, nil
 		}
 		zerolog.Ctx(ctx).Err(err).Str("homeserver", hs).Msg("failed to query registration flows for insecure registration check")
-		return false, err
+		return ir.FailClosed, err
 	}
 
 	hit = flows.HasSingleStageFlow(mautrix.AuthTypeDummy)
@@ -130,10 +131,6 @@ func (ir *InsecureRegistration) Execute(ctx context.Context, p policyeval.Protec
 		Any("flows", flows.Flows).
 		Bool("dangerous", hit).
 		Msg("server has registration enabled")
-	if hit {
-		// Kick user and alert the management room
-		go ir.Kick(ctx, p, target)
-	}
 	return hit, nil
 }
 
