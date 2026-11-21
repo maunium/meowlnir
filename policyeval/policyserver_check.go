@@ -173,7 +173,7 @@ func (ps *PolicyServer) sendNotification(ctx context.Context, eval *PolicyEvalua
 		errMsg = rec.DisplayError
 	}
 	var ageDisclaimer string
-	if age := time.Duration(time.Now().UnixMilli() - evt.OriginServerTS); age > 24*time.Hour {
+	if age := time.Since(time.UnixMilli(evt.OriginServerTS)); age > 24*time.Hour {
 		ageDisclaimer = fmt.Sprintf(" (ℹ️ event was created %s ago)", age.String())
 	}
 	content := fmt.Sprintf(
