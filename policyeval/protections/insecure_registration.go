@@ -116,7 +116,7 @@ func (ir *InsecureRegistration) Execute(ctx context.Context, p policyeval.Protec
 	_, flows, err := client.Register(ctx, &mautrix.ReqRegister[any]{})
 	zerolog.Ctx(ctx).Trace().Stringer("user_id", target).Err(err).Msg("finished insecure registration check")
 	if err != nil {
-		if errors.Is(err, mautrix.MForbidden) || errors.Is(err, mautrix.MNotFound) {
+		if errors.Is(err, mautrix.MForbidden) || errors.Is(err, mautrix.MNotFound) || errors.Is(err, mautrix.MUnrecognized) {
 			// Registration is disabled or handled externally
 			zerolog.Ctx(ctx).Trace().Stringer("user_id", target).Msg("homeserver forbids registration.")
 			return false, nil
