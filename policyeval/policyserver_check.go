@@ -242,6 +242,7 @@ func (ps *PolicyServer) HandleSign(
 
 	log.Trace().Any("event", evt).Msg("Checking event received by policy server")
 	isFromOrigin := originServer == evt.Sender.Homeserver()
+	ctx = context.WithoutCancel(ctx)
 	allowReason, blockRec, err := ps.getRecommendation(
 		ctx,
 		evt,
